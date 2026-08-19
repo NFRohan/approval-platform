@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "formName": "New Employee Onboarding Request",
+  "exportedAt": "2026-05-02T00:00:00.000Z",
+  "fields": [
+    {
+      "kind": "section_header",
+      "label": "New Employee Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "employee",
+      "label": "New Employee",
+      "required": true,
+      "helper": "Search or enter the newly joined employee's profile"
+    },
+    {
+      "kind": "dept",
+      "label": "Assigned Department",
+      "required": true,
+      "helper": "",
+      "options": ["Product & Technology", "Finance", "Supply Chain", "Admin", "HR"]
+    },
+    {
+      "kind": "text",
+      "label": "Designation",
+      "required": true,
+      "helper": "",
+      "placeholder": "e.g. Associate Software Engineer"
+    },
+    {
+      "kind": "select",
+      "label": "Employment Type",
+      "required": true,
+      "helper": "",
+      "options": ["Permanent", "Contractual", "Internship", "Consultant"]
+    },
+    {
+      "kind": "date",
+      "label": "Joining Date",
+      "required": true,
+      "helper": "First official working day"
+    },
+    {
+      "kind": "text",
+      "label": "Reporting Manager (Employee ID)",
+      "required": true,
+      "helper": "Direct supervisor's employee ID",
+      "placeholder": "e.g. EMP-0201"
+    },
+    {
+      "kind": "email",
+      "label": "Official Email (to be assigned)",
+      "required": false,
+      "helper": "Leave blank if not yet provisioned — IT will assign",
+      "placeholder": "firstname.lastname@example.com"
+    },
+    {
+      "kind": "phone",
+      "label": "Personal Contact Number",
+      "required": true,
+      "helper": "For onboarding coordination before joining",
+      "placeholder": "01XXXXXXXXX"
+    },
+    {
+      "kind": "section_header",
+      "label": "Equipment & Access Requirements",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "multi_select",
+      "label": "Equipment to Provision",
+      "required": true,
+      "helper": "Select all items the employee will need on Day 1",
+      "options": [
+        "Laptop",
+        "Mobile Phone",
+        "Access Card",
+        "USB Security Token",
+        "Desk Phone",
+        "Headset"
+      ]
+    },
+    {
+      "kind": "multi_select",
+      "label": "System Access Required",
+      "required": true,
+      "helper": "Select all systems the employee needs access to",
+      "options": [
+        "HR Portal",
+        "Corporate Email / Google Workspace",
+        "VPN",
+        "Internal Wiki / Confluence",
+        "Slack / Microsoft Teams",
+        "GitHub / GitLab",
+        "Finance Dashboard",
+        "Core Banking System"
+      ]
+    },
+    {
+      "kind": "select",
+      "label": "Access Level",
+      "required": true,
+      "helper": "Default permission tier for system access",
+      "options": ["Standard Employee", "Team Lead", "Manager", "Senior Manager", "Custom — specify below"]
+    },
+    {
+      "kind": "textarea",
+      "label": "Special Requirements or Notes",
+      "required": false,
+      "helper": "Any non-standard setup, disability accommodations, or unique role needs",
+      "placeholder": "e.g. Requires dual monitor setup, needs admin access to deployment pipeline..."
+    },
+    {
+      "kind": "section_header",
+      "label": "HR Checklist",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "Offer letter and employment contract have been signed and filed",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "NID, educational certificates, and reference checks have been verified",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "IT team has been notified and provisioning timeline confirmed",
+      "required": true,
+      "helper": ""
+    }
+  ]
+}

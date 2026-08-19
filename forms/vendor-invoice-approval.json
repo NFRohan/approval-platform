@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "formName": "Vendor Invoice Approval Request",
+  "exportedAt": "2026-05-02T00:00:00.000Z",
+  "fields": [
+    {
+      "kind": "section_header",
+      "label": "Requesting Department",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "employee",
+      "label": "Submitted By",
+      "required": true,
+      "helper": "Employee submitting this invoice for approval"
+    },
+    {
+      "kind": "dept",
+      "label": "Cost Centre Department",
+      "required": true,
+      "helper": "Department bearing this expense",
+      "options": ["Product & Technology", "Finance", "Supply Chain", "Admin", "HR"]
+    },
+    {
+      "kind": "section_header",
+      "label": "Vendor Information",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "text",
+      "label": "Vendor Name",
+      "required": true,
+      "helper": "",
+      "placeholder": "e.g. TechSolutions BD Ltd."
+    },
+    {
+      "kind": "text",
+      "label": "Vendor TIN / BIN",
+      "required": true,
+      "helper": "Tax Identification or Business Identification Number",
+      "placeholder": "e.g. 123456789012"
+    },
+    {
+      "kind": "email",
+      "label": "Vendor Email",
+      "required": true,
+      "helper": "For payment confirmation notices",
+      "placeholder": "accounts@vendor.com"
+    },
+    {
+      "kind": "phone",
+      "label": "Vendor Contact Number",
+      "required": false,
+      "helper": "",
+      "placeholder": "01XXXXXXXXX"
+    },
+    {
+      "kind": "section_header",
+      "label": "Invoice Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "text",
+      "label": "Invoice Number",
+      "required": true,
+      "helper": "As printed on the invoice",
+      "placeholder": "INV-2026-00142"
+    },
+    {
+      "kind": "date",
+      "label": "Invoice Date",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Service Category",
+      "required": true,
+      "helper": "",
+      "options": [
+        "IT Services & Software",
+        "Consulting & Advisory",
+        "Facilities & Maintenance",
+        "Marketing & Communications",
+        "Logistics & Supply",
+        "Training & Development",
+        "Other"
+      ]
+    },
+    {
+      "kind": "textarea",
+      "label": "Description of Services",
+      "required": true,
+      "helper": "Briefly describe what was delivered",
+      "placeholder": "Annual license renewal for project management software — 50 user seats, Jan–Dec 2026..."
+    },
+    {
+      "kind": "money",
+      "label": "Invoice Amount (BDT)",
+      "required": true,
+      "helper": "Exact amount as on the invoice — triggers slab-based finance officer routing"
+    },
+    {
+      "kind": "file",
+      "label": "Invoice Document",
+      "required": true,
+      "helper": "Upload the original vendor invoice (PDF)"
+    },
+    {
+      "kind": "file",
+      "label": "Purchase Order / Agreement",
+      "required": false,
+      "helper": "Supporting PO or contract if available"
+    },
+    {
+      "kind": "section_header",
+      "label": "Verification",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "Services have been delivered and verified by the requesting department",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "Invoice amount matches the agreed PO or contract value",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "This vendor is registered and cleared in our approved vendor list",
+      "required": true,
+      "helper": ""
+    }
+  ]
+}

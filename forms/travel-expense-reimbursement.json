@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "formName": "Travel & Expense Reimbursement Request",
+  "exportedAt": "2026-05-02T00:00:00.000Z",
+  "fields": [
+    {
+      "kind": "section_header",
+      "label": "Claimant Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "employee",
+      "label": "Claiming Employee",
+      "required": true,
+      "helper": "Search by name or employee ID"
+    },
+    {
+      "kind": "dept",
+      "label": "Department",
+      "required": true,
+      "helper": "",
+      "options": ["Product & Technology", "Finance", "Supply Chain", "Admin", "HR"]
+    },
+    {
+      "kind": "section_header",
+      "label": "Trip Information",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Purpose of Travel",
+      "required": true,
+      "helper": "",
+      "options": [
+        "Client Meeting",
+        "Internal Training",
+        "Conference / Seminar",
+        "Regulatory Visit",
+        "Site Inspection",
+        "Other"
+      ]
+    },
+    {
+      "kind": "text",
+      "label": "Destination",
+      "required": true,
+      "helper": "City and country if international",
+      "placeholder": "e.g. Chattogram, Bangladesh"
+    },
+    {
+      "kind": "daterange",
+      "label": "Travel Period",
+      "required": true,
+      "helper": "Departure to return date"
+    },
+    {
+      "kind": "textarea",
+      "label": "Trip Summary",
+      "required": true,
+      "helper": "Brief description of activities and business outcome",
+      "placeholder": "Attended quarterly review with Chattogram regional team, discussed Q1 targets..."
+    },
+    {
+      "kind": "section_header",
+      "label": "Expense Breakdown",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Primary Mode of Transport",
+      "required": true,
+      "helper": "",
+      "options": ["Flight", "Train", "Road — Company Vehicle", "Road — Own Vehicle", "Mixed"]
+    },
+    {
+      "kind": "multi_select",
+      "label": "Expense Categories Claimed",
+      "required": true,
+      "helper": "Select all that apply",
+      "options": [
+        "Transport (Tickets / Fuel)",
+        "Accommodation",
+        "Meals & Dining",
+        "Communication",
+        "Conference / Event Fees",
+        "Miscellaneous"
+      ]
+    },
+    {
+      "kind": "money",
+      "label": "Total Amount Claimed (BDT)",
+      "required": true,
+      "helper": "Sum of all expenses — triggers finance approval routing based on amount"
+    },
+    {
+      "kind": "file",
+      "label": "Receipts & Supporting Documents",
+      "required": true,
+      "helper": "Upload all original receipts as a single PDF or ZIP"
+    },
+    {
+      "kind": "section_header",
+      "label": "Declaration",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "I confirm all expenses listed are genuine, work-related, and supported by attached receipts",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "I understand that false claims may lead to disciplinary action",
+      "required": true,
+      "helper": ""
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "formName": "IT System Access Request",
+  "exportedAt": "2026-05-02T00:00:00.000Z",
+  "fields": [
+    {
+      "kind": "section_header",
+      "label": "Requester Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "employee",
+      "label": "Requesting Employee",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "dept",
+      "label": "Department",
+      "required": true,
+      "helper": "",
+      "options": ["Product & Technology", "Finance", "Supply Chain", "Admin", "HR"]
+    },
+    {
+      "kind": "text",
+      "label": "Designation",
+      "required": true,
+      "helper": "",
+      "placeholder": "e.g. Product Manager"
+    },
+    {
+      "kind": "section_header",
+      "label": "Access Request",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Request Type",
+      "required": true,
+      "helper": "",
+      "options": [
+        "New Access — First Time",
+        "Modify Existing Access",
+        "Temporary Access",
+        "Revoke Access"
+      ]
+    },
+    {
+      "kind": "multi_select",
+      "label": "Systems / Applications",
+      "required": true,
+      "helper": "Select all systems you are requesting access to",
+      "options": [
+        "Core Banking System",
+        "ERP / SAP",
+        "HR Portal",
+        "Finance Dashboard",
+        "Corporate Email / Google Workspace",
+        "VPN",
+        "Cloud Console (AWS / GCP)",
+        "GitHub / GitLab",
+        "Internal Wiki / Confluence",
+        "Slack / Microsoft Teams",
+        "Data Analytics Platform",
+        "Customer Support CRM"
+      ]
+    },
+    {
+      "kind": "select",
+      "label": "Access Level Required",
+      "required": true,
+      "helper": "Principle of least privilege — request only what your role needs",
+      "options": [
+        "Read Only",
+        "Read & Write",
+        "Admin / Full Access",
+        "Custom — described below"
+      ]
+    },
+    {
+      "kind": "date",
+      "label": "Access Required From",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Access Duration",
+      "required": true,
+      "helper": "",
+      "options": [
+        "Permanent (role-based)",
+        "Temporary — 1 Month",
+        "Temporary — 3 Months",
+        "Temporary — 6 Months",
+        "Project-Based — specify in notes"
+      ]
+    },
+    {
+      "kind": "section_header",
+      "label": "Justification",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "textarea",
+      "label": "Business Justification",
+      "required": true,
+      "helper": "Explain why this access is required for your role or project",
+      "placeholder": "I have been assigned to the Q3 data migration project and need read access to the analytics platform to validate output..."
+    },
+    {
+      "kind": "text",
+      "label": "Approving Manager (Employee ID)",
+      "required": true,
+      "helper": "Your line manager or project lead who has authorised this request",
+      "placeholder": "e.g. EMP-0201"
+    },
+    {
+      "kind": "section_header",
+      "label": "Declaration",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "I understand that access granted is for official use only and must not be shared",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "I acknowledge that all activity on granted systems may be logged and audited",
+      "required": true,
+      "helper": ""
+    }
+  ]
+}

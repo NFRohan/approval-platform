@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "formName": "Employee Departure Due Diligence Form",
+  "exportedAt": "2026-05-02T00:00:00.000Z",
+  "fields": [
+    {
+      "kind": "section_header",
+      "label": "Your Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "employee",
+      "label": "Your Name",
+      "required": true,
+      "helper": "Search by name or employee ID"
+    },
+    {
+      "kind": "dept",
+      "label": "Department",
+      "required": true,
+      "helper": "",
+      "options": ["Product & Technology", "Finance", "Supply Chain", "Admin", "HR"]
+    },
+    {
+      "kind": "text",
+      "label": "Designation",
+      "required": true,
+      "helper": "",
+      "placeholder": "e.g. Senior Software Engineer"
+    },
+    {
+      "kind": "phone",
+      "label": "Personal Contact Number",
+      "required": true,
+      "helper": "We may reach out after your last day for handover queries",
+      "placeholder": "01XXXXXXXXX"
+    },
+    {
+      "kind": "section_header",
+      "label": "Departure Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Reason for Departure",
+      "required": true,
+      "helper": "",
+      "options": [
+        "Resignation",
+        "Contract End",
+        "Retirement",
+        "Interdepartmental Transfer",
+        "Medical / Personal Reasons",
+        "Other"
+      ]
+    },
+    {
+      "kind": "date",
+      "label": "Last Working Day",
+      "required": true,
+      "helper": "Your official last day as per HR records"
+    },
+    {
+      "kind": "daterange",
+      "label": "Notice Period",
+      "required": true,
+      "helper": "Start and end date of your notice period"
+    },
+    {
+      "kind": "section_header",
+      "label": "Assets & Access",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "multi_select",
+      "label": "Company Assets in Your Possession",
+      "required": true,
+      "helper": "Select everything you currently hold — these must be returned before your last day",
+      "options": [
+        "Laptop",
+        "Mobile Phone",
+        "Access Card",
+        "USB Security Token",
+        "Office Keys",
+        "Uniform / ID Badge"
+      ]
+    },
+    {
+      "kind": "multi_select",
+      "label": "Systems You Currently Have Access To",
+      "required": true,
+      "helper": "IT will use this to revoke your access on your last day",
+      "options": [
+        "Core Banking System",
+        "HR Portal",
+        "Finance Dashboard",
+        "Corporate Email / Google Workspace",
+        "VPN",
+        "Cloud Console (AWS / GCP)",
+        "GitHub / GitLab",
+        "Internal Wiki / Confluence"
+      ]
+    },
+    {
+      "kind": "section_header",
+      "label": "Financial Settlement",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "money",
+      "label": "Expected Settlement Amount (BDT)",
+      "required": true,
+      "helper": "Include unpaid salary, leave encashment, and any applicable gratuity"
+    },
+    {
+      "kind": "section_header",
+      "label": "Your Feedback",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Exit Interview",
+      "required": true,
+      "helper": "",
+      "options": [
+        "Completed — In Person",
+        "Completed — Via Form",
+        "I would like to schedule one",
+        "I prefer not to participate"
+      ]
+    },
+    {
+      "kind": "textarea",
+      "label": "Anything you'd like to share with HR?",
+      "required": false,
+      "helper": "This stays confidential — your honest feedback helps us improve",
+      "placeholder": "What worked well, what could be better, any unresolved concerns..."
+    },
+    {
+      "kind": "checkbox",
+      "label": "I confirm that all information provided above is accurate and complete",
+      "required": true,
+      "helper": ""
+    }
+  ]
+}

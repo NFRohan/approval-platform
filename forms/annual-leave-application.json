@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "formName": "Leave Application",
+  "exportedAt": "2026-05-02T00:00:00.000Z",
+  "fields": [
+    {
+      "kind": "section_header",
+      "label": "Employee Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "employee",
+      "label": "Applying Employee",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "dept",
+      "label": "Department",
+      "required": true,
+      "helper": "",
+      "options": ["Product & Technology", "Finance", "Supply Chain", "Admin", "HR"]
+    },
+    {
+      "kind": "section_header",
+      "label": "Leave Details",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "select",
+      "label": "Leave Type",
+      "required": true,
+      "helper": "",
+      "options": [
+        "Annual Leave",
+        "Sick Leave",
+        "Emergency / Urgent Leave",
+        "Maternity Leave",
+        "Paternity Leave",
+        "Unpaid Leave",
+        "Study / Exam Leave"
+      ]
+    },
+    {
+      "kind": "daterange",
+      "label": "Leave Period",
+      "required": true,
+      "helper": "First and last day of requested leave"
+    },
+    {
+      "kind": "number",
+      "label": "Total Working Days",
+      "required": true,
+      "helper": "Excluding weekends and public holidays",
+      "validation": { "min": 1, "max": 180 }
+    },
+    {
+      "kind": "textarea",
+      "label": "Reason",
+      "required": false,
+      "helper": "Required for Emergency, Sick, and Unpaid leave. Optional for Annual leave.",
+      "placeholder": "Briefly describe the reason for your leave request..."
+    },
+    {
+      "kind": "section_header",
+      "label": "Handover Plan",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "text",
+      "label": "Acting In-Charge (Employee ID)",
+      "required": true,
+      "helper": "Colleague covering your responsibilities during absence",
+      "placeholder": "e.g. EMP-0312"
+    },
+    {
+      "kind": "textarea",
+      "label": "Pending Tasks & Handover Notes",
+      "required": false,
+      "helper": "List any critical tasks, deadlines, or context your cover should know",
+      "placeholder": "Q2 report due on the 15th — draft is in shared drive. Weekly sync with vendor to be rescheduled..."
+    },
+    {
+      "kind": "section_header",
+      "label": "Declaration",
+      "required": false,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "I confirm I have sufficient leave balance for this request",
+      "required": true,
+      "helper": ""
+    },
+    {
+      "kind": "checkbox",
+      "label": "I have briefed my acting in-charge and my line manager is aware of this application",
+      "required": true,
+      "helper": ""
+    }
+  ]
+}

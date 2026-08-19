@@ -1,0 +1,28 @@
+function escapeCsvCell(value: unknown): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+export function toCsv<T extends Record<string, unknown>>(
+  rows: T[],
+  columns: { key: keyof T; label: string }[],
+): string {
+  const header = columns.map((c) => escapeCsvCell(c.label)).join(",");
+  const lines = rows.map((row) => columns.map((c) => escapeCsvCell(row[c.key])).join(","));
+  return [header, ...lines].join("\n");
+}
+
+export function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
