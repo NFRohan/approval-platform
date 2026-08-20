@@ -81,10 +81,19 @@ export const TABLES: Record<string, TableDef> = {
       'line_manager_id', 'gate_pass_card_number'],
     [],
   ),
+  // EXCEPTION to the generation rule above: 'id' is writable here.
+  // The builder mints a field's uuid with crypto.randomUUID() the moment
+  // it lands on the canvas, and every later edit, reorder and delete
+  // keys off that value. Letting the database choose instead would mean
+  // the client never learns the real id and every subsequent write
+  // targets a row that does not exist. The value is a v4 uuid, tenant_id
+  // still comes from the column default, and row-level security still
+  // decides where it may land — the client picks the key, not the tenant.
+  // Keep this when regenerating.
   form_fields: T(
     ['id', 'form_template_id', 'field_type', 'field_name', 
       'field_config', 'order_index', 'is_required'],
-    ['form_template_id', 'field_type', 'field_name', 'field_config', 
+    ['id', 'form_template_id', 'field_type', 'field_name', 'field_config', 
       'order_index', 'is_required'],
     ['field_config'],
   ),
