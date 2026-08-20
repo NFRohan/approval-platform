@@ -211,22 +211,47 @@ first.
 *Goal: authorization flows up the chain of command, and there is only one
 approval system.*
 
-- [ ] **#11 — sequential approval with escalation.** Requests created across
+- [x] **#11 — sequential approval with escalation.** Steps created across
       `step_index`; only the lowest unfinished step is `pending`; a rejection
-      stops the chain; clarification pauses it. Slab resolution returns every
-      level up to the threshold, so 600,000 climbs Controller → Head → CFO.
-- [ ] **#2 — Notices and Stationery onto the engine**, deleting both hardcoded
-      `CHAIN` arrays. Their approvals then appear in the queue, history and
-      timeline like everything else.
-- [ ] **#17 — Maintenance three-tier hierarchy** (Divisional → Moderator →
-      Admin), nearly free once the chain exists.
-- [ ] **#13 — forward/reassign and add-a-reviewer.** `reassigned_from` is
-      already in the schema; adding a reviewer inserts a step and renumbers.
-- [ ] Chain tests: order enforced, rejection halts, reassignment preserves the
-      trail, a reviewer inserted mid-chain does not strand the rest.
+      marks the rest skipped; clarification pauses and resumes in place. Slabs
+      escalate cumulatively, so 620,000 climbs Controller → Head → CFO.
+- [x] **#2 — Notices and Stationery onto the engine.** Both hardcoded `CHAIN`
+      arrays deleted — they named EMP-1134 and EMP-0445, employees who stopped
+      existing at de-branding, so those approvals had been routing to nobody.
+- [x] **#17 — Maintenance three-tier hierarchy** (divisional → moderator →
+      admin), with approving separated from fulfilment.
+- [x] **#13 — forward/reassign and add-a-reviewer**, both reachable from the
+      queue.
+- [x] Chain tests — 17 checks, all about order.
 
-**Exit:** a 600,000 request can be walked up three levels on screen, using the
-persona switcher, and the timeline shows it.
+**Exit met.** A 620,000 claim walks three levels, one approver at a time,
+through the queries each persona's screen runs:
+
+```
+Raj Patel      (Finance Controller)      sees it at step 1 — nobody else can act
+Dana Whitfield (Head of Finance)         sees it at step 2 — nobody else can act
+Alex Mercer    (Chief Financial Officer) sees it at step 3 — nobody else can act
+submission is now: completed
+```
+
+**How the subject is held.** `approval_requests` now hangs off any of four
+things via an exclusive arc: four nullable references, exactly one set, with
+`subject_id` and `subject_type` generated from whichever is populated. A
+polymorphic `(type, id)` pair would have been shorter and would have discarded
+the foreign keys that keep a step and its subject in one tenant.
+
+**Where the engine lives.** In the database. Advancing a chain is several
+writes that must all happen or none — mark the step, open the next, move the
+subject's status — and whose turn it is cannot be a client's opinion.
+`approval_requests` has no writable columns at all now; every transition is a
+function call. The load-bearing rule is that only a `pending` step can be acted
+on, verified by removing the guard and watching the suite fail.
+
+**Two things found while doing it.** `recomputeSubmissionStatus` decided a
+submission was complete by checking every sibling step was approved, which read
+`waiting` as "not approved yet" and so completed nothing. And the seed was
+still not re-runnable: two more lookups matched across tenants once a clone
+existed, the same class of bug as the one fixed in the review.
 
 ### Sprint 4 — Stop the demo contradicting itself
 
