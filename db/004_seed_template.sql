@@ -246,7 +246,7 @@ insert into public.activity_log (actor_id, action, entity_type, entity_id, detai
   ('EMP-2847', 'submitted', 'form_submission', '22222222-0000-4000-8000-000000000001', 'Travel & Expense Reimbursement', now() - interval '2 days'),
   ('EMP-1134', 'approved',  'form_submission', '22222222-0000-4000-8000-000000000002', 'Travel & Expense Reimbursement — 620,000', now() - interval '3 days'),
   ('EMP-0445', 'rejected',  'form_submission', '22222222-0000-4000-8000-000000000004', 'IT System Access Request',       now() - interval '5 days'),
-  ('EMP-9001', 'updated',   'movement_order',  (select id from public.movement_orders where ref_number = 'MO-1041'), 'Marked in progress', now() - interval '2 days'),
+  ('EMP-9001', 'updated',   'movement_order',  (select id from public.movement_orders where ref_number = 'MO-1041' and tenant_id = app.current_tenant()), 'Marked in progress', now() - interval '2 days'),
   ('EMP-0201', 'published', 'notice',          '55555555-0000-4000-8000-000000000001', 'Quarterly all-hands',            now() - interval '5 days'),
   ('EMP-0312', 'submitted', 'notice',          '55555555-0000-4000-8000-000000000002', 'Updated expense policy',         now() - interval '1 day');
 

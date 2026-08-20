@@ -597,4 +597,33 @@ create table if not exists public.staff_audit (
 );
 create index if not exists staff_audit_ts_idx on public.staff_audit(ts desc);
 
+-- =====================================================================
+-- updated_at, maintained by the database.
+--
+-- Four tables carry an updated_at that nothing was setting: the column
+-- was declared, no default and no trigger, while the screens wrote it by
+-- hand on every action. The API whitelist refuses that write, and
+-- rightly — a timestamp the client chooses is not a fact. The trigger
+-- already existed for app_users; these are the tables it was never
+-- attached to.
+-- =====================================================================
+do $ua$
+declare t text;
+begin
+  foreach t in array array[
+    'movement_orders', 'notices', 'stationery_requests', 'maintenance_requests'
+  ] loop
+    execute format('alter table public.%I alter column updated_at set default now()', t);
+    -- Rows that predate the default, so the column can be made not null.
+    execute format(
+      'update public.%I set updated_at = coalesce(updated_at, created_at, now())
+         where updated_at is null', t);
+    execute format('alter table public.%I alter column updated_at set not null', t);
+    execute format('drop trigger if exists %I on public.%I', t || '_updated', t);
+    execute format(
+      'create trigger %I before update on public.%I
+         for each row execute function app.set_updated_at()', t || '_updated', t);
+  end loop;
+end $ua$;
+
 commit;
