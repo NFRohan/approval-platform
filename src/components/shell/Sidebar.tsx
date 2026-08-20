@@ -23,12 +23,14 @@ import { Avatar } from "./Avatar";
 import { useCurrentUser, type CurrentUser } from "@/contexts/CurrentUserContext";
 import { db } from "@/lib/db";
 
+// A check, for a system whose whole job is sign-off. What was here was
+// the client's own letterform, which recolouring would not have fixed.
 function BrandMark({ size = 34, style }: { size?: number; style?: SVGProps<SVGSVGElement>["style"] }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={style} aria-label="Admin Services Portal">
       <rect width="100" height="100" rx="22" fill="#4F46E5"/>
-      <path fill="white" d="M18 8 L30 8 L30 58.8 A22 22 0 1 1 30 77.2 L30 92 L18 92 Z"/>
-      <circle cx="50" cy="68" r="11" fill="#4F46E5"/>
+      <path d="M28 52 L44 68 L74 32" fill="none" stroke="#fff"
+            strokeWidth="11" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }

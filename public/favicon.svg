@@ -1,13 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- brand indigo rounded background -->
+  <!-- Neutral mark: a check, for a system whose whole job is sign-off. -->
   <rect width="100" height="100" rx="22" fill="#4F46E5"/>
-  <!--
-    Lowercase "b" letterform.
-    Stem: x 18–30, full height 8–92.
-    Bowl: outer r=22, center (50,68).
-    Arc endpoints where x=30 intersects the circle: (30, 58.8) and (30, 77.2).
-  -->
-  <path fill="white" d="M18 8 L30 8 L30 58.8 A22 22 0 1 1 30 77.2 L30 92 L18 92 Z"/>
-  <!-- Counter (open interior of bowl) -->
-  <circle cx="50" cy="68" r="11" fill="#4F46E5"/>
+  <path d="M28 52 L44 68 L74 32" fill="none" stroke="#fff"
+        stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

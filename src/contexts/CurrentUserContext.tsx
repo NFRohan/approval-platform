@@ -7,14 +7,27 @@ export type CurrentUser = {
   initials: string;
 };
 
+// The people a viewer can act as.
+//
+// These must match rows in `employees`, because every screen filters by
+// employee_id — the approvals queue asks for steps assigned to
+// currentUser.employee_id and nothing else. They had drifted: the
+// database was renumbered to EMP-#### when the schema was ported and
+// this list still said EMP-####, so no persona matched any employee and
+// every queue came back empty. scripts/render-test.mjs now checks the
+// two agree.
+//
+// Safe to hardcode: an evaluation is a clone of the template, and
+// cloning preserves employee_id.
 export const USERS: CurrentUser[] = [
-  { employee_id: "EMP-0201", name: "Nadia Hossain", designation: "HR Business Partner", initials: "NH" },
-  { employee_id: "EMP-2847", name: "Ahmed Rahman", designation: "Departing Employee", initials: "AR" },
-  { employee_id: "EMP-1134", name: "Sara Khan", designation: "Line Manager", initials: "SK" },
-  { employee_id: "EMP-0312", name: "Rafiqul Islam", designation: "Finance Controller", initials: "RI" },
-  { employee_id: "EMP-0600", name: "Dilruba Akter", designation: "Head of Finance", initials: "DA" },
-  { employee_id: "EMP-0700", name: "Shamsul Huda", designation: "CFO", initials: "SH" },
-  { employee_id: "EMP-0445", name: "Farzana Islam", designation: "Admin Officer", initials: "FI" },
+  { employee_id: "EMP-2847", name: "Tom Bexley",     designation: "Operations Analyst",       initials: "TB" },
+  { employee_id: "EMP-1134", name: "Sam Lindqvist",  designation: "Line Manager",             initials: "SL" },
+  { employee_id: "EMP-0312", name: "Raj Patel",      designation: "Finance Controller",       initials: "RP" },
+  { employee_id: "EMP-0600", name: "Dana Whitfield", designation: "Head of Finance",          initials: "DW" },
+  { employee_id: "EMP-0700", name: "Alex Mercer",    designation: "Chief Financial Officer",  initials: "AM" },
+  { employee_id: "EMP-0201", name: "Nadia Okonjo",   designation: "HR Business Partner",      initials: "NO" },
+  { employee_id: "EMP-0445", name: "Farah Haddad",   designation: "Admin Officer",            initials: "FH" },
+  { employee_id: "EMP-9001", name: "Ivan Petrov",    designation: "Facilities Coordinator",   initials: "IP" },
 ];
 
 type Ctx = {

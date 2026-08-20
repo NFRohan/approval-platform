@@ -60,7 +60,6 @@ export const Route = createRootRoute({
       { property: "og:description", content: "Internal services portal for administrative requests and approvals" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@example" },
       { name: "twitter:title", content: "Admin Services Portal" },
       { name: "twitter:description", content: "Internal services portal for administrative requests and approvals" },
     ],

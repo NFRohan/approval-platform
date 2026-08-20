@@ -55,6 +55,31 @@ const { getPool } = await server.ssrLoadModule('/src/server/db.ts');
 const pool = getPool();
 const pick = async (sql) => (await pool.query(sql)).rows[0]?.id ?? null;
 
+// ---------------------------------------------------------------------
+// Every persona the switcher offers must be a real employee.
+//
+// These two drifted apart once already: the schema port renumbered
+// employees to EMP-#### and the hardcoded persona list still said
+// EMP-####, so no persona matched anybody and every queue came back
+// empty — while the build, the type checker and every suite stayed
+// green, because nothing compared the two.
+// ---------------------------------------------------------------------
+const { USERS } = await server.ssrLoadModule('/src/contexts/CurrentUserContext.tsx');
+const { rows: known } = await pool.query(
+  `select distinct employee_id from public.employees`);
+const knownIds = new Set(known.map((r) => r.employee_id));
+const strangers = USERS.filter((u) => !knownIds.has(u.employee_id));
+if (strangers.length) {
+  console.log(`
+  PERSONAS THAT MATCH NO EMPLOYEE:
+`);
+  for (const u of strangers) console.log(`    ${u.employee_id}  ${u.name}`);
+  console.log('');
+  process.exit(1);
+}
+console.log(`  ${USERS.length} personas, all of them real employees`);
+
+
 const submissionId = await pick(
   `select s.id from public.form_submissions s
      join public.tenants t on t.id = s.tenant_id
