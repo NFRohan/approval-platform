@@ -1,6 +1,83 @@
 import { useState } from "react";
 import { Bell, ChevronRight, HelpCircle, Search } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
+
+// =====================================================================
+// The breadcrumb.
+//
+// It read "Home / Dashboard" on every screen, including the ones several
+// levels down. A trail that never changes is worse than no trail: it
+// tells you where you are and is wrong.
+//
+// Derived from the path rather than declared per route, so a new screen
+// gets a correct crumb without anyone remembering to add one. Segments
+// that are ids — the detail routes — are named after what they are
+// rather than shown raw, because a uuid tells a reader nothing.
+// =====================================================================
+const SECTION: Record<string, string> = {
+  "": "Dashboard",
+  approvals: "Approvals",
+  activity: "Activity Log",
+  builder: "Form Builder",
+  certificate: "Certificate",
+  forms: "Available Forms",
+  maintenance: "Maintenance",
+  "movement-orders": "Movement Orders",
+  notices: "Notice Board",
+  stationery: "Stationery Requests",
+  status: "Submission Status",
+  submissions: "My Submissions",
+};
+
+const LEAF: Record<string, string> = {
+  delegate: "Delegate Authority",
+  history: "History",
+  approvers: "Approvers",
+  notifications: "Notifications",
+  new: "New",
+};
+
+const IS_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-|^d+$/i;
+
+// Reached from a link, never from a list — so the id adds a crumb that
+// says nothing and the section name already says it all.
+const NO_INDEX = new Set(["status", "certificate"]);
+
+/** What the identified thing is called on a detail route. */
+const DETAIL: Record<string, string> = {
+  notices: "Notice",
+  forms: "Form",
+  status: "Submission",
+  certificate: "Certificate",
+};
+
+export function crumbsFor(pathname: string): Array<{ label: string; to?: string }> {
+  const parts = pathname.split("/").filter(Boolean);
+  if (!parts.length) return [{ label: "Dashboard" }];
+
+  if (NO_INDEX.has(parts[0])) return [{ label: SECTION[parts[0]] ?? parts[0] }];
+
+  const trail: Array<{ label: string; to?: string }> = [
+    { label: SECTION[parts[0]] ?? parts[0], to: "/" + parts[0] },
+  ];
+
+  for (let i = 1; i < parts.length; i++) {
+    const seg = parts[i];
+    trail.push({
+      label: IS_ID.test(seg)
+        ? (DETAIL[parts[0]] ?? "Detail")
+        : seg === "new"
+          ? "New " + (DETAIL[parts[0]] ?? "item")
+          : (LEAF[seg] ?? seg.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase())),
+      to: "/" + parts.slice(0, i + 1).join("/"),
+    });
+  }
+
+  // The last crumb is where you already are, so it is not a link.
+  delete trail[trail.length - 1].to;
+  return trail;
+}
 
 function NotificationsDropdown({ onClose }: { onClose: () => void }) {
   const items = [
@@ -91,6 +168,8 @@ function NotificationsDropdown({ onClose }: { onClose: () => void }) {
 
 export function TopBar() {
   const [notifOpen, setNotifOpen] = useState(false);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const crumbs = crumbsFor(pathname);
 
   return (
     <div
@@ -98,9 +177,21 @@ export function TopBar() {
       style={{ padding: "0 28px", borderColor: "var(--color-zinc-200)" }}
     >
       <div className="flex items-center gap-2 shrink-0">
-        <span className="text-[11px] text-zinc-400">Home</span>
-        <ChevronRight size={11} className="text-zinc-300" />
-        <span className="text-[13px] font-semibold text-zinc-900">Dashboard</span>
+        <Link to="/" className="text-[11px] text-zinc-400 hover:text-zinc-600">
+          Home
+        </Link>
+        {crumbs.map((crumb, i) => (
+          <span key={crumb.label + i} className="flex items-center gap-2">
+            <ChevronRight size={11} className="text-zinc-300" />
+            {crumb.to ? (
+              <Link to={crumb.to} className="text-[11px] text-zinc-400 hover:text-zinc-600">
+                {crumb.label}
+              </Link>
+            ) : (
+              <span className="text-[13px] font-semibold text-zinc-900">{crumb.label}</span>
+            )}
+          </span>
+        ))}
       </div>
 
       <div
