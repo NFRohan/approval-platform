@@ -146,7 +146,7 @@ export function PeopleStep({
                   </div>
                   {showDeadline && (
                     <div className="flex items-center gap-1.5" style={{ fontSize: 12, color: "#52525B" }}>
-                      <span style={{ color: "#A1A1AA" }}>Deadline:</span>
+                      <span style={{ color: "#A1A1AA" }}>Target:</span>
                       <span className="font-medium">{e.deadlineDays ?? 7} days</span>
                     </div>
                   )}
@@ -157,6 +157,15 @@ export function PeopleStep({
               </div>
             ))}
           </div>
+          {showDeadline && (
+            <div
+              style={{ padding: "8px 16px 12px", fontSize: 11, color: "#A1A1AA", lineHeight: 1.5 }}
+            >
+              A target is a date, not a rule. Requests past theirs are marked overdue and
+              sorted to the top of the approver's queue; nothing is escalated, reassigned
+              or approved automatically.
+            </div>
+          )}
         </section>
 
         {/* Manual section */}

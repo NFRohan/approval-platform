@@ -286,7 +286,7 @@ function ApproverCard({ approver }: { approver: Approver }) {
         )}
         {!approver.actionAt && approver.deadline && (
           <div style={{ fontSize: 11, color: "#A16207", display: "flex", alignItems: "center", gap: 4 }}>
-            <Clock size={11} stroke="#A16207" /> Deadline {approver.deadline}
+            <Clock size={11} stroke="#A16207" /> Target {approver.deadline}
           </div>
         )}
         {approver.comment && (

@@ -190,7 +190,11 @@ function ApprovalsInbox() {
       .from("approval_requests")
       .select("*")
       .in("approver_user_id", approverIds)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      // Soonest target first, so the queue is ordered by what is most
+      // pressing rather than by insertion. This is the one thing the
+      // target date actually drives — see the note in the timeline.
+      .order("deadline_at");
     if (error) {
       toast.error("Failed to load approvals");
       setLoading(false);
