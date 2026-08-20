@@ -257,17 +257,31 @@ existed, the same class of bug as the one fixed in the review.
 
 *Goal: nothing on screen states something the data does not support.*
 
-- [ ] **#1 — slab tables render from `approval_slabs`.** Delete both hardcoded
-      versions. Decide whether the Board Approval tier is real: either seed it
-      or stop promising it.
-- [ ] **#3 — required-field validation on submit.** Run the same check
-      `handleNext()` uses before `handleSubmit()` proceeds.
-- [ ] **#7 — dashboard panels wired** to the data that already exists elsewhere.
-- [ ] **#10 — SLA deadlines act on something**, or are presented as indicative.
-- [ ] **#4 — notification bell reads real data** (delivery lands next sprint;
-      the count and list stop being literals here).
+- [x] **#1 — slab tables render from `approval_slabs`.** Both hardcoded copies
+      deleted. They disagreed with each other and with the database, and named
+      four people who stopped existing at the schema port.
+- [x] **#3 — required-field validation on submit**, across every step rather
+      than only the one being left.
+- [x] **#7 — dashboard panels wired** to real submissions and real pending
+      steps, with the two dead "view all" links pointed somewhere.
+- [x] **#10 — deadlines presented as targets**, and ordering the queue.
+- [x] **#4 — notification bell reads real data**, marks read, and hides the
+      badge at zero.
 
-**Exit:** every figure on screen traces to a row.
+**Exit met.** Every figure and every name on screen traces to a row.
+
+**The Board Approval tier is dropped, not seeded.** A committee is not an
+employee, and `approval_slabs.approver_user_id` references one — so making it
+real meant either inventing a person called "Board", which is the demo lying in
+a new way, or building quorum approval, which is a feature and not a
+correction. The top band is unbounded and ends at the CFO, which is what the
+escalation has always done.
+
+**Found while doing it.** The form said "Submitting as Ahmed Rahman" while
+recording `EMP-2847`, who is somebody else: a constant naming one person and
+carrying another's id. The same class as the persona drift found during the
+de-brand, and the reason the subject-labelling written in sprint 3 was lifted
+into `chain.ts` rather than copied — two copies drift, as the band tables did.
 
 ### Sprint 5 — Notifications and the visible surface
 
