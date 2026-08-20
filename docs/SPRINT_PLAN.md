@@ -149,23 +149,29 @@ npm run db:test      # ALL DATABASE SUITES PASSED (52 checks)
 
 *Goal: nothing reaches the database from a browser.*
 
-- [ ] Port `api/_lib` — request context, query builder, table whitelist for 25
-      tables, auth helpers
-- [ ] `/api/data` endpoint
-- [ ] Client shim presenting the same surface `@supabase/supabase-js` did, so
-      all 156 call sites stay as they are
-- [ ] Retire `src/integrations/supabase/` — client, server client, dead auth
-      middleware, 1,058 lines of generated types
-- [ ] Swap Cloudflare Workers config for Vercel
-- [ ] **#8 — pagination and row ceilings**, done here because the whitelist is
-      the natural place for a default limit
-- [ ] Render smoke test across all 20 routes
+- [x] `src/server/{db,query,tables}.ts` — request context, query builder, and a
+      whitelist of 22 tables generated from the live schema
+- [x] One server function, `runData`
+- [x] Client shim with the same surface the screens already call, plus a
+      polling stand-in for realtime
+- [x] `src/integrations/supabase/` retired entirely, `@supabase/supabase-js`
+      uninstalled
+- [x] Cloudflare plugin off, `wrangler.jsonc` removed
+- [x] **#8 — row ceilings**, in the query builder as both default and cap
+- [x] Render smoke test across 19 routes, detail screens included
 
-**Exit:** every screen works with no Supabase dependency anywhere. Verify
-`movement-orders.tsx` first — it holds a fifth of the queries.
+**Exit met.** Every screen renders with no Supabase dependency anywhere, and
+the driver, the SQL builder and the connection string appear only in the server
+bundle:
 
-**Risk:** the largest sprint, and the one where a missed call site shows up as a
-blank screen rather than an error. The render test is the mitigation.
+```
+npm run test:render     ALL 19 ROUTES RENDER
+npm run db:test         ALL DATABASE SUITES PASSED (52 checks)
+```
+
+**Still open:** the Vercel adapter. The Cloudflare target is gone and the build
+emits a Node server entry, but nothing has been deployed, so no claim is made
+that it runs on Vercel yet. That is the first thing to settle in sprint 6.
 
 ### Sprint 3 — Make approvals a chain
 
