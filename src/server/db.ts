@@ -132,10 +132,15 @@ export async function withContext<T>(
 // so the guarantee that a client cannot choose its tenant holds from the
 // first day of the cutover rather than from the day auth lands.
 // ---------------------------------------------------------------------
-let cached: RequestContext | null = null;
+// Cached, because this is a lookup on every request and the answer
+// almost never changes — but not forever. A warm serverless instance
+// outlives a re-provisioned tenant, and a context that can never be
+// re-read means restarting the process is the only way to correct it.
+const CONTEXT_TTL_MS = 60_000;
+let cached: { at: number; ctx: RequestContext } | null = null;
 
 export async function resolveContext(): Promise<RequestContext> {
-  if (cached) return cached;
+  if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) return cached.ctx;
 
   const slug = process.env.DEMO_TENANT_SLUG || 'template';
   const client = await getPool().connect();
@@ -158,13 +163,14 @@ export async function resolveContext(): Promise<RequestContext> {
     if (!row.user_id) {
       throw new Error(`tenant "${slug}" has no account; every policy requires a signed-in member`);
     }
-    cached = {
+    const ctx: RequestContext = {
       tenantId: row.tenant_id,
       userId: row.user_id,
       role: row.role || 'admin',
       isStaff: false,
     };
-    return cached;
+    cached = { at: Date.now(), ctx };
+    return ctx;
   } finally {
     client.release();
   }

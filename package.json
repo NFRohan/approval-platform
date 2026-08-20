@@ -10,9 +10,12 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run test:callsites && npm run test:render && npm run db:test",
+    "test:callsites": "node scripts/callsites-test.mjs",
+    "test:render": "node --env-file=.env scripts/render-test.mjs",
     "db:apply": "node --env-file=.env scripts/db-apply.mjs",
-    "db:test": "node --env-file=.env scripts/db-test.mjs",
-    "test:render": "node --env-file=.env scripts/render-test.mjs"
+    "db:test": "node --env-file=.env scripts/db-test.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
@@ -79,6 +82,7 @@
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "^1.4.0",
     "@types/node": "^22.16.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",

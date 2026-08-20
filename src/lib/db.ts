@@ -21,14 +21,22 @@ import { runData, type DataRequest, type DataResponse } from '@/lib/data-fn';
 type Row = Record<string, unknown>;
 type Filter = { col: string; op: string; val: unknown };
 
-export type Result<T = unknown> = {
+export type Result<T = any> = {
   data: T;
   error: { message: string; status?: number } | null;
   count?: number | null;
   truncated?: boolean;
 };
 
-class Query implements PromiseLike<Result<Row[] | Row | null>> {
+/**
+ * Two type parameters, because the shape of the result depends on the
+ * chain: a plain select yields rows, `single()` yields one or none.
+ * Carrying that in the type is what lets `.map(row => ...)` know what a
+ * row is — awaiting something typed `any` gives the callback no
+ * contextual type at all, which is how a screen ends up full of
+ * implicit anys.
+ */
+class Query<R = any, Out = R[] | null> implements PromiseLike<Result<Out>> {
   private body: {
     table: string;
     op: 'select' | 'insert' | 'update' | 'delete';
@@ -104,11 +112,18 @@ class Query implements PromiseLike<Result<Row[] | Row | null>> {
   // A second row is fetched deliberately: `single()` must be able to
   // tell "one" from "more than one" rather than silently taking the
   // first of many.
-  single()      { this.wantSingle = true; this.allowNone = false; this.body.limit = 2; return this; }
-  maybeSingle() { this.wantSingle = true; this.allowNone = true;  this.body.limit = 2; return this; }
+  single(): Query<R, R | null> {
+    this.wantSingle = true; this.allowNone = false; this.body.limit = 2;
+    return this as unknown as Query<R, R | null>;
+  }
+
+  maybeSingle(): Query<R, R | null> {
+    this.wantSingle = true; this.allowNone = true; this.body.limit = 2;
+    return this as unknown as Query<R, R | null>;
+  }
 
   // ---- run ---------------------------------------------------------
-  async run(): Promise<Result<Row[] | Row | null>> {
+  async run(): Promise<Result<Out>> {
     const request = { kind: 'query', ...this.body } as DataRequest;
     let res: DataResponse;
     try {
@@ -116,32 +131,40 @@ class Query implements PromiseLike<Result<Row[] | Row | null>> {
     } catch (err) {
       // A transport failure is still an error the call site can show,
       // not an exception it never expected.
-      return { data: null, error: { message: err instanceof Error ? err.message : String(err) } };
+      return { data: null as Out, error: { message: err instanceof Error ? err.message : String(err) } };
     }
 
-    if (res.error) return { data: null, error: res.error, count: null };
+    if (res.error) return { data: null as Out, error: res.error, count: null };
 
     if (this.body.countOnly) {
-      return { data: null, count: res.count ?? 0, error: null };
+      return { data: null as Out, count: res.count ?? 0, error: null };
     }
 
     const rows = (res.data as Row[]) ?? [];
 
     if (this.wantSingle) {
       if (rows.length > 1) {
-        return { data: null, error: { message: 'expected a single row', status: 409 } };
+        return { data: null as Out, error: { message: 'expected a single row', status: 409 } };
       }
       if (!rows.length && !this.allowNone) {
-        return { data: null, error: { message: 'no rows found', status: 404 } };
+        return { data: null as Out, error: { message: 'no rows found', status: 404 } };
       }
-      return { data: rows[0] ?? null, error: null };
+      return { data: (rows[0] ?? null) as Out, error: null };
     }
 
-    return { data: rows, error: null, truncated: res.truncated };
+    // A ceiling that drops rows without saying so is worse than no
+    // ceiling: the screen looks complete and is not. No caller reads
+    // this flag yet, so until one does, say it out loud.
+    if (res.truncated) {
+      console.warn(
+        `[db] ${this.body.table}: result may be incomplete — the row ceiling was reached`,
+      );
+    }
+    return { data: rows as Out, error: null, truncated: res.truncated };
   }
 
-  then<R1 = Result<Row[] | Row | null>, R2 = never>(
-    onfulfilled?: ((value: Result<Row[] | Row | null>) => R1 | PromiseLike<R1>) | null,
+  then<R1 = Result<Out>, R2 = never>(
+    onfulfilled?: ((value: Result<Out>) => R1 | PromiseLike<R1>) | null,
     onrejected?: ((reason: unknown) => R2 | PromiseLike<R2>) | null,
   ): PromiseLike<R1 | R2> {
     return this.run().then(onfulfilled, onrejected);
@@ -215,7 +238,7 @@ async function rpc(fn: string, args: Record<string, unknown>): Promise<Result<un
 }
 
 export const db = {
-  from: (table: string) => new Query(table),
+  from: <R = any>(table: string) => new Query<R>(table),
   rpc,
   channel: (name: string) => new Channel(name),
   removeChannel: (ch: { unsubscribe?: () => void } | null | undefined) => { ch?.unsubscribe?.(); },

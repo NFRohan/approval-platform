@@ -24,7 +24,12 @@ export type DataRequest =
   | { kind: 'rpc'; fn: string; args: Record<string, unknown> };
 
 export type DataResponse = {
-  data: unknown;
+  // Deliberately `any`. There are no generated row types behind this
+  // endpoint, so the honest description of what comes back is "whatever
+  // the whitelist let through" — and `unknown` fails the framework's
+  // serialization check besides. Call sites narrow it themselves.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any;
   count?: number | null;
   error: { message: string; status: number } | null;
   /** True when a select came back exactly at the row ceiling. */
@@ -42,6 +47,13 @@ function fail(err: unknown): DataResponse {
   // policy that stopped it.
   if (e?.code === '42501') {
     return { data: null, error: { message: 'not permitted', status: 403 } };
+  }
+  // P0001 is what a plain `raise exception` in our own functions uses.
+  // Those messages are written for the person on screen — "only 3
+  // available, 5 requested" — so they are passed through rather than
+  // flattened into "internal error".
+  if (e?.code === 'P0001' && e.message) {
+    return { data: null, error: { message: e.message, status: 409 } };
   }
   if (e?.code === '23505') {
     return { data: null, error: { message: 'already exists', status: 409 } };
@@ -67,9 +79,18 @@ export const runData = createServerFn({ method: 'POST' })
         const allowed = RPCS[body.fn];
         if (!allowed) throw new HttpError(400, `unknown function: ${body.fn}`);
 
-        // Named arguments, in the order the function declares them, so a
-        // caller cannot reorder or add any.
-        const params = allowed.map((name) => body.args?.[name] ?? null);
+        // Arguments are matched by name and passed in the order the
+        // function declares them, so a caller cannot reorder or add any.
+        // An omitted one is refused rather than bound as null: that is
+        // exactly how a call site spelling its arguments differently
+        // from the whitelist went unnoticed, silently transferring
+        // stock from nowhere to nowhere.
+        const params = allowed.map((name) => {
+          if (!body.args || !(name in body.args)) {
+            throw new HttpError(400, `${body.fn} requires ${name}`);
+          }
+          return body.args[name] ?? null;
+        });
         const holes = allowed.map((_, i) => `$${i + 1}`).join(', ');
         const rows = await withContext(ctx, async (client) =>
           (await client.query(`select public.${body.fn}(${holes}) as result`, params)).rows);
