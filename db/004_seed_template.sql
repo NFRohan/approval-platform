@@ -302,10 +302,10 @@ begin
 
   -- Stationery: a business card waiting on the line manager, a stamp
   -- and seal that made it all the way through.
-  select id into v_id from public.stationery_requests where kind = 'business_card' limit 1;
+  select id into v_id from public.stationery_requests where kind = 'business_card' and tenant_id = app.current_tenant() limit 1;
   perform public.build_approval_chain('stationery_request', v_id);
 
-  select id into v_id from public.stationery_requests where kind = 'stamp_seal' limit 1;
+  select id into v_id from public.stationery_requests where kind = 'stamp_seal' and tenant_id = app.current_tenant() limit 1;
   perform public.build_approval_chain('stationery_request', v_id);
   loop
     select id into v_step from public.approval_requests

@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
+import { startChain } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/notices/new")({
@@ -11,7 +12,6 @@ export const Route = createFileRoute("/notices/new")({
 });
 
 const CATEGORIES = ["General", "Policy", "Event", "IT", "HR"];
-const FIRST_APPROVER = "EMP-1134"; // Line Manager — first step of the notice approval chain
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7",
@@ -38,7 +38,6 @@ function NewNoticePage() {
         category,
         status: "pending",
         created_by: currentUser.employee_id,
-        current_approver_id: FIRST_APPROVER,
       })
       .select("id")
       .single();
@@ -47,6 +46,11 @@ function NewNoticePage() {
       setSaving(false);
       return;
     }
+    // The chain decides who sees it first, and sets current_approver_id
+    // as it goes.
+    const { error: chainErr } = await startChain("notice", data.id);
+    if (chainErr) toast.error("Created, but approvals were not set up: " + chainErr.message);
+
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "created",

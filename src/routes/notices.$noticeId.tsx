@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
+import { actOnSubject, openStep } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +13,6 @@ export const Route = createFileRoute("/notices/$noticeId")({
   component: NoticeDetailPage,
 });
 
-// Sequential approval chain: Line Manager -> HOD (played by EMP-0445 for this feature)
-const CHAIN = ["EMP-1134", "EMP-0445"];
 
 type Notice = {
   id: string; title: string; content: string; category: string | null;
@@ -61,13 +60,12 @@ function NoticeDetailPage() {
 
   async function handleApprove() {
     if (!notice) return;
-    const currentIndex = CHAIN.indexOf(notice.current_approver_id ?? "");
-    const isLastStep = currentIndex === CHAIN.length - 1;
-    const update = isLastStep
-      ? { status: "published", current_approver_id: null }
-      : { current_approver_id: CHAIN[currentIndex + 1] };
-    const { error } = await db.from("notices").update(update).eq("id", notice.id);
+    // Where this goes next is the chain's business, not this screen's.
+    // What used to be here was a two-element array of employee ids that
+    // had stopped existing, walked by index.
+    const { error } = await actOnSubject("notice", notice.id, "approve");
     if (error) { toast.error("Failed to approve: " + error.message); return; }
+    const isLastStep = !(await openStep("notice", notice.id));
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: isLastStep ? "published" : "approved",
@@ -81,7 +79,7 @@ function NoticeDetailPage() {
 
   async function handleReject() {
     if (!notice || !rejectReason.trim()) { toast.error("Please provide a reason"); return; }
-    const { error } = await db.from("notices").update({ status: "rejected", current_approver_id: null }).eq("id", notice.id);
+    const { error } = await actOnSubject("notice", notice.id, "reject", rejectReason);
     if (error) { toast.error("Failed to reject: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,

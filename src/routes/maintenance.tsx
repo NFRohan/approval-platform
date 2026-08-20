@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Plus, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
+import { actOnSubject, startChain, type Step } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/maintenance")({
@@ -29,6 +30,19 @@ type Req = {
   id: string; ref_number: string; requester_id: string; location: string; status: string;
   assigned_to: string | null; admin_comment: string | null; created_at: string;
   requesterName?: string; items?: ReqItem[];
+  // The step this request is waiting on, if any. Who may act is decided
+  // by owning that step, not by being one hardcoded administrator.
+  step?: Step | null;
+  tierLabel?: string;
+};
+
+// Divisional, then moderator, then admin — three tiers, each acting in
+// turn. The names come from the rules rather than being written here, so
+// changing the chain changes what the screen says.
+const TIER_NAMES: Record<string, string> = {
+  divisional: "Divisional review",
+  moderator: "Moderator review",
+  admin: "Admin review",
 };
 
 const inputStyle: React.CSSProperties = {
@@ -71,6 +85,9 @@ function NewRequestForm({ items, onCancel, onSaved }: { items: Item[]; onCancel:
     await db.from("maintenance_request_items").insert(
       validLines.map((l) => ({ request_id: req.id, item_id: l.itemId, quantity: parseInt(l.quantity, 10) || 1 })),
     );
+    const { error: chainErr } = await startChain("maintenance_request", req.id);
+    if (chainErr) toast.error("Raised, but approvals were not set up: " + chainErr.message);
+
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "created", entity_type: "maintenance_request", entity_id: req.id,
       detail: `Raised maintenance request ${ref}`,
@@ -133,18 +150,51 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
   const [assignedTo, setAssignedTo] = useState(req.assigned_to ?? "");
   const [actioning, setActioning] = useState(false);
 
-  async function updateStatus(status: string, extra: Record<string, unknown> = {}) {
+  // Approving is not setting a status. It is acting on this tier's step,
+  // which may hand the request to the next tier rather than finishing
+  // it — so the chain decides what the request becomes.
+  async function chainAct(action: "approve" | "reject" | "clarification") {
     setActioning(true);
-    const { error } = await db.from("maintenance_requests").update({ status, ...extra }).eq("id", req.id);
+    if (action === "approve" && (assignedTo.trim() || comment.trim())) {
+      await db.from("maintenance_requests")
+        .update({ assigned_to: assignedTo.trim() || null, admin_comment: comment.trim() || null })
+        .eq("id", req.id);
+    }
+    const { error } = await actOnSubject("maintenance_request", req.id, action, comment);
+    setActioning(false);
+    if (error) { toast.error(error.message); return; }
+
+    await db.from("activity_log").insert({
+      actor_id: currentUser.employee_id,
+      action: action === "approve" ? "approved" : action === "reject" ? "rejected" : "on_hold",
+      entity_type: "maintenance_request", entity_id: req.id,
+      detail: (action === "approve" ? "Approved " : action === "reject" ? "Rejected " : "Held ") + req.ref_number,
+    });
+    toast.success(
+      action === "approve" ? "Approved — passed to the next tier if there is one"
+      : action === "reject" ? "Rejected — the tiers above were not asked"
+      : "Held pending clarification",
+    );
+    onRefresh();
+  }
+
+  // What happens after the chain has finished: the work itself.
+  async function setFulfilment(status: string) {
+    setActioning(true);
+    const { error } = await db.from("maintenance_requests").update({ status }).eq("id", req.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
     await db.from("activity_log").insert({
-      actor_id: currentUser.employee_id, action: status === "on_hold" ? "on_hold" : status === "approved" || status === "rejected" ? status : "status_changed",
-      entity_type: "maintenance_request", entity_id: req.id, detail: `Set ${req.ref_number} to ${status}`,
+      actor_id: currentUser.employee_id, action: "status_changed",
+      entity_type: "maintenance_request", entity_id: req.id,
+      detail: `Set ${req.ref_number} to ${status}`,
     });
     toast.success(`Request marked ${status.replace("_", " ")}`);
     onRefresh();
   }
+
+  // Whoever owns the open step may act, whichever tier they are.
+  const myStep = req.step && req.step.approver_user_id === currentUser.employee_id ? req.step : null;
 
   return (
     <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7" }}>
@@ -152,6 +202,12 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <div className="flex items-center gap-2 mb-1"><Wrench size={13} style={{ color: "#A1A1AA" }} /><span style={{ fontWeight: 600, fontSize: 14.5, color: "#18181B" }}>{req.location}</span><StatusPill status={req.status} /></div>
+            {req.tierLabel && (
+              <div style={{ fontSize: 11.5, color: "#71717A", marginTop: 2 }}>
+                {req.tierLabel}
+                {req.step?.approver_user_id ? ` · with ${req.step.approver_user_id}` : ""}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: "#A1A1AA" }}>Ref: <span className="font-mono">{req.ref_number}</span> · {isAdmin ? `${req.requesterName ?? req.requester_id} · ` : ""}{fmt(req.created_at)}</div>
           </div>
           <span style={{ color: "#A1A1AA" }}>{expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
@@ -166,24 +222,24 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
           {req.admin_comment && (
             <div className="rounded-md mb-3" style={{ padding: "8px 12px", background: "#FFF8F0", border: "1px solid #FED7AA", fontSize: 13, color: "#7C2D12" }}>{req.admin_comment}</div>
           )}
-          {isAdmin && ["raised", "on_hold"].includes(req.status) && (
+          {myStep && (
             <div className="flex flex-col gap-2 pt-2" style={{ borderTop: "1px solid #F0F0F0" }}>
               <div className="flex gap-2">
                 <input style={{ ...inputStyle, fontSize: 12 }} placeholder="Assign vendor/technician" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} />
                 <input style={{ ...inputStyle, fontSize: 12 }} placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} />
               </div>
               <div className="flex gap-2">
-                <button disabled={actioning} onClick={() => updateStatus("approved", { assigned_to: assignedTo.trim() || null, admin_comment: comment.trim() || null })} className="rounded-md text-white font-medium" style={{ padding: "6px 12px", fontSize: 12.5, background: "#4F46E5", border: "none", cursor: "pointer" }}>Approve</button>
-                <button disabled={actioning} onClick={() => updateStatus("rejected", { admin_comment: comment.trim() || null })} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}>Reject</button>
-                <button disabled={actioning} onClick={() => updateStatus("on_hold", { admin_comment: comment.trim() || null })} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#52525B", border: "1px solid #E4E4E7", cursor: "pointer" }}>Hold</button>
+                <button disabled={actioning} onClick={() => chainAct("approve")} className="rounded-md text-white font-medium" style={{ padding: "6px 12px", fontSize: 12.5, background: "#4F46E5", border: "none", cursor: "pointer" }}>Approve</button>
+                <button disabled={actioning} onClick={() => chainAct("reject")} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}>Reject</button>
+                <button disabled={actioning} onClick={() => chainAct("clarification")} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#52525B", border: "1px solid #E4E4E7", cursor: "pointer" }}>Hold</button>
               </div>
             </div>
           )}
           {isAdmin && req.status === "approved" && (
-            <button disabled={actioning} onClick={() => updateStatus("in_progress")} className="rounded-md font-medium" style={{ padding: "6px 14px", fontSize: 12.5, background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", cursor: "pointer" }}>Mark In Progress</button>
+            <button disabled={actioning} onClick={() => setFulfilment("in_progress")} className="rounded-md font-medium" style={{ padding: "6px 14px", fontSize: 12.5, background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", cursor: "pointer" }}>Mark In Progress</button>
           )}
           {isAdmin && req.status === "in_progress" && (
-            <button disabled={actioning} onClick={() => updateStatus("completed")} className="rounded-md text-white font-medium" style={{ padding: "6px 14px", fontSize: 12.5, background: "#16A34A", border: "none", cursor: "pointer" }}>Mark Completed</button>
+            <button disabled={actioning} onClick={() => setFulfilment("completed")} className="rounded-md text-white font-medium" style={{ padding: "6px 14px", fontSize: 12.5, background: "#16A34A", border: "none", cursor: "pointer" }}>Mark Completed</button>
           )}
         </div>
       )}
@@ -203,15 +259,50 @@ function MaintenancePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: itemsData }, query] = await Promise.all([
+    // The open steps come first, because who may act and who may even
+    // see a request both depend on them.
+    const [{ data: itemsData }, { data: openSteps }, { data: tierRules }] = await Promise.all([
       db.from("maintenance_items").select("*").order("category"),
-      (isAdmin
-        ? db.from("maintenance_requests").select("*")
-        : db.from("maintenance_requests").select("*").eq("requester_id", currentUser.employee_id)
-      ).order("created_at", { ascending: false }),
+      db.from("approval_requests")
+        .select("id, maintenance_request_id, approver_user_id, step_index, status")
+        .eq("subject_type", "maintenance_request")
+        .in("status", ["pending", "clarification"]),
+      db.from("approval_rules")
+        .select("label, step_index")
+        .eq("subject_type", "maintenance_request")
+        .order("step_index"),
     ]);
     setItems((itemsData ?? []) as Item[]);
-    const reqRows = (query.data ?? []) as Req[];
+
+    const stepFor: Record<string, Step> = {};
+    (openSteps ?? []).forEach((st: Step & { maintenance_request_id: string | null }) => {
+      if (st.maintenance_request_id) stepFor[st.maintenance_request_id] = st;
+    });
+    const tierName = (i: number | null | undefined) => {
+      const rule = (tierRules ?? []).find((t: { step_index: number }) => t.step_index === i);
+      return rule?.label ? (TIER_NAMES[rule.label] ?? rule.label) : undefined;
+    };
+
+    const { data: reqData } = await (isAdmin
+      ? db.from("maintenance_requests").select("*")
+      : db.from("maintenance_requests").select("*").eq("requester_id", currentUser.employee_id)
+    ).order("created_at", { ascending: false });
+    let reqRows = (reqData ?? []) as Req[];
+
+    // An approver has to see what they must approve, even when somebody
+    // else raised it. Being the administrator decides who sees
+    // everything; owning the open step decides who sees this one.
+    if (!isAdmin) {
+      const missing = Object.entries(stepFor)
+        .filter(([, st]) => st.approver_user_id === currentUser.employee_id)
+        .map(([id]) => id)
+        .filter((id) => !reqRows.some((r) => r.id === id));
+      if (missing.length) {
+        const { data: extra } = await db.from("maintenance_requests").select("*").in("id", missing);
+        reqRows = [...reqRows, ...((extra ?? []) as Req[])]
+          .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      }
+    }
 
     const reqIds = reqRows.map((r) => r.id);
     const requesterIds = Array.from(new Set(reqRows.map((r) => r.requester_id)));
@@ -224,6 +315,8 @@ function MaintenancePage() {
     const itemMap: Record<string, string> = {};
     (itemsData ?? []).forEach((it) => { itemMap[it.id] = it.name; });
     reqRows.forEach((r) => {
+      r.step = stepFor[r.id] ?? null;
+      r.tierLabel = r.step ? tierName(r.step.step_index) : undefined;
       r.requesterName = empMap[r.requester_id];
       r.items = ((lineItems ?? []) as (ReqItem & { request_id: string })[])
         .filter((li) => li.request_id === r.id)

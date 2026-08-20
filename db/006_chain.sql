@@ -75,8 +75,12 @@ begin
     when 'stationery_request' then
       case p_state when 'open' then 'open' when 'done' then 'approved'
                    when 'rejected' then 'rejected' else 'open' end
+    -- Maintenance has a life after approval: once the chain finishes it
+    -- is approved, and only then does anyone mark it in progress or
+    -- completed. So a chain still running leaves it raised rather than
+    -- claiming work has started.
     when 'maintenance_request' then
-      case p_state when 'open' then 'in_progress' when 'done' then 'approved'
+      case p_state when 'open' then 'raised' when 'done' then 'approved'
                    when 'rejected' then 'rejected' else 'on_hold' end
   end;
 

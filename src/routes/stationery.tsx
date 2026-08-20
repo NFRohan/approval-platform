@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Stamp } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
+import { actOnSubject, openStep, startChain } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/stationery")({
@@ -18,7 +19,6 @@ type Req = {
   reason: string | null; comments: string | null; status: string; current_approver_id: string | null; created_at: string;
 };
 
-const CHAIN = ["EMP-1134", "EMP-0201"]; // Line Manager -> HRBP
 
 const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   open:      { label: "Open",      color: "#1D4ED8", bg: "#EFF6FF" },
@@ -92,10 +92,13 @@ function StationeryPage() {
       kind, requester_id: currentUser.employee_id, name: name.trim(), designation: designation.trim(),
       department: department.trim() || null, division: division.trim() || null, email: email.trim() || null,
       contact_number: contactNumber.trim() || null, reason: reason.trim(), comments: comments.trim() || null,
-      status: "open", current_approver_id: CHAIN[0],
+      status: "open",
     }).select("id").single();
     setSaving(false);
     if (error || !data) { toast.error("Failed to submit: " + (error?.message ?? "unknown")); return; }
+    const { error: chainErr } = await startChain("stationery_request", data.id);
+    if (chainErr) toast.error("Submitted, but approvals were not set up: " + chainErr.message);
+
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "created", entity_type: "stationery_request", entity_id: data.id,
       detail: `Requested a ${kind === "business_card" ? "business card" : "stamp seal"} for ${name.trim()}`,
@@ -106,13 +109,9 @@ function StationeryPage() {
   }
 
   async function handleApprove(req: Req) {
-    const currentIndex = CHAIN.indexOf(req.current_approver_id ?? "");
-    const isLastStep = currentIndex === CHAIN.length - 1;
-    const update = isLastStep
-      ? { status: "approved", current_approver_id: null }
-      : { current_approver_id: CHAIN[currentIndex + 1] };
-    const { error } = await db.from("stationery_requests").update(update).eq("id", req.id);
+    const { error } = await actOnSubject("stationery_request", req.id, "approve");
     if (error) { toast.error("Failed: " + error.message); return; }
+    const isLastStep = !(await openStep("stationery_request", req.id));
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "approved", entity_type: "stationery_request", entity_id: req.id,
       detail: `Approved ${req.kind === "business_card" ? "business card" : "stamp seal"} request for ${req.name}`,
@@ -122,7 +121,7 @@ function StationeryPage() {
   }
 
   async function handleReject(req: Req) {
-    const { error } = await db.from("stationery_requests").update({ status: "rejected", current_approver_id: null }).eq("id", req.id);
+    const { error } = await actOnSubject("stationery_request", req.id, "reject");
     if (error) { toast.error("Failed: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "rejected", entity_type: "stationery_request", entity_id: req.id,
