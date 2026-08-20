@@ -213,11 +213,21 @@ create index if not exists form_fields_template_idx
 -- configuration time, and that order is what submission copies onto the
 -- requests it creates.
 -- =====================================================================
+-- How a chain is configured, for every kind of subject.
+--
+-- A form submission's chain is configured per template; a notice,
+-- stationery or maintenance chain is configured once for the whole
+-- subject type, so form_template_id is null for those. One table rather
+-- than an array in the frontend per feature, which is what this
+-- replaces.
 create table if not exists public.approval_rules (
   id               uuid primary key default gen_random_uuid(),
   tenant_id        uuid not null default app.current_tenant()
                      references public.tenants(id) on delete cascade,
-  form_template_id uuid not null,
+  subject_type     text not null default 'form_submission'
+                     check (subject_type in ('form_submission','notice',
+                                             'stationery_request','maintenance_request')),
+  form_template_id uuid,
   approver_user_id text,
   deadline_days    integer not null default 7,
   is_auto_added    boolean not null default false,
@@ -332,11 +342,35 @@ create index if not exists submission_values_submission_idx
 -- same rung. Parallel approval at one rung would need a different shape,
 -- and the specification does not ask for it.
 -- ---------------------------------------------------------------------
+-- An approval step, on whatever is being approved.
+--
+-- Four things go through a chain — a form submission, a notice, a
+-- stationery request and a maintenance request — and they are separate
+-- tables, so the subject is held as an exclusive arc: four nullable
+-- references, exactly one of which is set. A single polymorphic
+-- (type, id) pair would have been shorter and would have thrown away
+-- every foreign key, which is what keeps a step and its subject inside
+-- the same tenant. subject_id and subject_type are generated from
+-- whichever column is populated, so queries and the step-order
+-- constraint have one column to work with.
 create table if not exists public.approval_requests (
   id               uuid primary key default gen_random_uuid(),
   tenant_id        uuid not null default app.current_tenant()
                      references public.tenants(id) on delete cascade,
-  submission_id    uuid not null,
+  submission_id            uuid,
+  notice_id                uuid,
+  stationery_request_id    uuid,
+  maintenance_request_id   uuid,
+  subject_id       uuid generated always as (
+                     coalesce(submission_id, notice_id,
+                              stationery_request_id, maintenance_request_id)) stored,
+  subject_type     text generated always as (
+                     case
+                       when submission_id          is not null then 'form_submission'
+                       when notice_id              is not null then 'notice'
+                       when stationery_request_id  is not null then 'stationery_request'
+                       when maintenance_request_id is not null then 'maintenance_request'
+                     end) stored,
   approver_user_id text,
   step_index       integer not null default 0,
   status           text not null default 'waiting'
@@ -349,11 +383,18 @@ create table if not exists public.approval_requests (
   reassigned_from  text,
   created_at       timestamptz not null default now(),
   unique (id, tenant_id),
-  unique (submission_id, step_index),
+  -- Deferrable: inserting a reviewer renumbers the steps above it, and
+  -- that shuffle passes through states where two rows briefly share an
+  -- index.
+  unique (subject_id, step_index) deferrable initially immediate,
+  check (num_nonnulls(submission_id, notice_id,
+                      stationery_request_id, maintenance_request_id) = 1),
   foreign key (submission_id, tenant_id)
     references public.form_submissions(id, tenant_id) on delete cascade,
   foreign key (approver_user_id, tenant_id)
     references public.employees(employee_id, tenant_id) on delete set null
+  -- The other three subjects are declared further down: their tables are
+  -- created after this one.
 );
 create index if not exists approval_requests_queue_idx
   on public.approval_requests(tenant_id, approver_user_id, status);
@@ -596,6 +637,127 @@ create table if not exists public.staff_audit (
   meta       jsonb not null default '{}'::jsonb
 );
 create index if not exists staff_audit_ts_idx on public.staff_audit(ts desc);
+
+-- =====================================================================
+-- Chain configuration for subjects that are not form submissions.
+-- =====================================================================
+alter table public.approval_rules
+  add column if not exists subject_type text not null default 'form_submission';
+alter table public.approval_rules alter column form_template_id drop not null;
+
+do $arl$
+begin
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_rules_subject_type_check') then
+    alter table public.approval_rules
+      add constraint approval_rules_subject_type_check
+      check (subject_type in ('form_submission','notice',
+                              'stationery_request','maintenance_request'));
+  end if;
+
+  -- A form chain names its template; the others must not.
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_rules_template_matches_subject') then
+    alter table public.approval_rules
+      add constraint approval_rules_template_matches_subject
+      check ((subject_type = 'form_submission') = (form_template_id is not null));
+  end if;
+end $arl$;
+
+-- =====================================================================
+-- The approval subject, for databases that already exist.
+--
+-- Everything here is what the create-table above already says; it runs
+-- as a no-op on a fresh database and brings an existing one to the same
+-- shape. The three foreign keys are declared here for both, because the
+-- tables they point at are created after approval_requests.
+-- =====================================================================
+alter table public.approval_requests
+  alter column submission_id drop not null;
+
+alter table public.approval_requests
+  add column if not exists notice_id              uuid,
+  add column if not exists stationery_request_id  uuid,
+  add column if not exists maintenance_request_id uuid;
+
+-- Generated, so the subject has one column whatever it is. Added after
+-- the columns they read.
+alter table public.approval_requests
+  add column if not exists subject_id uuid generated always as (
+    coalesce(submission_id, notice_id, stationery_request_id, maintenance_request_id)) stored;
+
+alter table public.approval_requests
+  add column if not exists subject_type text generated always as (
+    case
+      when submission_id          is not null then 'form_submission'
+      when notice_id              is not null then 'notice'
+      when stationery_request_id  is not null then 'stationery_request'
+      when maintenance_request_id is not null then 'maintenance_request'
+    end) stored;
+
+do $arq$
+begin
+  -- Step order is unique per subject now, not per submission.
+  if exists (select 1 from pg_constraint
+              where conname = 'approval_requests_submission_id_step_index_key') then
+    alter table public.approval_requests
+      drop constraint approval_requests_submission_id_step_index_key;
+  end if;
+
+  -- Must be deferrable; drop and rebuild one that is not.
+  if exists (select 1 from pg_constraint
+              where conname = 'approval_requests_subject_id_step_index_key'
+                and not condeferrable) then
+    alter table public.approval_requests
+      drop constraint approval_requests_subject_id_step_index_key;
+  end if;
+
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_requests_subject_id_step_index_key') then
+    alter table public.approval_requests
+      add constraint approval_requests_subject_id_step_index_key
+      unique (subject_id, step_index) deferrable initially immediate;
+  end if;
+
+  -- Exactly one subject. A step attached to nothing, or to two things,
+  -- is the failure this arc exists to make impossible.
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_requests_one_subject') then
+    alter table public.approval_requests
+      add constraint approval_requests_one_subject
+      check (num_nonnulls(submission_id, notice_id,
+                          stationery_request_id, maintenance_request_id) = 1);
+  end if;
+
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_requests_notice_fkey') then
+    alter table public.approval_requests
+      add constraint approval_requests_notice_fkey
+      foreign key (notice_id, tenant_id)
+      references public.notices(id, tenant_id) on delete cascade;
+  end if;
+
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_requests_stationery_fkey') then
+    alter table public.approval_requests
+      add constraint approval_requests_stationery_fkey
+      foreign key (stationery_request_id, tenant_id)
+      references public.stationery_requests(id, tenant_id) on delete cascade;
+  end if;
+
+  if not exists (select 1 from pg_constraint
+                  where conname = 'approval_requests_maintenance_fkey') then
+    alter table public.approval_requests
+      add constraint approval_requests_maintenance_fkey
+      foreign key (maintenance_request_id, tenant_id)
+      references public.maintenance_requests(id, tenant_id) on delete cascade;
+  end if;
+end $arq$;
+
+create index if not exists approval_requests_subject_idx
+  on public.approval_requests(tenant_id, subject_id, step_index);
+create index if not exists approval_requests_pending_idx
+  on public.approval_requests(tenant_id, approver_user_id, status);
 
 -- =====================================================================
 -- updated_at, maintained by the database.

@@ -177,14 +177,6 @@ begin
     join _m ms on ms.old = v.submission_id
    where v.tenant_id = v_tpl;
 
-  insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
-  insert into public.approval_requests (id, tenant_id, submission_id, approver_user_id, step_index, status, comment, acted_at, deadline_at, reassigned_from, created_at)
-  select m.new, v_new, ms.new, a.approver_user_id, a.step_index, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
-    from public.approval_requests a
-    join _m m  on m.old  = a.id
-    join _m ms on ms.old = a.submission_id
-   where a.tenant_id = v_tpl;
-
   insert into _m select id, gen_random_uuid() from public.items where tenant_id = v_tpl;
   insert into public.items (id, tenant_id, name, type)
   select m.new, v_new, i.name, i.type
@@ -258,6 +250,21 @@ begin
     join _m mr on mr.old = ri.request_id
     left join _m mi on mi.old = ri.item_id
    where ri.tenant_id = v_tpl;
+
+  -- Cloned last, because a step can hang off any of four subjects and
+  -- all of them must already be in the map. Each subject is joined
+  -- outward: exactly one is set on any given row, so the other three
+  -- resolve to null and the arc is preserved on the far side.
+  insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
+  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, status, comment, acted_at, deadline_at, reassigned_from, created_at)
+  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
+    from public.approval_requests a
+    join      _m m   on m.old   = a.id
+    left join _m ms  on ms.old  = a.submission_id
+    left join _m mn  on mn.old  = a.notice_id
+    left join _m mst on mst.old = a.stationery_request_id
+    left join _m mmr on mmr.old = a.maintenance_request_id
+   where a.tenant_id = v_tpl;
 
   -- entity_id is an untyped pointer at whatever the entry describes, so
   -- it is resolved through the same map. Anything not found keeps its
