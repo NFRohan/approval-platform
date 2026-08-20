@@ -1,3 +1,4 @@
+import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Link2, Loader2, Sparkles, User } from "lucide-react";
@@ -13,7 +14,6 @@ export const Route = createFileRoute("/forms/$formId")({
   component: FillFormPage,
 });
 
-const SUBMITTER = { employee_id: "EMP-2847", name: "Ahmed Rahman" };
 
 const SYSTEM_VARS: Record<string, number> = {
   DEPT_BUDGET: 1_000_000,
@@ -84,6 +84,10 @@ type WizardStep = {
 };
 
 function FillFormPage() {
+  // Whoever the viewer is acting as. This was a constant that named one
+  // person and carried somebody else's id, so the screen said one name
+  // and the submission recorded another.
+  const { currentUser } = useCurrentUser();
   const { formId } = Route.useParams();
   const navigate = useNavigate();
 
@@ -209,11 +213,24 @@ function FillFormPage() {
   }
 
   async function handleSubmit() {
+    // Every field, not the current step's. handleNext only ever checked
+    // the step being left, so the last step was never checked at all —
+    // and a single-step form was never checked once.
+    const missing = fields.filter(isMissing);
+    if (missing.length > 0) {
+      const offending = steps.findIndex((st) => st.fields.some((f) => f.id === missing[0].id));
+      // Land on the step that needs attention rather than naming a
+      // field the submitter cannot see from here.
+      if (offending >= 0 && offending !== stepIndex) setStepIndex(offending);
+      toast.error(`Please fill: ${missing.map((m) => m.label).join(", ")}`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { data: sub, error: subErr } = await db
         .from("form_submissions")
-        .insert({ form_template_id: formId, submitted_by: SUBMITTER.employee_id, status: "submitted" })
+        .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "submitted" })
         .select("id")
         .single();
       if (subErr || !sub) { toast.error("Failed to submit: " + (subErr?.message ?? "unknown")); return; }
@@ -288,7 +305,7 @@ function FillFormPage() {
         <span className="rounded-full" style={{ width: 10, height: 10, background: "var(--color-brand-500)", boxShadow: "0 0 0 4px color-mix(in oklab, var(--color-brand-500) 10%, transparent)" }} />
         <span className="font-semibold text-[14px]" style={{ color: "#18181B" }}>{formName}</span>
         <span className="ml-auto text-[12px]" style={{ color: "#71717A" }}>
-          Submitting as <span className="font-medium" style={{ color: "#18181B" }}>{SUBMITTER.name}</span>
+          Submitting as <span className="font-medium" style={{ color: "#18181B" }}>{currentUser.name}</span>
         </span>
       </div>
 

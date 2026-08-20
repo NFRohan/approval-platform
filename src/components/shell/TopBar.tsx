@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bell, ChevronRight, HelpCircle, Search } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
+import { db } from "@/lib/db";
+import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 // =====================================================================
 // The breadcrumb.
@@ -79,37 +81,79 @@ export function crumbsFor(pathname: string): Array<{ label: string; to?: string 
   return trail;
 }
 
-function NotificationsDropdown({ onClose }: { onClose: () => void }) {
-  const items = [
-    {
-      dot: "var(--color-brand-500)",
-      text: (
-        <>
-          <strong>Ahmed Rahman's</strong> exit clearance is <strong>On Hold</strong> — Admin requested
-          clarification
-        </>
-      ),
-      when: "2 hrs ago",
-    },
-    {
-      dot: "var(--color-success)",
-      text: (
-        <>
-          Your <strong>Gate Pass</strong> request was approved by <strong>Karim</strong>
-        </>
-      ),
-      when: "5 hrs ago",
-    },
-    {
-      dot: "var(--color-zinc-400)",
-      text: (
-        <>
-          New form template published: <strong>Stamp Seal Requisition v2</strong>
-        </>
-      ),
-      when: "Yesterday",
-    },
-  ];
+// =====================================================================
+// The bell.
+//
+// It said "3 new notifications" over three invented items, with a hard
+// "3" on the badge — a count that was a character in a string, above a
+// notifications table that has had rows in it all along.
+//
+// Nothing is delivered yet: no mail, no SMS. The dropdown says so rather
+// than implying a channel that does not exist. Delivery is next sprint.
+// =====================================================================
+type Note = {
+  id: string;
+  kind: string | null;
+  title: string | null;
+  body: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+const DOT: Record<string, string> = {
+  "submission.rejected": "var(--color-danger, #B91C1C)",
+  "submission.approved": "var(--color-success)",
+  "submission.completed": "var(--color-success)",
+};
+
+function ago(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 90) return "just now";
+  const minutes = seconds / 60;
+  if (minutes < 60) return `${Math.round(minutes)} min ago`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${Math.round(hours)} hr ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+export function useNotifications(employeeId: string) {
+  const [notes, setNotes] = useState<Note[] | null>(null);
+
+  const load = useCallback(async () => {
+    if (!employeeId) return;
+    const { data } = await db
+      .from("notifications")
+      .select("id, kind, title, body, read_at, created_at")
+      .eq("recipient_id", employeeId)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    setNotes((data ?? []) as Note[]);
+  }, [employeeId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const markAllRead = useCallback(async () => {
+    const unread = (notes ?? []).filter((n) => !n.read_at);
+    if (!unread.length) return;
+    await db.from("notifications")
+      .update({ read_at: new Date().toISOString() })
+      .in("id", unread.map((n) => n.id));
+    await load();
+  }, [notes, load]);
+
+  const unread = (notes ?? []).filter((n) => !n.read_at).length;
+  return { notes, unread, markAllRead };
+}
+
+function NotificationsDropdown({
+  onClose, notes, unread, markAllRead,
+}: {
+  onClose: () => void;
+  notes: Note[] | null;
+  unread: number;
+  markAllRead: () => void;
+}) {
   return (
     <div
       className="absolute right-0 bg-white rounded-xl border z-50"
@@ -124,33 +168,49 @@ function NotificationsDropdown({ onClose }: { onClose: () => void }) {
         className="flex items-center justify-between border-b"
         style={{ padding: "12px 16px", borderColor: "var(--color-zinc-200)" }}
       >
-        <div className="text-[13px] font-semibold text-zinc-900">3 new notifications</div>
+        <div className="text-[13px] font-semibold text-zinc-900">
+          {notes === null ? "Notifications"
+            : unread > 0 ? `${unread} unread`
+            : "Nothing unread"}
+        </div>
         <button
-          onClick={onClose}
+          onClick={() => { markAllRead(); onClose(); }}
           className="text-[11px] font-medium cursor-pointer"
           style={{ color: "var(--color-brand-600)" }}
         >
           Mark all read
         </button>
       </div>
-      {items.map((n, i) => (
+      {notes !== null && notes.length === 0 && (
+        <div style={{ padding: "16px", fontSize: 12.5, color: "var(--color-zinc-400)" }}>
+          Nothing here yet.
+        </div>
+      )}
+      {(notes ?? []).map((n, i) => (
         <div
           key={i}
           className="flex gap-2.5 items-start"
           style={{
             padding: "12px 16px",
-            borderBottom: i < 2 ? "1px solid var(--color-zinc-100)" : "none",
+            borderBottom: i < (notes ?? []).length - 1 ? "1px solid var(--color-zinc-100)" : "none",
+            background: n.read_at ? "transparent" : "var(--color-zinc-50)",
           }}
         >
           <span
             className="rounded-full shrink-0"
-            style={{ width: 8, height: 8, background: n.dot, marginTop: 6 }}
+            style={{
+              width: 8, height: 8, marginTop: 6,
+              background: n.read_at
+                ? "var(--color-zinc-300)"
+                : (DOT[n.kind ?? ""] ?? "var(--color-brand-500)"),
+            }}
           />
           <div className="min-w-0 flex-1">
             <div className="text-[12.5px] leading-relaxed" style={{ color: "var(--color-zinc-700)" }}>
-              {n.text}
+              <strong>{n.title}</strong>
+              {n.body ? <> — {n.body}</> : null}
             </div>
-            <div className="text-[11px] text-zinc-400 mt-1">{n.when}</div>
+            <div className="text-[11px] text-zinc-400 mt-1">{ago(n.created_at)}</div>
           </div>
         </div>
       ))}
@@ -158,9 +218,9 @@ function NotificationsDropdown({ onClose }: { onClose: () => void }) {
         className="text-center border-t"
         style={{ padding: "10px 16px", borderColor: "var(--color-zinc-200)" }}
       >
-        <a href="#" className="text-[12px] font-medium" style={{ color: "var(--color-brand-600)" }}>
-          View all notifications →
-        </a>
+        <span className="text-[11.5px]" style={{ color: "var(--color-zinc-400)" }}>
+          Shown here only — nothing is emailed or texted
+        </span>
       </div>
     </div>
   );
@@ -168,6 +228,8 @@ function NotificationsDropdown({ onClose }: { onClose: () => void }) {
 
 export function TopBar() {
   const [notifOpen, setNotifOpen] = useState(false);
+  const { currentUser } = useCurrentUser();
+  const { notes, unread, markAllRead } = useNotifications(currentUser.employee_id);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const crumbs = crumbsFor(pathname);
 
@@ -218,7 +280,7 @@ export function TopBar() {
           style={{ width: 36, height: 36 }}
         >
           <Bell size={16} style={{ color: "var(--color-zinc-700)" }} />
-          <span
+          {unread > 0 && <span
             className="absolute inline-flex items-center justify-center rounded-full text-white font-semibold border-2 border-white"
             style={{
               top: 4,
@@ -229,8 +291,8 @@ export function TopBar() {
               fontSize: 9.5,
             }}
           >
-            3
-          </span>
+            {unread}
+          </span>}
         </button>
         <button
           className="inline-flex items-center justify-center rounded-lg cursor-pointer"
@@ -241,7 +303,14 @@ export function TopBar() {
         <span className="mx-1" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
         <RoleSwitcher />
 
-        {notifOpen && <NotificationsDropdown onClose={() => setNotifOpen(false)} />}
+        {notifOpen && (
+          <NotificationsDropdown
+            onClose={() => setNotifOpen(false)}
+            notes={notes}
+            unread={unread}
+            markAllRead={markAllRead}
+          />
+        )}
       </div>
     </div>
   );

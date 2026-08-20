@@ -102,3 +102,84 @@ export async function actOnSubject(
     p_comment: comment?.trim() || null,
   });
 }
+
+// ---------------------------------------------------------------------
+// What is this step attached to?
+//
+// A step hangs off one of four things and each names itself differently
+// — a notice has a title, a maintenance request a reference number, a
+// submission the name of its template. Any screen showing a queue needs
+// the same answer, so it is worked out once here rather than per screen.
+// ---------------------------------------------------------------------
+export type SubjectRow = {
+  subject_id: string | null;
+  subject_type: string | null;
+  submission_id: string | null;
+};
+
+export type SubjectInfo = { label: string; requester?: string };
+
+export async function labelSubjects(rows: SubjectRow[]): Promise<Record<string, SubjectInfo>> {
+  const out: Record<string, SubjectInfo> = {};
+  const idsOf = (t: string) =>
+    Array.from(new Set(
+      rows.filter((r) => r.subject_type === t).map((r) => r.subject_id).filter(Boolean) as string[]));
+
+  const submissionIds = idsOf('form_submission');
+  if (submissionIds.length) {
+    const { data: subs } = await db
+      .from('form_submissions')
+      .select('id, form_template_id, submitted_by')
+      .in('id', submissionIds);
+    const templateIds = Array.from(new Set(
+      (subs ?? []).map((s) => s.form_template_id).filter(Boolean) as string[]));
+    const names: Record<string, string> = {};
+    if (templateIds.length) {
+      const { data: forms } = await db
+        .from('form_templates').select('id, name').in('id', templateIds);
+      (forms ?? []).forEach((f) => { names[f.id] = f.name; });
+    }
+    (subs ?? []).forEach((s) => {
+      out[s.id] = {
+        label: s.form_template_id ? (names[s.form_template_id] ?? 'Submission') : 'Submission',
+        requester: s.submitted_by ?? undefined,
+      };
+    });
+  }
+
+  const noticeIds = idsOf('notice');
+  if (noticeIds.length) {
+    const { data } = await db.from('notices').select('id, title, created_by').in('id', noticeIds);
+    (data ?? []).forEach((n) => {
+      out[n.id] = { label: n.title ?? 'Notice', requester: n.created_by ?? undefined };
+    });
+  }
+
+  const stationeryIds = idsOf('stationery_request');
+  if (stationeryIds.length) {
+    const { data } = await db
+      .from('stationery_requests').select('id, kind, name, requester_id').in('id', stationeryIds);
+    (data ?? []).forEach((r) => {
+      const kind = r.kind === 'business_card' ? 'Business card'
+        : r.kind === 'stamp_seal' ? 'Stamp and seal' : String(r.kind ?? 'Stationery');
+      out[r.id] = {
+        label: r.name ? `${kind} — ${r.name}` : kind,
+        requester: r.requester_id ?? undefined,
+      };
+    });
+  }
+
+  const maintenanceIds = idsOf('maintenance_request');
+  if (maintenanceIds.length) {
+    const { data } = await db
+      .from('maintenance_requests').select('id, ref_number, location, requester_id').in('id', maintenanceIds);
+    (data ?? []).forEach((m) => {
+      out[m.id] = {
+        label: [m.ref_number, m.location].filter(Boolean).join(' — ') || 'Maintenance',
+        requester: m.requester_id ?? undefined,
+      };
+    });
+  }
+
+  return out;
+}

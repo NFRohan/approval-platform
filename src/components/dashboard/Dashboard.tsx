@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+import { labelSubjects } from "@/lib/chain";
 import {
   ArrowLeftRight,
   Building2,
@@ -131,15 +133,128 @@ function StatCard({ s, loading }: { s: Stat; loading?: boolean }) {
 }
 
 type Recent = { form: string; sub: string | null; date: string; status: StatusKey; next: string };
-const RECENTS: Recent[] = [
-  { form: "Employee Exit Clearance", sub: "Ahmed Rahman", date: "2026-04-28", status: "on_hold", next: "Awaiting Admin clarification response" },
-  { form: "Weekend Office Access", sub: null, date: "2026-04-27", status: "in_progress", next: "Awaiting Line Manager" },
-  { form: "Business Card Requisition", sub: null, date: "2026-04-25", status: "completed", next: "—" },
-  { form: "Maintenance Request — AC (Level 7)", sub: null, date: "2026-04-20", status: "completed", next: "—" },
-  { form: "Gate Pass — IT Equipment", sub: null, date: "2026-04-15", status: "cancelled", next: "—" },
-];
 
-function RecentTable() {
+// ---------------------------------------------------------------------
+// Both panels below used to be constants: four invented approvals and
+// five invented submissions, with names and dates belonging to nobody.
+// They sat directly beneath stat cards that were already live, so the
+// numbers and the lists under them described different systems.
+// ---------------------------------------------------------------------
+function useRecentSubmissions(employeeId: string) {
+  const [rows, setRows] = useState<Recent[] | null>(null);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    let cancel = false;
+    (async () => {
+      const { data: subs } = await db
+        .from("form_submissions")
+        .select("id, form_template_id, status, submitted_at")
+        .eq("submitted_by", employeeId)
+        .order("submitted_at", { ascending: false })
+        .limit(5);
+      const list = subs ?? [];
+
+      const templateIds = Array.from(new Set(list.map((r) => r.form_template_id).filter(Boolean)));
+      const names: Record<string, string> = {};
+      if (templateIds.length) {
+        const { data: forms } = await db
+          .from("form_templates").select("id, name").in("id", templateIds);
+        (forms ?? []).forEach((f) => { names[f.id] = f.name; });
+      }
+
+      // "Next action" is whoever the chain is waiting on. Anything
+      // finished is waiting on nobody, and says so.
+      const nextBy: Record<string, string> = {};
+      if (list.length) {
+        const { data: steps } = await db
+          .from("approval_requests")
+          .select("submission_id, approver_user_id, status")
+          .in("submission_id", list.map((r) => r.id))
+          .in("status", ["pending", "clarification"]);
+        const approverIds = Array.from(new Set((steps ?? []).map((x) => x.approver_user_id).filter(Boolean)));
+        const who: Record<string, string> = {};
+        if (approverIds.length) {
+          const { data: emps } = await db
+            .from("employees").select("employee_id, name, designation").in("employee_id", approverIds);
+          (emps ?? []).forEach((e) => { who[e.employee_id] = e.designation || e.name; });
+        }
+        (steps ?? []).forEach((x) => {
+          if (!x.submission_id) return;
+          nextBy[x.submission_id] = x.status === "clarification"
+            ? `Clarification asked by ${who[x.approver_user_id] ?? x.approver_user_id}`
+            : `Awaiting ${who[x.approver_user_id] ?? x.approver_user_id}`;
+        });
+      }
+
+      if (cancel) return;
+      setRows(list.map((r) => ({
+        form: r.form_template_id ? (names[r.form_template_id] ?? "Submission") : "Submission",
+        sub: null,
+        date: r.submitted_at ? String(r.submitted_at).slice(0, 10) : "—",
+        status: (r.status ?? "in_progress") as StatusKey,
+        next: nextBy[r.id] ?? "—",
+      })));
+    })();
+    return () => { cancel = true; };
+  }, [employeeId]);
+
+  return rows;
+}
+
+type PendingItem = { id: string; who: string; initials: string; what: string; due: string; overdue: boolean };
+
+function usePendingForMe(employeeId: string) {
+  const [rows, setRows] = useState<PendingItem[] | null>(null);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    let cancel = false;
+    (async () => {
+      const { data: steps } = await db
+        .from("approval_requests")
+        .select("id, subject_id, subject_type, submission_id, deadline_at")
+        .eq("approver_user_id", employeeId)
+        .eq("status", "pending")
+        .order("deadline_at")
+        .limit(5);
+      const list = steps ?? [];
+      const subjects = list.length ? await labelSubjects(list) : {};
+
+      const requesterIds = Array.from(new Set(
+        Object.values(subjects).map((v) => v.requester).filter(Boolean) as string[]));
+      const people: Record<string, string> = {};
+      if (requesterIds.length) {
+        const { data: emps } = await db
+          .from("employees").select("employee_id, name").in("employee_id", requesterIds);
+        (emps ?? []).forEach((e) => { people[e.employee_id] = e.name; });
+      }
+
+      if (cancel) return;
+      const today = new Date().toDateString();
+      setRows(list.map((r) => {
+        const info = r.subject_id ? subjects[r.subject_id] : undefined;
+        const name = info?.requester ? (people[info.requester] ?? info.requester) : "—";
+        const when = r.deadline_at ? new Date(r.deadline_at) : null;
+        return {
+          id: r.id,
+          who: name,
+          initials: name.split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase() || "?",
+          what: info?.label ?? "A request",
+          due: !when ? "No deadline"
+            : when.toDateString() === today ? "Today"
+            : when.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+          overdue: when ? when.getTime() < Date.now() : false,
+        };
+      }));
+    })();
+    return () => { cancel = true; };
+  }, [employeeId]);
+
+  return rows;
+}
+
+function RecentTable({ rows }: { rows: Recent[] | null }) {
   return (
     <div
       className="bg-white rounded-xl overflow-hidden"
@@ -150,9 +265,9 @@ function RecentTable() {
         style={{ padding: "14px 18px", borderColor: "var(--color-zinc-200)" }}
       >
         <div className="text-[14px] font-semibold text-zinc-900">My Recent Submissions</div>
-        <a href="#" className="text-[12px] font-medium" style={{ color: "var(--color-brand-600)" }}>
+        <Link to="/submissions" className="text-[12px] font-medium" style={{ color: "var(--color-brand-600)" }}>
           View all →
-        </a>
+        </Link>
       </div>
       <div
         className="grid font-semibold uppercase text-zinc-500 border-b"
@@ -171,7 +286,15 @@ function RecentTable() {
         <span>Status</span>
         <span>Next action</span>
       </div>
-      {RECENTS.map((r, i) => (
+      {rows === null && (
+        <div style={{ padding: "18px", fontSize: 12.5, color: "var(--color-zinc-400)" }}>Loading…</div>
+      )}
+      {rows !== null && rows.length === 0 && (
+        <div style={{ padding: "18px", fontSize: 12.5, color: "var(--color-zinc-400)" }}>
+          Nothing submitted yet. Pick something from Available Forms.
+        </div>
+      )}
+      {(rows ?? []).map((r, i) => (
         <div
           key={i}
           className="grid items-center cursor-pointer transition-colors hover:bg-zinc-50"
@@ -179,7 +302,7 @@ function RecentTable() {
             gridTemplateColumns: "2fr 1fr 1fr 2fr",
             gap: 16,
             padding: "14px 18px",
-            borderBottom: i < RECENTS.length - 1 ? "1px solid var(--color-zinc-100)" : "none",
+            borderBottom: i < (rows ?? []).length - 1 ? "1px solid var(--color-zinc-100)" : "none",
             fontSize: 13,
           }}
         >
@@ -262,14 +385,8 @@ function QuickSubmit() {
   );
 }
 
-const PENDING = [
-  { who: "Faisal Ahmed", form: "Gate Pass (Non-Returnable) — IT Equipment", due: "Today", initials: "FA" },
-  { who: "Rina Parvin", form: "Weekend Office Access — RAOWA Club", due: "Tomorrow", initials: "RP" },
-  { who: "Tariq Hassan", form: "Maintenance Request — Water Purifier L4", due: "May 2", initials: "TH" },
-  { who: "Sumaiya Islam", form: "Business Card Requisition", due: "May 3", initials: "SI" },
-];
 
-function PendingApprovals({ pendingCount }: { pendingCount: number }) {
+function PendingApprovals({ pendingCount, rows }: { pendingCount: number; rows: PendingItem[] | null }) {
   return (
     <div
       className="bg-white rounded-xl overflow-hidden"
@@ -285,33 +402,41 @@ function PendingApprovals({ pendingCount }: { pendingCount: number }) {
             {pendingCount}
           </span>
         )}
-        <a href="#" className="ml-auto text-[12px] font-medium" style={{ color: "var(--color-brand-600)" }}>
+        <Link to="/approvals" className="ml-auto text-[12px] font-medium" style={{ color: "var(--color-brand-600)" }}>
           View queue →
-        </a>
+        </Link>
       </div>
-      {PENDING.map((p, i) => (
+      {rows === null && (
+        <div style={{ padding: "18px", fontSize: 12.5, color: "var(--color-zinc-400)" }}>Loading…</div>
+      )}
+      {rows !== null && rows.length === 0 && (
+        <div style={{ padding: "18px", fontSize: 12.5, color: "var(--color-zinc-400)" }}>
+          Nothing is waiting on you.
+        </div>
+      )}
+      {(rows ?? []).map((p, i) => (
         <div
-          key={i}
+          key={p.id}
           className="flex items-center gap-3 flex-wrap"
           style={{
             padding: "14px 18px",
-            borderBottom: i < PENDING.length - 1 ? "1px solid var(--color-zinc-100)" : "none",
+            borderBottom: i < (rows ?? []).length - 1 ? "1px solid var(--color-zinc-100)" : "none",
           }}
         >
           <Avatar initials={p.initials} size={32} />
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-medium text-zinc-900">{p.who}</div>
-            <div className="text-[11.5px] text-zinc-500 mt-0.5">{p.form}</div>
+            <div className="text-[11.5px] text-zinc-500 mt-0.5">{p.what}</div>
           </div>
           <div
             className="whitespace-nowrap"
             style={{
               fontSize: 11,
-              color: p.due === "Today" ? "#B45309" : "var(--color-zinc-500)",
-              fontWeight: p.due === "Today" ? 600 : 400,
+              color: p.overdue || p.due === "Today" ? "#B45309" : "var(--color-zinc-500)",
+              fontWeight: p.overdue || p.due === "Today" ? 600 : 400,
             }}
           >
-            Due: {p.due}
+            {p.overdue ? "Overdue: " : "Due: "}{p.due}
           </div>
           <div className="flex gap-1.5 shrink-0">
             <button
@@ -343,6 +468,8 @@ export function Dashboard() {
   const { currentUser } = useCurrentUser();
   const firstName = currentUser.name.split(" ")[0];
   const liveStats = useLiveStats(currentUser.employee_id);
+  const recents = useRecentSubmissions(currentUser.employee_id);
+  const pendingForMe = usePendingForMe(currentUser.employee_id);
   const loading = liveStats === null;
 
   const stats: Stat[] = [
@@ -376,12 +503,12 @@ export function Dashboard() {
       </div>
 
       <div className="mb-6">
-        <RecentTable />
+        <RecentTable rows={recents} />
       </div>
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr)" }}>
         <QuickSubmit />
-        <PendingApprovals pendingCount={liveStats?.pending ?? 0} />
+        <PendingApprovals pendingCount={liveStats?.pending ?? 0} rows={pendingForMe} />
       </div>
     </div>
   );
