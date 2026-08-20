@@ -129,18 +129,21 @@ list of 17.
 
 - [x] `db/001_schema.sql` — 25 tables, tenant column on every one, 33 composite
       foreign keys, approval chain redesigned with `step_index` and `waiting`
-- [x] `db/tests/isolation_test.sql` — proves a record cannot point across a
-      tenant boundary
-- [ ] `db/002_rls.sql` — replace all 43 `USING (true)` policies with real ones,
-      add the unprivileged `app_api` role
-- [ ] `db/003_provisioning.sql` — mint, extend, revoke, purge (ported from the
-      survey platform)
-- [ ] `db/004_seed_template.sql` — the demo data as a template tenant, with
-      employee identifiers already neutral
-- [ ] `db/tests/provisioning_test.sql`
+- [x] `db/002_rls.sql` — all 43 `USING (true)` policies replaced, plus the
+      unprivileged `app_api` role
+- [x] `db/003_provisioning.sql` — mint, extend, revoke, purge, reset password
+- [x] `db/004_seed_template.sql` — the demo data as a template tenant, already
+      de-branded
+- [x] Three suites — isolation, RLS, provisioning — and runners for both
+      applying and testing
 
-**Exit:** two prospects can be minted, each sees only their own data, and the
-isolation suite proves it.
+**Exit met.** Two evaluations can be minted, each sees only its own data, and
+52 checks prove it:
+
+```
+npm run db:apply     # 4 files, re-runnable
+npm run db:test      # ALL DATABASE SUITES PASSED (52 checks)
+```
 
 ### Sprint 2 — Cut over to our own API
 
@@ -276,17 +279,25 @@ Fine for a demo; flag it if genuinely separate infrastructure is wanted.
 
 ## 6. Status
 
-Sprint 1 is partly done: the schema is written, applied, re-runnable, and the
-isolation suite passes against it.
+**Sprint 1 is complete.** 52 checks across three suites, run against Neon.
 
 ```
-foreign keys: 58 total, 33 composite (id + tenant)
-tables missing tenant_id: none
-
-pass: the same employee id can exist in two tenants
-pass: a field cannot attach to another tenant's form
-pass: a tenant can reference its own identically-named employee
-pass: an approval cannot attach to another tenant's submission
-pass: one approver per rung of the chain
-pass: stock cannot be over-reserved
+isolation      6 checks   composite keys hold the tenant boundary
+rls           17 checks   the policies actually restrict
+provisioning  29 checks   minting, cloning, lifecycle, reset
 ```
+
+Two findings worth carrying forward.
+
+**The owning role bypasses row-level security.** `neondb_owner` carries
+BYPASSRLS on Neon, so it is exempt whatever FORCE says. That is what lets the
+seed write across tenants, and it means testing as the owner proves nothing.
+What makes the application safe is dropping to `app_api` for the life of each
+transaction, and the suites do the same.
+
+**Never run the suites through the pooler.** They carry fixture ids in
+session-level settings, and a transaction pooler hands one server connection to
+several clients — a setting left by one suite arrived in the next one's and
+silently disabled the policies consulting it. `db:test` now refuses a pooled
+endpoint. The application is unaffected: it sets context transaction-locally,
+which is what a pooler resets.
