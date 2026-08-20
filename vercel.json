@@ -1,4 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["sin1"]
+  "framework": null,
+  "buildCommand": "vite build",
+  "outputDirectory": "dist/client",
+  "regions": ["sin1"],
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }
