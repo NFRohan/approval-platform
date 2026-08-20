@@ -52,8 +52,8 @@ const BASE_AUTO_NOTIFY: AutoEntryWithRequires[] = [
 
 function formatSlabRange(min: number, max: number | null): string {
   const fmt = (n: number) => n.toLocaleString("en-IN");
-  if (max === null) return `Slab: > BDT ${fmt(min)}`;
-  return min === 0 ? `Slab: ≤ BDT ${fmt(max)}` : `Slab: BDT ${fmt(min)} – ${fmt(max)}`;
+  if (max === null) return `Band: above ${fmt(min)}`;
+  return min === 0 ? `Band: up to ${fmt(max)}` : `Band: ${fmt(min)} – ${fmt(max)}`;
 }
 
 function NotificationsStep() {
@@ -157,6 +157,7 @@ function NotificationsStep() {
       }
     >
       <PeopleStep
+        formTemplateId={templateId}
         title="Who should be notified?"
         subtitle="These people receive a notification each time the form is submitted or progresses."
         autoEntries={autoNotify}

@@ -185,6 +185,7 @@ function ApproversStep() {
       }
     >
       <PeopleStep
+        formTemplateId={templateId}
         title="Who needs to approve this form?"
         subtitle="Approvers act in order. Auto-added rules come from the field configuration and cannot be removed."
         autoEntries={autoApprovers}

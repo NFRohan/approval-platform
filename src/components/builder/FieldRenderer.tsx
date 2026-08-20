@@ -359,7 +359,7 @@ function FieldInput({
         style={inputStyle}
         value={(value as string) ?? ""}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={field.placeholder ?? (k === "money" ? "0.00 BDT" : "0")}
+        placeholder={field.placeholder ?? (k === "money" ? "0.00" : "0")}
       />
     );
   }

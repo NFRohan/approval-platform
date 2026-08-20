@@ -1,3 +1,4 @@
+import { SlabTable } from "./SlabTable";
 import { useEffect, useRef, useState } from "react";
 import { Settings, Trash } from "lucide-react";
 import type { PlacedField } from "./types";
@@ -44,47 +45,6 @@ const numInputStyle: React.CSSProperties = {
   boxSizing: "border-box",
   fontFamily: "inherit",
 };
-
-const SLABS = [
-  { from: "0", to: "100,000", approver: "Rafiqul Islam", title: "Finance Controller" },
-  { from: "100,001", to: "500,000", approver: "Dilruba Akter", title: "Head of Finance" },
-  { from: "500,001", to: "2,000,000", approver: "Shamsul Huda", title: "CFO" },
-  { from: "2,000,001", to: "∞", approver: "Board Approval", title: "— (committee)" },
-];
-
-function SlabTable() {
-  return (
-    <div style={{ padding: "12px 16px 16px" }}>
-      <p style={{ fontSize: 11.5, color: "#71717A", lineHeight: 1.45, margin: "0 0 12px" }}>
-        Amount entered determines which finance approver is auto-added to the approval chain.
-      </p>
-      <div className="rounded-lg overflow-hidden" style={{ border: "1px solid #E4E4E7" }}>
-        <div
-          className="grid uppercase font-semibold"
-          style={{ gridTemplateColumns: "1fr 1fr 1.4fr", background: "#FAFAFA", borderBottom: "1px solid #E4E4E7", padding: "8px 10px", fontSize: 10, letterSpacing: "0.06em", color: "#71717A", gap: 8 }}
-        >
-          <span>From (BDT)</span>
-          <span>To (BDT)</span>
-          <span>Approver</span>
-        </div>
-        {SLABS.map((s, i) => (
-          <div
-            key={i}
-            className="grid items-center"
-            style={{ gridTemplateColumns: "1fr 1fr 1.4fr", padding: "10px 10px", gap: 8, borderBottom: i === SLABS.length - 1 ? "none" : "1px solid #F4F4F5", fontSize: 11.5 }}
-          >
-            <span className="font-mono" style={{ color: "#3F3F46" }}>{s.from}</span>
-            <span className="font-mono" style={{ color: "#3F3F46" }}>→ {s.to}</span>
-            <div>
-              <div className="font-medium" style={{ color: "#18181B" }}>{s.approver}</div>
-              <div style={{ color: "#A1A1AA", fontSize: 10.5 }}>{s.title}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function OptionsEditor({ options, onChange }: { options: string[]; onChange: (opts: string[]) => void }) {
   const [text, setText] = useState(() => options.join("\n"));
@@ -392,7 +352,7 @@ function ValidationTab({ field, onChange }: { field: PlacedField; onChange: (p: 
       {isNumeric && (
         <div className="flex flex-col gap-1.5">
           <span style={{ fontSize: 11.5, fontWeight: 500, color: "#3F3F46" }}>
-            Value range {field.kind === "money" ? "(BDT)" : ""}
+            Value range
           </span>
           <div className="flex items-center gap-3">
             <div className="flex flex-col gap-1">
@@ -459,7 +419,7 @@ function ValidationTab({ field, onChange }: { field: PlacedField; onChange: (p: 
   );
 }
 
-function RoutingTab({ field }: { field: PlacedField }) {
+function RoutingTab({ field, formTemplateId }: { field: PlacedField; formTemplateId?: string | null }) {
   if (field.kind === "money") {
     return (
       <div>
@@ -470,7 +430,7 @@ function RoutingTab({ field }: { field: PlacedField }) {
             </span>
           </div>
         </div>
-        <SlabTable />
+        <SlabTable formTemplateId={formTemplateId} />
       </div>
     );
   }
@@ -492,11 +452,13 @@ export function ConfigPanel({
   onChange,
   onDelete,
   allFields = [],
+  formTemplateId,
 }: {
   field: PlacedField | null;
   onChange: (patch: Partial<PlacedField>) => void;
   onDelete: () => void;
   allFields?: PlacedField[];
+  formTemplateId?: string | null;
 }) {
   const [tab, setTab] = useState<Tab>("field");
 
@@ -555,7 +517,7 @@ export function ConfigPanel({
           <div className="scroll-thin flex-1 overflow-auto">
             {tab === "field" && <FieldTab field={field} allFields={allFields} onChange={onChange} onDelete={onDelete} />}
             {tab === "validation" && <ValidationTab field={field} onChange={onChange} />}
-            {tab === "routing" && <RoutingTab field={field} />}
+            {tab === "routing" && <RoutingTab field={field} formTemplateId={formTemplateId} />}
           </div>
         </>
       )}

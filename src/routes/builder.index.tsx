@@ -415,6 +415,7 @@ function BuilderPage() {
               onChange={updateSelected}
               onDelete={() => selectedField && deleteField(selectedField.id)}
               allFields={fields}
+              formTemplateId={templateId}
             />
           </>
         )}

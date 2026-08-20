@@ -115,7 +115,7 @@ export const DEFAULT_LABELS: Record<FieldKind, string> = {
   text: "Text Field",
   textarea: "Long Text",
   number: "Number Field",
-  money: "Amount (BDT)",
+  money: "Amount",
   date: "Date",
   select: "Choose an option",
   file: "Upload Document",

@@ -305,7 +305,7 @@ function renderPreview(field: PlacedField) {
     return (
       <input
         style={inputStyle}
-        placeholder={field.placeholder || (k === "money" ? "0.00 BDT" : "0")}
+        placeholder={field.placeholder || (k === "money" ? "0.00" : "0")}
         readOnly
       />
     );

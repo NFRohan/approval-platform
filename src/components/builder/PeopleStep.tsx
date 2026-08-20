@@ -1,3 +1,4 @@
+import { SlabBreakdown } from "./SlabTable";
 import { useEffect, useState } from "react";
 import { DollarSign, Lock, Plus, X } from "lucide-react";
 import { db } from "@/lib/db";
@@ -34,50 +35,9 @@ type Props = {
   showDeadline: boolean;
   manual: ManualEntry[];
   onManualChange: (next: ManualEntry[]) => void;
+  formTemplateId?: string | null;
 };
 
-const SLAB_ROWS = [
-  { range: "0 – 1,00,000 BDT", approver: "Rafiqul Islam", title: "Finance Controller" },
-  { range: "1,00,001 – 5,00,000 BDT", approver: "Dilruba Akter", title: "Head of Finance" },
-  { range: "5,00,001 – 20,00,000 BDT", approver: "Shamsul Huda", title: "CFO" },
-  { range: "> 20,00,000 BDT", approver: "Board Committee", title: "Committee approval" },
-];
-
-function SlabBreakdown() {
-  return (
-    <div
-      className="rounded-lg overflow-hidden mt-3"
-      style={{ border: "1px solid #FDE68A", background: "#FFFBEB" }}
-    >
-      <div
-        className="flex items-center gap-2"
-        style={{ padding: "8px 12px", borderBottom: "1px solid #FDE68A" }}
-      >
-        <DollarSign size={12} style={{ color: "#B45309" }} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#B45309", letterSpacing: "0.04em" }}>
-          SLAB ROUTING — approver resolved at submission time
-        </span>
-      </div>
-      <div>
-        {SLAB_ROWS.map((row, i) => (
-          <div
-            key={i}
-            className="flex items-center justify-between gap-4"
-            style={{
-              padding: "8px 12px",
-              borderBottom: i < SLAB_ROWS.length - 1 ? "1px solid #FEF3C7" : "none",
-              fontSize: 11.5,
-            }}
-          >
-            <span className="font-mono" style={{ color: "#92400E", minWidth: 160 }}>{row.range}</span>
-            <span style={{ color: "#18181B", fontWeight: 500 }}>{row.approver}</span>
-            <span style={{ color: "#A1A1AA" }}>{row.title}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function PeopleStep({
   title,
@@ -86,6 +46,7 @@ export function PeopleStep({
   showDeadline,
   manual,
   onManualChange,
+  formTemplateId,
 }: Props) {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
@@ -192,7 +153,7 @@ export function PeopleStep({
                   <Lock size={13} style={{ color: "#D4D4D8" }} />
                 </div>
 
-                {e.slab && <SlabBreakdown />}
+                {e.slab && <SlabBreakdown formTemplateId={formTemplateId} />}
               </div>
             ))}
           </div>
