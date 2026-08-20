@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Calendar, CalendarRange, ChevronDown, FileUp, FunctionSquare, Link2, ListChecks, Mail, Pen, Phone, Sparkles, Star, User, Zap } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import type { FieldKind, PlacedField } from "./types";
 import { PALETTE, isEmbedded, isSmart, isLayout } from "./palette";
 
@@ -544,7 +544,7 @@ function EmployeeInput({
   async function lookup() {
     if (!id.trim()) return;
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await db
       .from("employees")
       .select("employee_id, name, designation, department")
       .eq("employee_id", id.trim())

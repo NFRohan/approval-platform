@@ -15,7 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Avatar } from "@/components/shell/Avatar";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 
 type StatusKey = "submitted" | "in_progress" | "on_hold" | "completed" | "cancelled";
 
@@ -74,15 +74,15 @@ function useLiveStats(employeeId: string) {
         { count: completedMonth },
         { count: availableForms },
       ] = await Promise.all([
-        supabase.from("approval_requests").select("*", { count: "exact", head: true })
+        db.from("approval_requests").select("*", { count: "exact", head: true })
           .eq("approver_user_id", employeeId).eq("status", "pending"),
-        supabase.from("approval_requests").select("*", { count: "exact", head: true })
+        db.from("approval_requests").select("*", { count: "exact", head: true })
           .eq("approver_user_id", employeeId).eq("status", "pending").lt("deadline_at", now.toISOString()),
-        supabase.from("form_submissions").select("status")
+        db.from("form_submissions").select("status")
           .eq("submitted_by", employeeId).in("status", ["submitted", "in_progress", "on_hold"]),
-        supabase.from("form_submissions").select("*", { count: "exact", head: true })
+        db.from("form_submissions").select("*", { count: "exact", head: true })
           .eq("submitted_by", employeeId).eq("status", "completed").gte("submitted_at", monthStart),
-        supabase.from("form_templates").select("*", { count: "exact", head: true }).eq("status", "published"),
+        db.from("form_templates").select("*", { count: "exact", head: true }).eq("status", "published"),
       ]);
 
       if (cancel) return;

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useCurrentUser, type CurrentUser } from "@/contexts/CurrentUserContext";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 
 function BrandMark({ size = 34, style }: { size?: number; style?: SVGProps<SVGSVGElement>["style"] }) {
   return (
@@ -218,7 +218,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
     }
     let active = true;
     const fetchCount = async () => {
-      const { count } = await supabase
+      const { count } = await db
         .from("approval_requests")
         .select("id", { count: "exact", head: true })
         .eq("approver_user_id", currentUser.employee_id)
@@ -227,7 +227,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
     };
     fetchCount();
 
-    const channel = supabase
+    const channel = db
       .channel(`sidebar-approvals-${currentUser.employee_id}`)
       .on(
         "postgres_changes",
@@ -245,7 +245,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
 
     return () => {
       active = false;
-      supabase.removeChannel(channel);
+      db.removeChannel(channel);
     };
   }, [currentUser.employee_id]);
 
@@ -257,7 +257,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
     }
     let active = true;
     (async () => {
-      const { data } = await supabase
+      const { data } = await db
         .from("form_submissions")
         .select("id, status, submitted_at")
         .eq("submitted_by", currentUser.employee_id)

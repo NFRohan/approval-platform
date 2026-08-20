@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { FileText, Download } from "lucide-react";
@@ -39,7 +39,7 @@ function SubmissionsPage() {
     let active = true;
     (async () => {
       setLoading(true);
-      const { data: subs } = await supabase
+      const { data: subs } = await db
         .from("form_submissions")
         .select("id, status, submitted_at, form_template_id")
         .eq("submitted_by", currentUser.employee_id)
@@ -50,7 +50,7 @@ function SubmissionsPage() {
       );
       let formsMap: Record<string, string> = {};
       if (formIds.length) {
-        const { data: forms } = await supabase
+        const { data: forms } = await db
           .from("form_templates")
           .select("id, name")
           .in("id", formIds);

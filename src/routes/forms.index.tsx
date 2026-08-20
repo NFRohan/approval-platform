@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/forms/")({
@@ -31,7 +31,7 @@ function FormsPage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await db
         .from("form_templates")
         .select("id, name, status, category, created_at")
         .eq("status", "published")
@@ -121,7 +121,7 @@ function FormCard({
 
   async function handleDelete() {
     setDeleting(true);
-    await supabase.from("form_templates").update({ status: "draft" }).eq("id", form.id);
+    await db.from("form_templates").update({ status: "draft" }).eq("id", form.id);
     setDeleting(false);
     onDeleted();
   }

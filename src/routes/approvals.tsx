@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useMatchRoute } from "@tanstack/react-ro
 import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Inbox, Clock } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import {
   Dialog,
@@ -156,7 +156,7 @@ function ApprovalsInbox() {
     const today = new Date().toISOString().slice(0, 10);
 
     // Load active delegations TO the current user (with optional form scope)
-    const { data: delegations } = await supabase
+    const { data: delegations } = await db
       .from("delegation_rules")
       .select("delegator_id, delegate_id, form_template_ids")
       .eq("delegate_id", currentUser.employee_id)
@@ -171,7 +171,7 @@ function ApprovalsInbox() {
 
     let delegatorNames: Record<string, string> = {};
     if (delegatorIds.length > 0) {
-      const { data: delEmps } = await supabase
+      const { data: delEmps } = await db
         .from("employees")
         .select("employee_id, name")
         .in("employee_id", delegatorIds);
@@ -180,7 +180,7 @@ function ApprovalsInbox() {
 
     const approverIds = [currentUser.employee_id, ...delegatorIds];
 
-    const { data: appr, error } = await supabase
+    const { data: appr, error } = await db
       .from("approval_requests")
       .select("*")
       .in("approver_user_id", approverIds)
@@ -209,7 +209,7 @@ function ApprovalsInbox() {
     let empMap: Record<string, { name: string; department: string | null }> = {};
 
     if (submissionIds.length) {
-      const { data: subs } = await supabase
+      const { data: subs } = await db
         .from("form_submissions")
         .select("id, form_template_id, submitted_at, submitted_by")
         .in("id", submissionIds);
@@ -223,7 +223,7 @@ function ApprovalsInbox() {
         new Set((subs || []).map((s) => s.submitted_by).filter(Boolean) as string[]),
       );
       if (formIds.length) {
-        const { data: forms } = await supabase
+        const { data: forms } = await db
           .from("form_templates")
           .select("id, name")
           .in("id", formIds);
@@ -232,7 +232,7 @@ function ApprovalsInbox() {
         });
       }
       if (submitterIds.length) {
-        const { data: emps } = await supabase
+        const { data: emps } = await db
           .from("employees")
           .select("employee_id, name, department")
           .in("employee_id", submitterIds);
@@ -279,7 +279,7 @@ function ApprovalsInbox() {
     }
     setExpanded(row.id);
     if (row.submission_id && !values[row.submission_id]) {
-      const { data } = await supabase
+      const { data } = await db
         .from("submission_values")
         .select("field_name, value")
         .eq("submission_id", row.submission_id);
@@ -305,35 +305,35 @@ function ApprovalsInbox() {
     newStatus: "approved" | "rejected" | "clarification",
   ) => {
     if (newStatus === "rejected") {
-      await supabase
+      await db
         .from("form_submissions")
         .update({ status: "rejected" })
         .eq("id", submissionId);
       return;
     }
     if (newStatus === "clarification") {
-      await supabase
+      await db
         .from("form_submissions")
         .update({ status: "on_hold" })
         .eq("id", submissionId);
       return;
     }
     // approved → check siblings
-    const { data: siblings } = await supabase
+    const { data: siblings } = await db
       .from("approval_requests")
       .select("id, status")
       .eq("submission_id", submissionId);
     const allApproved = (siblings || []).every(
       (s) => s.id === actingRowId || s.status === "approved",
     );
-    await supabase
+    await db
       .from("form_submissions")
       .update({ status: allApproved ? "completed" : "in_progress" })
       .eq("id", submissionId);
   };
 
   const handleApprove = async (row: Row) => {
-    const { error } = await supabase
+    const { error } = await db
       .from("approval_requests")
       .update({ status: "approved", acted_at: new Date().toISOString() })
       .eq("id", row.id);
@@ -343,7 +343,7 @@ function ApprovalsInbox() {
     }
     if (row.submission_id) {
       await recomputeSubmissionStatus(row.submission_id, row.id, "approved");
-      await supabase.from("activity_log").insert({
+      await db.from("activity_log").insert({
         actor_id: currentUser.employee_id,
         action: "approved",
         entity_type: "form_submission",
@@ -363,7 +363,7 @@ function ApprovalsInbox() {
     }
     setSubmitting(true);
     const newStatus = modal.kind === "reject" ? "rejected" : "clarification";
-    const { error } = await supabase
+    const { error } = await db
       .from("approval_requests")
       .update({
         status: newStatus,
@@ -378,7 +378,7 @@ function ApprovalsInbox() {
     }
     if (modal.row.submission_id) {
       await recomputeSubmissionStatus(modal.row.submission_id, modal.row.id, newStatus);
-      await supabase.from("activity_log").insert({
+      await db.from("activity_log").insert({
         actor_id: currentUser.employee_id,
         action: newStatus === "rejected" ? "rejected" : "clarification_requested",
         entity_type: "form_submission",

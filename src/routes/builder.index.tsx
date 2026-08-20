@@ -11,7 +11,7 @@ import {
 import { arrayMove } from "@dnd-kit/sortable";
 import { Code2, Download, Eye, Upload } from "lucide-react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { FieldPalette } from "@/components/builder/FieldPalette";
 import { Canvas } from "@/components/builder/Canvas";
@@ -89,7 +89,7 @@ function BuilderPage() {
     let cancelled = false;
     (async () => {
       if (search.templateId) {
-        const { data } = await supabase
+        const { data } = await db
           .from("form_templates")
           .select("id, name")
           .eq("id", search.templateId)
@@ -97,7 +97,7 @@ function BuilderPage() {
         if (cancelled || !data) return;
         setTemplateId(data.id);
         setFormName(data.name);
-        const { data: existing } = await supabase
+        const { data: existing } = await db
           .from("form_fields")
           .select("*")
           .eq("form_template_id", data.id)
@@ -125,7 +125,7 @@ function BuilderPage() {
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("form_templates")
         .insert({
           name: DEFAULT_FORM_NAME,
@@ -154,7 +154,7 @@ function BuilderPage() {
 
   async function persistInsert(field: PlacedField) {
     if (!templateId) return;
-    const { error } = await supabase.from("form_fields").insert({
+    const { error } = await db.from("form_fields").insert({
       id: field.id,
       form_template_id: templateId,
       field_name: field.label,
@@ -169,7 +169,7 @@ function BuilderPage() {
 
   async function persistUpdate(field: PlacedField) {
     if (!templateId) return;
-    const { error } = await supabase
+    const { error } = await db
       .from("form_fields")
       .update({
         field_name: field.label,
@@ -182,13 +182,13 @@ function BuilderPage() {
   }
 
   async function persistDelete(id: string) {
-    await supabase.from("form_fields").delete().eq("id", id);
+    await db.from("form_fields").delete().eq("id", id);
   }
 
   async function persistReorder(next: PlacedField[]) {
     if (!templateId) return;
     await Promise.all(
-      next.map((f, i) => supabase.from("form_fields").update({ order_index: i }).eq("id", f.id)),
+      next.map((f, i) => db.from("form_fields").update({ order_index: i }).eq("id", f.id)),
     );
   }
 
@@ -309,7 +309,7 @@ function BuilderPage() {
     }
 
     // Delete existing fields
-    await supabase.from("form_fields").delete().eq("form_template_id", templateId);
+    await db.from("form_fields").delete().eq("form_template_id", templateId);
 
     // Assign fresh IDs and order
     const newFields: PlacedField[] = parsed.fields.map((f, i) => ({
@@ -333,7 +333,7 @@ function BuilderPage() {
           validation: field.validation,
         },
       }));
-      const { error } = await supabase.from("form_fields").insert(rows);
+      const { error } = await db.from("form_fields").insert(rows);
       if (error) {
         toast.error("Failed to import: " + error.message);
         return;
@@ -343,7 +343,7 @@ function BuilderPage() {
     // Update form name from file if provided
     if (parsed.formName && parsed.formName !== formName) {
       setFormName(parsed.formName);
-      await supabase.from("form_templates").update({ name: parsed.formName }).eq("id", templateId);
+      await db.from("form_templates").update({ name: parsed.formName }).eq("id", templateId);
     }
 
     setFields(newFields);
@@ -359,7 +359,7 @@ function BuilderPage() {
       onFormNameChange={setFormName}
       onFormNameBlur={async () => {
         if (!templateId) return;
-        await supabase.from("form_templates").update({ name: formName }).eq("id", templateId);
+        await db.from("form_templates").update({ name: formName }).eq("id", templateId);
         setSavedAgo("just now");
       }}
       savedAgo={savedAgo}

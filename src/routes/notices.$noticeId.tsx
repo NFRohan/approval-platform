@@ -2,7 +2,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,17 +38,17 @@ function NoticeDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: n } = await supabase.from("notices").select("*").eq("id", noticeId).maybeSingle();
+    const { data: n } = await db.from("notices").select("*").eq("id", noticeId).maybeSingle();
     setNotice(n as Notice | null);
     if (n?.created_by) {
-      const { data: emp } = await supabase.from("employees").select("name").eq("employee_id", n.created_by).maybeSingle();
+      const { data: emp } = await db.from("employees").select("name").eq("employee_id", n.created_by).maybeSingle();
       setCreatorName(emp?.name ?? n.created_by);
     }
-    const { data: c } = await supabase.from("notice_comments").select("*").eq("notice_id", noticeId).order("created_at");
+    const { data: c } = await db.from("notice_comments").select("*").eq("notice_id", noticeId).order("created_at");
     const rows = (c ?? []) as Comment[];
     const authorIds = Array.from(new Set(rows.map((r) => r.author_id).filter(Boolean) as string[]));
     if (authorIds.length) {
-      const { data: emps } = await supabase.from("employees").select("employee_id, name").in("employee_id", authorIds);
+      const { data: emps } = await db.from("employees").select("employee_id, name").in("employee_id", authorIds);
       const map: Record<string, string> = {};
       (emps ?? []).forEach((e) => { map[e.employee_id] = e.name; });
       rows.forEach((r) => { if (r.author_id) r.authorName = map[r.author_id]; });
@@ -66,9 +66,9 @@ function NoticeDetailPage() {
     const update = isLastStep
       ? { status: "published", current_approver_id: null, updated_at: new Date().toISOString() }
       : { current_approver_id: CHAIN[currentIndex + 1], updated_at: new Date().toISOString() };
-    const { error } = await supabase.from("notices").update(update).eq("id", notice.id);
+    const { error } = await db.from("notices").update(update).eq("id", notice.id);
     if (error) { toast.error("Failed to approve: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: isLastStep ? "published" : "approved",
       entity_type: "notice",
@@ -81,9 +81,9 @@ function NoticeDetailPage() {
 
   async function handleReject() {
     if (!notice || !rejectReason.trim()) { toast.error("Please provide a reason"); return; }
-    const { error } = await supabase.from("notices").update({ status: "rejected", current_approver_id: null, updated_at: new Date().toISOString() }).eq("id", notice.id);
+    const { error } = await db.from("notices").update({ status: "rejected", current_approver_id: null, updated_at: new Date().toISOString() }).eq("id", notice.id);
     if (error) { toast.error("Failed to reject: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "rejected",
       entity_type: "notice",
@@ -98,7 +98,7 @@ function NoticeDetailPage() {
 
   async function handleComment() {
     if (!commentText.trim()) return;
-    const { error } = await supabase.from("notice_comments").insert({
+    const { error } = await db.from("notice_comments").insert({
       notice_id: noticeId,
       author_id: currentUser.employee_id,
       text: commentText.trim(),

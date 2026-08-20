@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Plus, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/maintenance")({
@@ -64,14 +64,14 @@ function NewRequestForm({ items, onCancel, onSaved }: { items: Item[]; onCancel:
     if (validLines.length === 0) { toast.error("Add at least one item"); return; }
     setSaving(true);
     const ref = "MR-" + Date.now().toString(36).toUpperCase();
-    const { data: req, error } = await supabase.from("maintenance_requests").insert({
+    const { data: req, error } = await db.from("maintenance_requests").insert({
       ref_number: ref, requester_id: currentUser.employee_id, location: location.trim(), status: "raised",
     }).select("id").single();
     if (error || !req) { toast.error("Failed to submit: " + (error?.message ?? "unknown")); setSaving(false); return; }
-    await supabase.from("maintenance_request_items").insert(
+    await db.from("maintenance_request_items").insert(
       validLines.map((l) => ({ request_id: req.id, item_id: l.itemId, quantity: parseInt(l.quantity, 10) || 1 })),
     );
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "created", entity_type: "maintenance_request", entity_id: req.id,
       detail: `Raised maintenance request ${ref}`,
     });
@@ -135,10 +135,10 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
 
   async function updateStatus(status: string, extra: Record<string, unknown> = {}) {
     setActioning(true);
-    const { error } = await supabase.from("maintenance_requests").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", req.id);
+    const { error } = await db.from("maintenance_requests").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", req.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: status === "on_hold" ? "on_hold" : status === "approved" || status === "rejected" ? status : "status_changed",
       entity_type: "maintenance_request", entity_id: req.id, detail: `Set ${req.ref_number} to ${status}`,
     });
@@ -204,10 +204,10 @@ function MaintenancePage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: itemsData }, query] = await Promise.all([
-      supabase.from("maintenance_items").select("*").order("category"),
+      db.from("maintenance_items").select("*").order("category"),
       (isAdmin
-        ? supabase.from("maintenance_requests").select("*")
-        : supabase.from("maintenance_requests").select("*").eq("requester_id", currentUser.employee_id)
+        ? db.from("maintenance_requests").select("*")
+        : db.from("maintenance_requests").select("*").eq("requester_id", currentUser.employee_id)
       ).order("created_at", { ascending: false }),
     ]);
     setItems((itemsData ?? []) as Item[]);
@@ -216,8 +216,8 @@ function MaintenancePage() {
     const reqIds = reqRows.map((r) => r.id);
     const requesterIds = Array.from(new Set(reqRows.map((r) => r.requester_id)));
     const [{ data: lineItems }, { data: emps }] = await Promise.all([
-      reqIds.length ? supabase.from("maintenance_request_items").select("*").in("request_id", reqIds) : Promise.resolve({ data: [] as ReqItem[] & { request_id: string }[] }),
-      requesterIds.length ? supabase.from("employees").select("employee_id, name").in("employee_id", requesterIds) : Promise.resolve({ data: [] }),
+      reqIds.length ? db.from("maintenance_request_items").select("*").in("request_id", reqIds) : Promise.resolve({ data: [] as ReqItem[] & { request_id: string }[] }),
+      requesterIds.length ? db.from("employees").select("employee_id, name").in("employee_id", requesterIds) : Promise.resolve({ data: [] }),
     ]);
     const empMap: Record<string, string> = {};
     (emps ?? []).forEach((e: { employee_id: string; name: string }) => { empMap[e.employee_id] = e.name; });

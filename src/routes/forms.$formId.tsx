@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Link2, Loader2, Sparkles, User } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { toast } from "sonner";
 import { FieldRenderer } from "@/components/builder/FieldRenderer";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
@@ -105,11 +105,11 @@ function FillFormPage() {
       setLoading(true);
       const [{ data: tpl }, { data: rows }, { data: aRules }, { data: nRules }, { data: slabRows }] =
         await Promise.all([
-          supabase.from("form_templates").select("name").eq("id", formId).maybeSingle(),
-          supabase.from("form_fields").select("*").eq("form_template_id", formId).order("order_index"),
-          supabase.from("approval_rules").select("*").eq("form_template_id", formId),
-          supabase.from("notification_rules").select("*").eq("form_template_id", formId),
-          supabase.from("approval_slabs").select("*").eq("form_template_id", formId).order("order_index"),
+          db.from("form_templates").select("name").eq("id", formId).maybeSingle(),
+          db.from("form_fields").select("*").eq("form_template_id", formId).order("order_index"),
+          db.from("approval_rules").select("*").eq("form_template_id", formId),
+          db.from("notification_rules").select("*").eq("form_template_id", formId),
+          db.from("approval_slabs").select("*").eq("form_template_id", formId).order("order_index"),
         ]);
       if (cancel) return;
 
@@ -140,7 +140,7 @@ function FillFormPage() {
       const allIds = Array.from(new Set([...approverIds, ...notifIds, ...slabIds]));
       let empMap: Record<string, { name: string; designation: string | null }> = {};
       if (allIds.length > 0) {
-        const { data: emps } = await supabase
+        const { data: emps } = await db
           .from("employees")
           .select("employee_id, name, designation")
           .in("employee_id", allIds);
@@ -211,7 +211,7 @@ function FillFormPage() {
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      const { data: sub, error: subErr } = await supabase
+      const { data: sub, error: subErr } = await db
         .from("form_submissions")
         .insert({ form_template_id: formId, submitted_by: SUBMITTER.employee_id, status: "submitted" })
         .select("id")
@@ -235,7 +235,7 @@ function FillFormPage() {
           })();
           return { submission_id: sub.id, field_name: f.label, value: str };
         });
-      if (valueRows.length > 0) await supabase.from("submission_values").insert(valueRows);
+      if (valueRows.length > 0) await db.from("submission_values").insert(valueRows);
 
       // Resolve slab-based finance approver from the submitted amount
       const moneyField = fields.find((f) => f.kind === "money");
@@ -244,8 +244,8 @@ function FillFormPage() {
         : 0;
 
       const [{ data: rules }, { data: submitSlabs }] = await Promise.all([
-        supabase.from("approval_rules").select("approver_user_id, deadline_days, label").eq("form_template_id", formId),
-        supabase.from("approval_slabs").select("*").eq("form_template_id", formId).order("order_index"),
+        db.from("approval_rules").select("approver_user_id, deadline_days, label").eq("form_template_id", formId),
+        db.from("approval_slabs").select("*").eq("form_template_id", formId).order("order_index"),
       ]);
 
       if (rules && rules.length > 0) {
@@ -264,7 +264,7 @@ function FillFormPage() {
             };
           })
           .filter((r): r is NonNullable<typeof r> => r !== null);
-        if (reqRows.length > 0) await supabase.from("approval_requests").insert(reqRows);
+        if (reqRows.length > 0) await db.from("approval_requests").insert(reqRows);
       }
 
       toast.success("Submitted successfully!");

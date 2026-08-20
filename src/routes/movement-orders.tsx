@@ -17,7 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { toCsv, downloadCsv } from "@/lib/csv";
 
@@ -88,8 +88,8 @@ function AdminBar({ onNavigate }: { onNavigate: (v: View) => void }) {
   const [venueCount, setVenueCount] = useState<number | null>(null);
 
   useEffect(() => {
-    supabase.from("items").select("id", { count: "exact", head: true }).then(({ count }) => setItemCount(count ?? 0));
-    supabase.from("venues").select("id", { count: "exact", head: true }).then(({ count }) => setVenueCount(count ?? 0));
+    db.from("items").select("id", { count: "exact", head: true }).then(({ count }) => setItemCount(count ?? 0));
+    db.from("venues").select("id", { count: "exact", head: true }).then(({ count }) => setVenueCount(count ?? 0));
   }, []);
 
   const navItems: { label: string; view: View }[] = [
@@ -123,7 +123,7 @@ function ItemsView({ onBack }: { onBack: () => void }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("items").select("*").order("name");
+    const { data } = await db.from("items").select("*").order("name");
     setItems((data ?? []) as Item[]);
     setLoading(false);
   }, []);
@@ -139,8 +139,8 @@ function ItemsView({ onBack }: { onBack: () => void }) {
     setSaving(true);
     const payload = { name: formName.trim(), type: formType.trim() || null };
     const { error } = editingId
-      ? await supabase.from("items").update(payload).eq("id", editingId)
-      : await supabase.from("items").insert(payload);
+      ? await db.from("items").update(payload).eq("id", editingId)
+      : await db.from("items").insert(payload);
     setSaving(false);
     if (error) { toast.error("Failed to save: " + error.message); return; }
     toast.success(editingId ? "Item updated" : "Item added");
@@ -149,7 +149,7 @@ function ItemsView({ onBack }: { onBack: () => void }) {
   }
 
   async function deleteItem(id: string) {
-    const { error } = await supabase.from("items").delete().eq("id", id);
+    const { error } = await db.from("items").delete().eq("id", id);
     if (error) { toast.error("Cannot delete: " + error.message); return; }
     toast.success("Item deleted");
     void load();
@@ -244,7 +244,7 @@ function VenuesView({ onBack }: { onBack: () => void }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("venues").select("*").order("name");
+    const { data } = await db.from("venues").select("*").order("name");
     setVenues((data ?? []) as Venue[]);
     setLoading(false);
   }, []);
@@ -260,8 +260,8 @@ function VenuesView({ onBack }: { onBack: () => void }) {
     setSaving(true);
     const payload = { name: formName.trim(), floor: formFloor.trim() || null };
     const { error } = editingId
-      ? await supabase.from("venues").update(payload).eq("id", editingId)
-      : await supabase.from("venues").insert(payload);
+      ? await db.from("venues").update(payload).eq("id", editingId)
+      : await db.from("venues").insert(payload);
     setSaving(false);
     if (error) { toast.error("Failed to save: " + error.message); return; }
     toast.success(editingId ? "Venue updated" : "Venue added");
@@ -270,7 +270,7 @@ function VenuesView({ onBack }: { onBack: () => void }) {
   }
 
   async function deleteVenue(id: string) {
-    const { error } = await supabase.from("venues").delete().eq("id", id);
+    const { error } = await db.from("venues").delete().eq("id", id);
     if (error) { toast.error("Cannot delete: " + error.message); return; }
     toast.success("Venue deleted");
     void load();
@@ -366,9 +366,9 @@ function StockGridView({ onBack }: { onBack: () => void }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: itemsData }, { data: venuesData }, { data: stockData }] = await Promise.all([
-      supabase.from("items").select("*").order("name"),
-      supabase.from("venues").select("*").order("name"),
-      supabase.from("item_stock").select("*"),
+      db.from("items").select("*").order("name"),
+      db.from("venues").select("*").order("name"),
+      db.from("item_stock").select("*"),
     ]);
     setItems((itemsData ?? []) as Item[]);
     setVenues((venuesData ?? []) as Venue[]);
@@ -393,8 +393,8 @@ function StockGridView({ onBack }: { onBack: () => void }) {
     setSaving(true);
     const existing = stockMap[`${editingCell.itemId}:${editingCell.venueId}`];
     const { error } = existing
-      ? await supabase.from("item_stock").update({ quantity: qty }).eq("id", existing.id)
-      : await supabase.from("item_stock").insert({ item_id: editingCell.itemId, venue_id: editingCell.venueId, quantity: qty, reserved_quantity: 0 });
+      ? await db.from("item_stock").update({ quantity: qty }).eq("id", existing.id)
+      : await db.from("item_stock").insert({ item_id: editingCell.itemId, venue_id: editingCell.venueId, quantity: qty, reserved_quantity: 0 });
     setSaving(false);
     if (error) { toast.error("Failed to save: " + error.message); return; }
     setEditingCell(null);
@@ -522,7 +522,7 @@ function MovementOrdersPage() {
   const load = useCallback(async () => {
     setLoading(true);
 
-    let query = supabase
+    let query = db
       .from("movement_orders")
       .select("*")
       .order("created_at", { ascending: false });
@@ -541,7 +541,7 @@ function MovementOrdersPage() {
     const empIds = [...new Set([...requesterIds, ...moverIds])];
 
     if (empIds.length > 0) {
-      const { data: emps } = await supabase.from("employees").select("employee_id, name").in("employee_id", empIds);
+      const { data: emps } = await db.from("employees").select("employee_id, name").in("employee_id", empIds);
       const empMap: Record<string, string> = {};
       (emps ?? []).forEach((e) => { empMap[e.employee_id] = e.name; });
       rows.forEach((r) => {
@@ -696,8 +696,8 @@ function OrderCard({
   useEffect(() => {
     if (!expanded || !isAdmin) return;
     Promise.all([
-      supabase.from("items").select("*").order("name"),
-      supabase.from("venues").select("*").order("name"),
+      db.from("items").select("*").order("name"),
+      db.from("venues").select("*").order("name"),
     ]).then(([{ data: itemsData }, { data: venuesData }]) => {
       setItems((itemsData ?? []) as Item[]);
       setVenues((venuesData ?? []) as Venue[]);
@@ -710,7 +710,7 @@ function OrderCard({
     const itemId  = editItemId  || order.item_id;
     const venueId = editSourceVenueId || order.source_venue_id;
     if (!expanded || !isAdmin || !itemId || !venueId) { setStockInfo(null); return; }
-    supabase.from("item_stock").select("*")
+    db.from("item_stock").select("*")
       .eq("item_id", itemId)
       .eq("venue_id", venueId)
       .maybeSingle()
@@ -725,7 +725,7 @@ function OrderCard({
     setActioning(true);
 
     if (order.item_id && order.source_venue_id) {
-      await supabase.rpc("release_reservation", {
+      await db.rpc("release_reservation", {
         p_item_id: order.item_id,
         p_venue_id: order.source_venue_id,
         p_qty: order.quantity,
@@ -733,7 +733,7 @@ function OrderCard({
     }
 
     if (editItemId && editSourceVenueId && editDestVenueId) {
-      const { error: stockErr } = await supabase.rpc("transfer_stock", {
+      const { error: stockErr } = await db.rpc("transfer_stock", {
         p_item_id: editItemId,
         p_source_venue_id: editSourceVenueId,
         p_dest_venue_id: editDestVenueId,
@@ -742,7 +742,7 @@ function OrderCard({
       if (stockErr) console.warn("Stock transfer failed:", stockErr.message);
     }
 
-    const { error } = await supabase.from("movement_orders").update({
+    const { error } = await db.from("movement_orders").update({
       status: "approved",
       item_id: editItemId || null,
       source_venue_id: editSourceVenueId || null,
@@ -755,7 +755,7 @@ function OrderCard({
 
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "approved",
       entity_type: "movement_order",
@@ -769,20 +769,20 @@ function OrderCard({
   async function handleReject() {
     setActioning(true);
     if (order.item_id && order.source_venue_id) {
-      await supabase.rpc("release_reservation", {
+      await db.rpc("release_reservation", {
         p_item_id: order.item_id,
         p_venue_id: order.source_venue_id,
         p_qty: order.quantity,
       });
     }
-    const { error } = await supabase.from("movement_orders").update({
+    const { error } = await db.from("movement_orders").update({
       status: "rejected",
       admin_comment: comment.trim() || null,
       updated_at: new Date().toISOString(),
     }).eq("id", order.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "rejected",
       entity_type: "movement_order",
@@ -795,14 +795,14 @@ function OrderCard({
 
   async function handleOnHold() {
     setActioning(true);
-    const { error } = await supabase.from("movement_orders").update({
+    const { error } = await db.from("movement_orders").update({
       status: "on_hold",
       admin_comment: comment.trim() || null,
       updated_at: new Date().toISOString(),
     }).eq("id", order.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "on_hold",
       entity_type: "movement_order",
@@ -815,8 +815,8 @@ function OrderCard({
 
   async function markInTransit() {
     setActioning(true);
-    await supabase.from("movement_orders").update({ status: "in_transit", updated_at: new Date().toISOString() }).eq("id", order.id);
-    await supabase.from("activity_log").insert({
+    await db.from("movement_orders").update({ status: "in_transit", updated_at: new Date().toISOString() }).eq("id", order.id);
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "status_changed",
       entity_type: "movement_order",
@@ -830,8 +830,8 @@ function OrderCard({
 
   async function markCompleted() {
     setActioning(true);
-    await supabase.from("movement_orders").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", order.id);
-    await supabase.from("activity_log").insert({
+    await db.from("movement_orders").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", order.id);
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "status_changed",
       entity_type: "movement_order",
@@ -1056,8 +1056,8 @@ function NewOrderForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
 
   useEffect(() => {
     Promise.all([
-      supabase.from("items").select("*").order("name"),
-      supabase.from("venues").select("*").order("name"),
+      db.from("items").select("*").order("name"),
+      db.from("venues").select("*").order("name"),
     ]).then(([{ data: itemsData }, { data: venuesData }]) => {
       setItems((itemsData ?? []) as Item[]);
       setVenues((venuesData ?? []) as Venue[]);
@@ -1067,7 +1067,7 @@ function NewOrderForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
   useEffect(() => {
     if (!selectedItemId || !sourceVenueId) { setSourceStock(null); return; }
     setStockLoading(true);
-    supabase.from("item_stock").select("*")
+    db.from("item_stock").select("*")
       .eq("item_id", selectedItemId)
       .eq("venue_id", sourceVenueId)
       .maybeSingle()
@@ -1089,7 +1089,7 @@ function NewOrderForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
 
     setSaving(true);
     const ref = "MO-" + Date.now().toString(36).toUpperCase();
-    const { error } = await supabase.from("movement_orders").insert({
+    const { error } = await db.from("movement_orders").insert({
       ref_number: ref,
       requester_id: currentUser.employee_id,
       item_name: item?.name ?? "",
@@ -1106,7 +1106,7 @@ function NewOrderForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
     });
     if (error) { toast.error("Failed to submit: " + error.message); setSaving(false); return; }
 
-    const { error: stockErr } = await supabase.rpc("reserve_stock", {
+    const { error: stockErr } = await db.rpc("reserve_stock", {
       p_item_id: selectedItemId,
       p_venue_id: sourceVenueId,
       p_qty: qty,

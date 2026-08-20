@@ -2,7 +2,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/notices/new")({
@@ -30,7 +30,7 @@ function NewNoticePage() {
     if (!title.trim()) { toast.error("Title is required"); return; }
     if (!content.trim()) { toast.error("Content is required"); return; }
     setSaving(true);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("notices")
       .insert({
         title: title.trim(),
@@ -47,7 +47,7 @@ function NewNoticePage() {
       setSaving(false);
       return;
     }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "created",
       entity_type: "notice",

@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { Printer, ArrowLeft } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 
 export const Route = createFileRoute("/certificate/$submissionId")({
   head: () => ({
@@ -63,14 +63,14 @@ function CertificatePage() {
   const verifyUrl = `${window.location.origin}/status/${submissionId}`;
 
   const load = useCallback(async () => {
-    const { data: sub } = await supabase
+    const { data: sub } = await db
       .from("form_submissions")
       .select("submitted_by, submitted_at, form_template_id")
       .eq("id", submissionId)
       .maybeSingle();
 
     if (sub?.form_template_id) {
-      const { data: tpl } = await supabase
+      const { data: tpl } = await db
         .from("form_templates")
         .select("name")
         .eq("id", sub.form_template_id)
@@ -80,7 +80,7 @@ function CertificatePage() {
     setSubmittedAt(sub?.submitted_at ?? null);
 
     if (sub?.submitted_by) {
-      const { data: emp } = await supabase
+      const { data: emp } = await db
         .from("employees")
         .select("employee_id, name, designation, department")
         .eq("employee_id", sub.submitted_by)
@@ -89,7 +89,7 @@ function CertificatePage() {
     }
 
     // Grab department from submission values
-    const { data: vals } = await supabase
+    const { data: vals } = await db
       .from("submission_values")
       .select("field_name, value")
       .eq("submission_id", submissionId);
@@ -98,7 +98,7 @@ function CertificatePage() {
     );
     if (deptVal?.value) setDepartment(deptVal.value);
 
-    const { data: appr } = await supabase
+    const { data: appr } = await db
       .from("approval_requests")
       .select("id, approver_user_id, status, acted_at")
       .eq("submission_id", submissionId)
@@ -109,7 +109,7 @@ function CertificatePage() {
 
     const ids = Array.from(new Set(list.map((r) => r.approver_user_id).filter(Boolean) as string[]));
     if (ids.length) {
-      const { data: emps } = await supabase
+      const { data: emps } = await db
         .from("employees")
         .select("employee_id, name, designation, department")
         .in("employee_id", ids);

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { Award, Clipboard, FileText, Link2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { StatusBadge, type StatusKey } from "@/components/StatusBadge";
 import {
   ApprovalTimeline,
@@ -110,7 +110,7 @@ function StatusPage() {
   const [loading, setLoading] = useState(true);
 
   const loadAll = useCallback(async () => {
-    const { data: sub } = await supabase
+    const { data: sub } = await db
       .from("form_submissions")
       .select("*")
       .eq("id", submissionId)
@@ -118,14 +118,14 @@ function StatusPage() {
     setSubmission(sub as SubmissionRow | null);
 
     if (sub?.form_template_id) {
-      const { data: f } = await supabase
+      const { data: f } = await db
         .from("form_templates")
         .select("id, name")
         .eq("id", sub.form_template_id)
         .maybeSingle();
       setForm(f as FormRow | null);
 
-      const { data: linkedFields } = await supabase
+      const { data: linkedFields } = await db
         .from("form_fields")
         .select("field_type")
         .eq("form_template_id", sub.form_template_id)
@@ -134,7 +134,7 @@ function StatusPage() {
     }
 
     // Gate pass card number from submission values (gen_gate_pass field)
-    const { data: gpVal } = await supabase
+    const { data: gpVal } = await db
       .from("submission_values")
       .select("value")
       .eq("submission_id", submissionId)
@@ -143,7 +143,7 @@ function StatusPage() {
     setGatePassCardNum(gpVal?.value ?? null);
 
     if (sub?.submitted_by) {
-      const { data: emp } = await supabase
+      const { data: emp } = await db
         .from("employees")
         .select("employee_id, name, designation, department")
         .eq("employee_id", sub.submitted_by)
@@ -151,7 +151,7 @@ function StatusPage() {
       setSubmitter(emp as EmployeeRow | null);
     }
 
-    const { data: appr } = await supabase
+    const { data: appr } = await db
       .from("approval_requests")
       .select("*")
       .eq("submission_id", submissionId)
@@ -163,7 +163,7 @@ function StatusPage() {
       new Set(list.map((r) => r.approver_user_id).filter(Boolean) as string[]),
     );
     if (ids.length) {
-      const { data: emps } = await supabase
+      const { data: emps } = await db
         .from("employees")
         .select("employee_id, name, designation, department")
         .in("employee_id", ids);
@@ -180,7 +180,7 @@ function StatusPage() {
 
   useEffect(() => {
     loadAll();
-    const channel = supabase
+    const channel = db
       .channel(`approvals-${submissionId}`)
       .on(
         "postgres_changes",
@@ -197,7 +197,7 @@ function StatusPage() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      db.removeChannel(channel);
     };
   }, [submissionId, loadAll]);
 

@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
 import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/builder/PeopleStep";
 import { toast } from "sonner";
@@ -69,10 +69,10 @@ function NotificationsStep() {
   useEffect(() => {
     (async () => {
       const [{ data: tpl }, { data: fields }, { data: slabRows }, { data: emps }] = await Promise.all([
-        supabase.from("form_templates").select("name").eq("id", templateId).maybeSingle(),
-        supabase.from("form_fields").select("field_type").eq("form_template_id", templateId),
-        supabase.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
-        supabase.from("employees").select("employee_id, name, designation"),
+        db.from("form_templates").select("name").eq("id", templateId).maybeSingle(),
+        db.from("form_fields").select("field_type").eq("form_template_id", templateId),
+        db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
+        db.from("employees").select("employee_id, name, designation"),
       ]);
       if (tpl?.name) setFormName(tpl.name);
       setFieldTypes(new Set((fields ?? []).map((f) => f.field_type ?? "").filter(Boolean)));
@@ -99,7 +99,7 @@ function NotificationsStep() {
   async function handlePublish() {
     setPublishing(true);
     try {
-      await supabase.from("notification_rules").delete().eq("form_template_id", templateId);
+      await db.from("notification_rules").delete().eq("form_template_id", templateId);
 
       const rows = [
         ...autoNotify.map((a) => ({
@@ -115,13 +115,13 @@ function NotificationsStep() {
           label: "Manually added",
         })),
       ];
-      const { error: nrErr } = await supabase.from("notification_rules").insert(rows);
+      const { error: nrErr } = await db.from("notification_rules").insert(rows);
       if (nrErr) {
         toast.error("Failed to save notifications: " + nrErr.message);
         return;
       }
 
-      const { error: pubErr } = await supabase
+      const { error: pubErr } = await db
         .from("form_templates")
         .update({ status: "published" })
         .eq("id", templateId);

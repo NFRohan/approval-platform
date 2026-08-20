@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Download } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { toCsv, downloadCsv } from "@/lib/csv";
@@ -56,7 +56,7 @@ function HistoryPage() {
     let active = true;
     (async () => {
       setLoading(true);
-      const { data: appr } = await supabase
+      const { data: appr } = await db
         .from("approval_requests")
         .select("*")
         .eq("approver_user_id", currentUser.employee_id)
@@ -71,7 +71,7 @@ function HistoryPage() {
       let submitterNameMap: Record<string, string> = {};
 
       if (subIds.length) {
-        const { data: subs } = await supabase
+        const { data: subs } = await db
           .from("form_submissions")
           .select("id, form_template_id, submitted_by")
           .in("id", subIds);
@@ -82,14 +82,14 @@ function HistoryPage() {
           new Set((subs || []).map((s) => s.submitted_by).filter(Boolean) as string[]),
         );
         if (formIds.length) {
-          const { data: f } = await supabase
+          const { data: f } = await db
             .from("form_templates")
             .select("id, name")
             .in("id", formIds);
           (f || []).forEach((x) => (formNameMap[x.id] = x.name));
         }
         if (empIds.length) {
-          const { data: e } = await supabase
+          const { data: e } = await db
             .from("employees")
             .select("employee_id, name")
             .in("employee_id", empIds);

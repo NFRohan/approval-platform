@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, CalendarDays, Plus, Trash2, User } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/approvals/delegate")({
@@ -68,12 +68,12 @@ function DelegationPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data }, { data: forms }] = await Promise.all([
-      supabase
+      db
         .from("delegation_rules")
         .select("*")
         .eq("delegator_id", currentUser.employee_id)
         .order("start_date", { ascending: false }),
-      supabase
+      db
         .from("form_templates")
         .select("id, name")
         .eq("status", "published")
@@ -88,7 +88,7 @@ function DelegationPage() {
 
     if (rows.length > 0) {
       const ids = rows.map((r) => r.delegate_id);
-      const { data: emps } = await supabase
+      const { data: emps } = await db
         .from("employees")
         .select("employee_id, name, designation")
         .in("employee_id", ids);
@@ -110,7 +110,7 @@ function DelegationPage() {
   async function lookupDelegate() {
     if (!delegateId.trim()) return;
     setLookingUp(true);
-    const { data } = await supabase
+    const { data } = await db
       .from("employees")
       .select("employee_id, name, designation, department")
       .eq("employee_id", delegateId.trim())
@@ -127,7 +127,7 @@ function DelegationPage() {
     if (delegateEmp.employee_id === currentUser.employee_id) { toast.error("Cannot delegate to yourself"); return; }
 
     setSaving(true);
-    const { error } = await supabase.from("delegation_rules").insert({
+    const { error } = await db.from("delegation_rules").insert({
       delegator_id: currentUser.employee_id,
       delegate_id: delegateEmp.employee_id,
       start_date: startDate,
@@ -150,7 +150,7 @@ function DelegationPage() {
   }
 
   async function handleDelete(id: string) {
-    const { error } = await supabase.from("delegation_rules").delete().eq("id", id);
+    const { error } = await db.from("delegation_rules").delete().eq("id", id);
     if (error) { toast.error("Failed to remove delegation"); return; }
     setDelegations((prev) => prev.filter((d) => d.id !== id));
     toast.success("Delegation removed");

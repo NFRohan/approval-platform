@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Megaphone, Plus } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/notices/")({
@@ -36,7 +36,7 @@ function NoticeBoardPage() {
     let active = true;
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("notices").select("*").order("created_at", { ascending: false });
+      const { data } = await db.from("notices").select("*").order("created_at", { ascending: false });
       if (active) {
         setNotices((data ?? []) as Notice[]);
         setLoading(false);

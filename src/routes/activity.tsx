@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Activity as ActivityIcon } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 
 export const Route = createFileRoute("/activity")({
   head: () => ({ meta: [{ title: "Activity Log · Admin Services Portal" }] }),
@@ -30,11 +30,11 @@ function ActivityPage() {
     let active = true;
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200);
+      const { data } = await db.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200);
       const list = (data ?? []) as LogRow[];
       const actorIds = Array.from(new Set(list.map((r) => r.actor_id).filter(Boolean) as string[]));
       if (actorIds.length) {
-        const { data: emps } = await supabase.from("employees").select("employee_id, name").in("employee_id", actorIds);
+        const { data: emps } = await db.from("employees").select("employee_id, name").in("employee_id", actorIds);
         const map: Record<string, string> = {};
         (emps ?? []).forEach((e) => { map[e.employee_id] = e.name; });
         list.forEach((r) => { if (r.actor_id) r.actorName = map[r.actor_id]; });

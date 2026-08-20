@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { DollarSign, Lock, Plus, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 
 export type AutoEntry = {
   id: string;
@@ -91,7 +91,7 @@ export function PeopleStep({
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await db
         .from("employees")
         .select("employee_id, name, designation")
         .order("name");

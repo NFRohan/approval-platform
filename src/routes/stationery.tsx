@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Stamp } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/stationery")({
@@ -78,7 +78,7 @@ function StationeryPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from("stationery_requests").select("*").order("created_at", { ascending: false });
+    const { data } = await db.from("stationery_requests").select("*").order("created_at", { ascending: false });
     setRequests((data ?? []) as Req[]);
     setLoading(false);
   }, []);
@@ -88,7 +88,7 @@ function StationeryPage() {
   async function handleSubmit() {
     if (!name.trim() || !designation.trim() || !reason.trim()) { toast.error("Name, designation, and reason are required"); return; }
     setSaving(true);
-    const { data, error } = await supabase.from("stationery_requests").insert({
+    const { data, error } = await db.from("stationery_requests").insert({
       kind, requester_id: currentUser.employee_id, name: name.trim(), designation: designation.trim(),
       department: department.trim() || null, division: division.trim() || null, email: email.trim() || null,
       contact_number: contactNumber.trim() || null, reason: reason.trim(), comments: comments.trim() || null,
@@ -96,7 +96,7 @@ function StationeryPage() {
     }).select("id").single();
     setSaving(false);
     if (error || !data) { toast.error("Failed to submit: " + (error?.message ?? "unknown")); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "created", entity_type: "stationery_request", entity_id: data.id,
       detail: `Requested a ${kind === "business_card" ? "business card" : "stamp seal"} for ${name.trim()}`,
     });
@@ -111,9 +111,9 @@ function StationeryPage() {
     const update = isLastStep
       ? { status: "approved", current_approver_id: null, updated_at: new Date().toISOString() }
       : { current_approver_id: CHAIN[currentIndex + 1], updated_at: new Date().toISOString() };
-    const { error } = await supabase.from("stationery_requests").update(update).eq("id", req.id);
+    const { error } = await db.from("stationery_requests").update(update).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "approved", entity_type: "stationery_request", entity_id: req.id,
       detail: `Approved ${req.kind === "business_card" ? "business card" : "stamp seal"} request for ${req.name}`,
     });
@@ -122,9 +122,9 @@ function StationeryPage() {
   }
 
   async function handleReject(req: Req) {
-    const { error } = await supabase.from("stationery_requests").update({ status: "rejected", current_approver_id: null, updated_at: new Date().toISOString() }).eq("id", req.id);
+    const { error } = await db.from("stationery_requests").update({ status: "rejected", current_approver_id: null, updated_at: new Date().toISOString() }).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "rejected", entity_type: "stationery_request", entity_id: req.id,
       detail: `Rejected ${req.kind === "business_card" ? "business card" : "stamp seal"} request for ${req.name}`,
     });
@@ -133,9 +133,9 @@ function StationeryPage() {
   }
 
   async function handleFulfil(req: Req) {
-    const { error } = await supabase.from("stationery_requests").update({ status: "fulfilled", updated_at: new Date().toISOString() }).eq("id", req.id);
+    const { error } = await db.from("stationery_requests").update({ status: "fulfilled", updated_at: new Date().toISOString() }).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
-    await supabase.from("activity_log").insert({
+    await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "status_changed", entity_type: "stationery_request", entity_id: req.id,
       detail: `Marked ${req.kind === "business_card" ? "business card" : "stamp seal"} request for ${req.name} as fulfilled`,
     });
