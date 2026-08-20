@@ -138,10 +138,13 @@ begin;
          set_config('app.role',      'admin', true),
          set_config('app.is_staff',  'true', true);
 
-  select pg_temp.check('staff see every tenant',
-                       (select count(*)::int from public.tenants), 2);
+  -- Scoped to this suite's fixtures: a seeded database also holds the
+  -- template, and any evaluation minted by another suite.
+  select pg_temp.check('staff see both tenants under test',
+                       (select count(*)::int from public.tenants where slug like 'rls-%'), 2);
   select pg_temp.check('staff see the accounts they issued',
-                       (select count(*)::int from public.app_users), 2);
+                       (select count(*)::int from public.app_users
+                         where username in ('a.eval','b.eval')), 2);
   select pg_temp.check('staff see NO prospect form templates',
                        (select count(*)::int from public.form_templates), 0);
   select pg_temp.check('staff see NO prospect submissions',
