@@ -64,8 +64,8 @@ function NoticeDetailPage() {
     const currentIndex = CHAIN.indexOf(notice.current_approver_id ?? "");
     const isLastStep = currentIndex === CHAIN.length - 1;
     const update = isLastStep
-      ? { status: "published", current_approver_id: null, updated_at: new Date().toISOString() }
-      : { current_approver_id: CHAIN[currentIndex + 1], updated_at: new Date().toISOString() };
+      ? { status: "published", current_approver_id: null }
+      : { current_approver_id: CHAIN[currentIndex + 1] };
     const { error } = await db.from("notices").update(update).eq("id", notice.id);
     if (error) { toast.error("Failed to approve: " + error.message); return; }
     await db.from("activity_log").insert({
@@ -81,7 +81,7 @@ function NoticeDetailPage() {
 
   async function handleReject() {
     if (!notice || !rejectReason.trim()) { toast.error("Please provide a reason"); return; }
-    const { error } = await db.from("notices").update({ status: "rejected", current_approver_id: null, updated_at: new Date().toISOString() }).eq("id", notice.id);
+    const { error } = await db.from("notices").update({ status: "rejected", current_approver_id: null }).eq("id", notice.id);
     if (error) { toast.error("Failed to reject: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,

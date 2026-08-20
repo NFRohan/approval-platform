@@ -135,7 +135,7 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
 
   async function updateStatus(status: string, extra: Record<string, unknown> = {}) {
     setActioning(true);
-    const { error } = await db.from("maintenance_requests").update({ status, updated_at: new Date().toISOString(), ...extra }).eq("id", req.id);
+    const { error } = await db.from("maintenance_requests").update({ status, ...extra }).eq("id", req.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
     await db.from("activity_log").insert({

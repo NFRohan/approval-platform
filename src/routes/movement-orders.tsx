@@ -735,11 +735,13 @@ function OrderCard({
     if (editItemId && editSourceVenueId && editDestVenueId) {
       const { error: stockErr } = await db.rpc("transfer_stock", {
         p_item_id: editItemId,
-        p_source_venue_id: editSourceVenueId,
-        p_dest_venue_id: editDestVenueId,
+        p_from_venue: editSourceVenueId,
+        p_to_venue: editDestVenueId,
         p_qty: parseInt(editQuantity, 10),
       });
-      if (stockErr) console.warn("Stock transfer failed:", stockErr.message);
+      // The order still moved; only the stock ledger did not. Say so
+      // rather than logging it where nobody looks.
+      if (stockErr) toast.warning("Stock not transferred: " + stockErr.message);
     }
 
     const { error } = await db.from("movement_orders").update({
@@ -750,7 +752,6 @@ function OrderCard({
       quantity: parseInt(editQuantity, 10),
       assigned_mover_id: moverIdInput.trim(),
       admin_comment: comment.trim() || null,
-      updated_at: new Date().toISOString(),
     }).eq("id", order.id);
 
     setActioning(false);
@@ -778,7 +779,6 @@ function OrderCard({
     const { error } = await db.from("movement_orders").update({
       status: "rejected",
       admin_comment: comment.trim() || null,
-      updated_at: new Date().toISOString(),
     }).eq("id", order.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
@@ -798,7 +798,6 @@ function OrderCard({
     const { error } = await db.from("movement_orders").update({
       status: "on_hold",
       admin_comment: comment.trim() || null,
-      updated_at: new Date().toISOString(),
     }).eq("id", order.id);
     setActioning(false);
     if (error) { toast.error("Update failed: " + error.message); return; }
@@ -815,7 +814,7 @@ function OrderCard({
 
   async function markInTransit() {
     setActioning(true);
-    await db.from("movement_orders").update({ status: "in_transit", updated_at: new Date().toISOString() }).eq("id", order.id);
+    await db.from("movement_orders").update({ status: "in_transit" }).eq("id", order.id);
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "status_changed",
@@ -830,7 +829,7 @@ function OrderCard({
 
   async function markCompleted() {
     setActioning(true);
-    await db.from("movement_orders").update({ status: "completed", updated_at: new Date().toISOString() }).eq("id", order.id);
+    await db.from("movement_orders").update({ status: "completed" }).eq("id", order.id);
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "status_changed",
@@ -1111,7 +1110,7 @@ function NewOrderForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: ()
       p_venue_id: sourceVenueId,
       p_qty: qty,
     });
-    if (stockErr) console.warn("Stock reservation failed:", stockErr.message);
+    if (stockErr) toast.warning("Stock not reserved: " + stockErr.message);
 
     setSaving(false);
     toast.success(`Movement order ${ref} submitted`);

@@ -109,8 +109,8 @@ function StationeryPage() {
     const currentIndex = CHAIN.indexOf(req.current_approver_id ?? "");
     const isLastStep = currentIndex === CHAIN.length - 1;
     const update = isLastStep
-      ? { status: "approved", current_approver_id: null, updated_at: new Date().toISOString() }
-      : { current_approver_id: CHAIN[currentIndex + 1], updated_at: new Date().toISOString() };
+      ? { status: "approved", current_approver_id: null }
+      : { current_approver_id: CHAIN[currentIndex + 1] };
     const { error } = await db.from("stationery_requests").update(update).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
     await db.from("activity_log").insert({
@@ -122,7 +122,7 @@ function StationeryPage() {
   }
 
   async function handleReject(req: Req) {
-    const { error } = await db.from("stationery_requests").update({ status: "rejected", current_approver_id: null, updated_at: new Date().toISOString() }).eq("id", req.id);
+    const { error } = await db.from("stationery_requests").update({ status: "rejected", current_approver_id: null }).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "rejected", entity_type: "stationery_request", entity_id: req.id,
@@ -133,7 +133,7 @@ function StationeryPage() {
   }
 
   async function handleFulfil(req: Req) {
-    const { error } = await db.from("stationery_requests").update({ status: "fulfilled", updated_at: new Date().toISOString() }).eq("id", req.id);
+    const { error } = await db.from("stationery_requests").update({ status: "fulfilled" }).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "status_changed", entity_type: "stationery_request", entity_id: req.id,
