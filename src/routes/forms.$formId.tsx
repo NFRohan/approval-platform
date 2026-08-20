@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { FieldRenderer } from "@/components/builder/FieldRenderer";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { DEFAULT_LABELS, isEmbedded, isPermission } from "@/components/builder/palette";
-import { resolveSlabApprover, type ApprovalSlab } from "@/lib/approvalSlabs";
+import { resolveSlabChain, type ApprovalSlab } from "@/lib/approvalSlabs";
 
 export const Route = createFileRoute("/forms/$formId")({
   head: () => ({ meta: [{ title: "Fill Form · Admin Services Portal" }] }),
@@ -237,34 +237,25 @@ function FillFormPage() {
         });
       if (valueRows.length > 0) await db.from("submission_values").insert(valueRows);
 
-      // Resolve slab-based finance approver from the submitted amount
+      // How far a claim climbs depends on the amount, so the amount is
+      // what gets sent. Which approvers that means, in what order, and
+      // which of them is live is decided in the database — it is several
+      // rows that have to agree, and it must not be a client's opinion.
       const moneyField = fields.find((f) => f.kind === "money");
       const moneyAmount = moneyField
         ? parseFloat(String(values[moneyField.id] ?? "0").replace(/[^0-9.]/g, "")) || 0
         : 0;
 
-      const [{ data: rules }, { data: submitSlabs }] = await Promise.all([
-        db.from("approval_rules").select("approver_user_id, deadline_days, label").eq("form_template_id", formId),
-        db.from("approval_slabs").select("*").eq("form_template_id", formId).order("order_index"),
-      ]);
-
-      if (rules && rules.length > 0) {
-        const reqRows = rules
-          .map((r) => {
-            const approver =
-              r.label === "slab_finance"
-                ? resolveSlabApprover(moneyAmount, (submitSlabs ?? []) as ApprovalSlab[])
-                : r.approver_user_id;
-            if (!approver) return null;
-            return {
-              submission_id: sub.id,
-              approver_user_id: approver,
-              status: "pending",
-              deadline_at: new Date(Date.now() + (r.deadline_days ?? 7) * 86400000).toISOString(),
-            };
-          })
-          .filter((r): r is NonNullable<typeof r> => r !== null);
-        if (reqRows.length > 0) await db.from("approval_requests").insert(reqRows);
+      const { error: chainErr } = await db.rpc("build_approval_chain", {
+        p_subject_type: "form_submission",
+        p_subject_id: sub.id,
+        p_form_template_id: formId,
+        p_amount: moneyAmount,
+      });
+      if (chainErr) {
+        // The submission exists; only its routing failed. Saying
+        // "submitted" and nothing else would leave it invisible.
+        toast.error("Submitted, but approvals were not set up: " + chainErr.message);
       }
 
       toast.success("Submitted successfully!");
@@ -432,17 +423,21 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
   const moneyAmount = moneyField
     ? parseFloat(String(values[moneyField.id] ?? "0").replace(/[^0-9.]/g, "")) || 0
     : 0;
-  const resolvedFinanceId = resolveSlabApprover(moneyAmount, slabs);
+  // One rule labelled slab_finance becomes as many steps as the amount
+  // has thresholds, so the person submitting sees the whole ladder
+  // before they commit to it rather than the top of it afterwards.
+  const financeChain = resolveSlabChain(moneyAmount, slabs);
+  const inChain = new Set(financeChain);
   const slabApproverIds = new Set(slabs.map((s) => s.approver_user_id));
 
-  const resolvedApprovalRules: ApproverRule[] = approvalRules.map((r) => {
-    if (r.label !== "slab_finance" || !resolvedFinanceId) return r;
-    return { ...r, approver_user_id: resolvedFinanceId, employee: empMap[resolvedFinanceId] };
+  const resolvedApprovalRules: ApproverRule[] = approvalRules.flatMap((r) => {
+    if (r.label !== "slab_finance") return [r];
+    return financeChain.map((id) => ({ ...r, approver_user_id: id, employee: empMap[id] }));
   });
 
   const resolvedNotifRules: NotifRule[] = notifRules.filter((r) => {
     if (r.notifyee_user_id && slabApproverIds.has(r.notifyee_user_id)) {
-      return r.notifyee_user_id === resolvedFinanceId;
+      return inChain.has(r.notifyee_user_id);
     }
     return true;
   });

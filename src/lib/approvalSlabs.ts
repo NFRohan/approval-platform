@@ -8,19 +8,22 @@ export type ApprovalSlab = {
 };
 
 /**
- * Resolves which approver a given amount routes to, given a form's slab list.
- * Slabs are matched by [min_amount, max_amount] inclusive; max_amount = null
- * means "no upper bound" (the top slab). Falls back to the highest-order slab
- * if amount exceeds every defined range (defensive; shouldn't normally happen
- * since the top slab has max_amount = null).
+ * Which approvers an amount involves.
+ *
+ * Cumulative, and that is the whole point: a slab is a threshold that
+ * has been crossed, not a bucket a number falls into. 620,000 involves
+ * the Controller, the Head of Finance AND the CFO, in that order.
+ * Returning one approver — the previous behaviour — meant a large claim
+ * skipped every level below the top one, which is the opposite of what
+ * an escalation policy says.
+ *
+ * The database decides this for real, in app.slab_approvers. This exists
+ * so the form can show the ladder before anything is submitted, and the
+ * two must agree.
  */
-export function resolveSlabApprover(amount: number, slabs: ApprovalSlab[]): string | null {
-  if (slabs.length === 0) return null;
-  const sorted = [...slabs].sort((a, b) => a.order_index - b.order_index);
-  for (const s of sorted) {
-    if (amount >= s.min_amount && (s.max_amount === null || amount <= s.max_amount)) {
-      return s.approver_user_id;
-    }
-  }
-  return sorted[sorted.length - 1].approver_user_id;
+export function resolveSlabChain(amount: number, slabs: ApprovalSlab[]): string[] {
+  return [...slabs]
+    .sort((x, y) => x.order_index - y.order_index)
+    .filter((s) => amount >= s.min_amount)
+    .map((s) => s.approver_user_id);
 }

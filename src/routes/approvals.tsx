@@ -23,13 +23,18 @@ export const Route = createFileRoute("/approvals")({
 type Row = {
   id: string;
   submission_id: string | null;
+  subject_id: string | null;
+  subject_type: string | null;
+  step_index: number | null;
   approver_user_id: string | null;
+  reassigned_from: string | null;
   status: string | null;
   deadline_at: string | null;
   acted_at: string | null;
   comment: string | null;
   // joined
   formName?: string;
+  subjectLabel?: string;
   submittedAt?: string | null;
   submittedBy?: string | null;
   submitterName?: string;
@@ -242,23 +247,87 @@ function ApprovalsInbox() {
       }
     }
 
+    // The queue is one queue. A step hangs off a submission, a notice, a
+    // stationery request or a maintenance request, and each of them
+    // names itself differently — so each is looked up in its own table
+    // and reduced to a label and a requester.
+    const subjectLabels: Record<string, string> = {};
+    const subjectRequesters: Record<string, string> = {};
+
+    const idsOf = (t: string) =>
+      Array.from(new Set(
+        list.filter((r) => r.subject_type === t)
+            .map((r) => r.subject_id)
+            .filter(Boolean) as string[]));
+
+    const noticeIds = idsOf("notice");
+    if (noticeIds.length) {
+      const { data } = await db
+        .from("notices").select("id, title, created_by").in("id", noticeIds);
+      (data ?? []).forEach((n) => {
+        subjectLabels[n.id] = n.title ?? "Notice";
+        if (n.created_by) subjectRequesters[n.id] = n.created_by;
+      });
+    }
+
+    const stationeryIds = idsOf("stationery_request");
+    if (stationeryIds.length) {
+      const { data } = await db
+        .from("stationery_requests").select("id, kind, name, requester_id").in("id", stationeryIds);
+      (data ?? []).forEach((r) => {
+        const kind = r.kind === "business_card" ? "Business card"
+          : r.kind === "stamp_seal" ? "Stamp and seal" : String(r.kind ?? "Stationery");
+        subjectLabels[r.id] = r.name ? kind + " — " + r.name : kind;
+        if (r.requester_id) subjectRequesters[r.id] = r.requester_id;
+      });
+    }
+
+    const maintenanceIds = idsOf("maintenance_request");
+    if (maintenanceIds.length) {
+      const { data } = await db
+        .from("maintenance_requests").select("id, ref_number, location, requester_id").in("id", maintenanceIds);
+      (data ?? []).forEach((m) => {
+        subjectLabels[m.id] = [m.ref_number, m.location].filter(Boolean).join(" — ") || "Maintenance";
+        if (m.requester_id) subjectRequesters[m.id] = m.requester_id;
+      });
+    }
+
+    const extraRequesters = Array.from(new Set(Object.values(subjectRequesters)))
+      .filter((id) => !(id in empMap));
+    if (extraRequesters.length) {
+      const { data } = await db
+        .from("employees").select("employee_id, name, department").in("employee_id", extraRequesters);
+      (data ?? []).forEach((e) => {
+        empMap[e.employee_id] = { name: e.name, department: e.department };
+      });
+    }
+
     const enriched: Row[] = list
       .filter((r) => {
         if (r.approver_user_id === currentUser.employee_id) return true;
         // Delegated row — check form scope
         const scope = r.approver_user_id ? delegationScope[r.approver_user_id] : null;
         if (!scope) return true; // null = all forms
+        // A delegation scoped to particular forms does not carry a
+        // notice or a maintenance request with it.
+        if (r.subject_type !== "form_submission") return false;
         const sub = r.submission_id ? subsMap[r.submission_id] : undefined;
         return sub?.form_template_id ? scope.includes(sub.form_template_id) : false;
       })
       .map((r) => {
         const sub = r.submission_id ? subsMap[r.submission_id] : undefined;
-        const submitter = sub?.submitted_by ? empMap[sub.submitted_by] : undefined;
+        const requester = sub?.submitted_by
+          ?? (r.subject_id ? subjectRequesters[r.subject_id] : undefined);
+        const submitter = requester ? empMap[requester] : undefined;
+        const label = sub?.form_template_id
+          ? formsMap[sub.form_template_id]
+          : (r.subject_id ? subjectLabels[r.subject_id] : undefined);
         return {
           ...r,
-          formName: sub?.form_template_id ? formsMap[sub.form_template_id] : undefined,
+          formName: label,
+          subjectLabel: label,
           submittedAt: sub?.submitted_at,
-          submittedBy: sub?.submitted_by,
+          submittedBy: requester,
           submitterName: submitter?.name,
           submitterDept: submitter?.department || undefined,
         };
@@ -299,59 +368,50 @@ function ApprovalsInbox() {
     }, 320);
   };
 
-  const recomputeSubmissionStatus = async (
-    submissionId: string,
-    actingRowId: string,
-    newStatus: "approved" | "rejected" | "clarification",
-  ) => {
-    if (newStatus === "rejected") {
-      await db
-        .from("form_submissions")
-        .update({ status: "rejected" })
-        .eq("id", submissionId);
-      return;
+  // One way to act on a step, whatever kind of thing it is attached to.
+  //
+  // The transition is not done here. Marking the step, opening the next
+  // one and moving the subject's status are three writes that have to
+  // agree, and whether it is even this approver's turn is not a question
+  // a browser should answer — so the client asks, and the database
+  // decides. What used to live here recomputed the submission's status
+  // by counting siblings, which was wrong the moment steps had an order:
+  // it read "waiting" as "not approved yet" and completed nothing.
+  const act = async (
+    row: Row,
+    action: "approve" | "reject" | "clarification",
+    note?: string,
+  ): Promise<boolean> => {
+    const { error } = await db.rpc("act_on_approval", {
+      p_request_id: row.id,
+      p_action: action,
+      p_comment: note?.trim() || null,
+    });
+    if (error) {
+      toast.error(error.message);
+      return false;
     }
-    if (newStatus === "clarification") {
-      await db
-        .from("form_submissions")
-        .update({ status: "on_hold" })
-        .eq("id", submissionId);
-      return;
-    }
-    // approved → check siblings
-    const { data: siblings } = await db
-      .from("approval_requests")
-      .select("id, status")
-      .eq("submission_id", submissionId);
-    const allApproved = (siblings || []).every(
-      (s) => s.id === actingRowId || s.status === "approved",
-    );
-    await db
-      .from("form_submissions")
-      .update({ status: allApproved ? "completed" : "in_progress" })
-      .eq("id", submissionId);
+
+    const what = row.subjectLabel ?? row.formName ?? "a request";
+    await db.from("activity_log").insert({
+      actor_id: currentUser.employee_id,
+      action:
+        action === "approve" ? "approved"
+        : action === "reject" ? "rejected"
+        : "clarification_requested",
+      entity_type: row.subject_type ?? "form_submission",
+      entity_id: row.subject_id,
+      detail:
+        (action === "approve" ? "Approved "
+         : action === "reject" ? "Rejected "
+         : "Requested clarification on ") + what,
+    });
+    return true;
   };
 
   const handleApprove = async (row: Row) => {
-    const { error } = await db
-      .from("approval_requests")
-      .update({ status: "approved", acted_at: new Date().toISOString() })
-      .eq("id", row.id);
-    if (error) {
-      toast.error("Failed to approve");
-      return;
-    }
-    if (row.submission_id) {
-      await recomputeSubmissionStatus(row.submission_id, row.id, "approved");
-      await db.from("activity_log").insert({
-        actor_id: currentUser.employee_id,
-        action: "approved",
-        entity_type: "form_submission",
-        entity_id: row.submission_id,
-        detail: `Approved ${row.formName ?? "a submission"}`,
-      });
-    }
-    toast.success("Approved successfully");
+    if (!(await act(row, "approve"))) return;
+    toast.success("Approved — it has moved to the next approver");
     fadeAndRemove(row.id);
   };
 
@@ -362,35 +422,17 @@ function ApprovalsInbox() {
       return;
     }
     setSubmitting(true);
-    const newStatus = modal.kind === "reject" ? "rejected" : "clarification";
-    const { error } = await db
-      .from("approval_requests")
-      .update({
-        status: newStatus,
-        comment: comment.trim(),
-        acted_at: new Date().toISOString(),
-      })
-      .eq("id", modal.row.id);
-    if (error) {
-      toast.error("Failed to submit");
+    const action = modal.kind === "reject" ? "reject" : "clarification";
+    const ok = await act(modal.row, action, comment);
+    if (!ok) {
       setSubmitting(false);
       return;
     }
-    if (modal.row.submission_id) {
-      await recomputeSubmissionStatus(modal.row.submission_id, modal.row.id, newStatus);
-      await db.from("activity_log").insert({
-        actor_id: currentUser.employee_id,
-        action: newStatus === "rejected" ? "rejected" : "clarification_requested",
-        entity_type: "form_submission",
-        entity_id: modal.row.submission_id,
-        detail: `${newStatus === "rejected" ? "Rejected" : "Requested clarification on"} ${modal.row.formName ?? "a submission"}`,
-      });
-    }
-    if (modal.kind === "reject") {
-      toast.success("Request rejected");
-    } else {
-      toast.success("Clarification requested — submission is now On Hold");
-    }
+    toast.success(
+      modal.kind === "reject"
+        ? "Request rejected — the approvers above were not asked"
+        : "Clarification requested — the request is on hold with you",
+    );
     fadeAndRemove(modal.row.id);
     setModal(null);
     setComment("");

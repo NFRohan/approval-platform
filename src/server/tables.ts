@@ -45,19 +45,23 @@ export const TABLES: Record<string, TableDef> = {
     ['actor_id', 'action', 'entity_type', 'entity_id', 'detail'],
     [],
   ),
+  // Read freely, written only through the chain engine. Approving is
+  // several writes that must all happen or none — mark the step, open
+  // the next one, move the subject's status — so the client asks for the
+  // action and the database performs it. Nothing here is writable.
   approval_requests: T(
-    ['id', 'submission_id', 'approver_user_id', 'step_index', 'status', 
-      'comment', 'acted_at', 'deadline_at', 'reassigned_from', 
-      'created_at'],
-    ['submission_id', 'approver_user_id', 'step_index', 'status', 
-      'comment', 'acted_at', 'deadline_at', 'reassigned_from'],
+    ['id', 'submission_id', 'notice_id', 'stationery_request_id', 
+      'maintenance_request_id', 'subject_id', 'subject_type', 
+      'approver_user_id', 'step_index', 'status', 'comment', 'acted_at', 
+      'deadline_at', 'reassigned_from', 'created_at'],
+    [],
     [],
   ),
   approval_rules: T(
-    ['id', 'form_template_id', 'approver_user_id', 'deadline_days', 
-      'is_auto_added', 'label', 'step_index'],
-    ['form_template_id', 'approver_user_id', 'deadline_days', 
-      'is_auto_added', 'label', 'step_index'],
+    ['id', 'subject_type', 'form_template_id', 'approver_user_id', 
+      'deadline_days', 'is_auto_added', 'label', 'step_index'],
+    ['subject_type', 'form_template_id', 'approver_user_id', 
+      'deadline_days', 'is_auto_added', 'label', 'step_index'],
     [],
   ),
   approval_slabs: T(
@@ -196,6 +200,15 @@ export const TABLES: Record<string, TableDef> = {
 // Anything not named here is refused, so `rpc` cannot reach the
 // provisioning functions.
 export const RPCS: Record<string, readonly string[]> = {
+  // The approval chain. Every transition goes through these rather than
+  // through table writes, because each one is several statements that
+  // have to agree, and because whose turn it is must be decided
+  // somewhere the browser cannot skip.
+  build_approval_chain: ['p_subject_type', 'p_subject_id', 'p_form_template_id', 'p_amount'],
+  act_on_approval:      ['p_request_id', 'p_action', 'p_comment'],
+  reassign_approval:    ['p_request_id', 'p_to', 'p_comment'],
+  add_reviewer:         ['p_request_id', 'p_employee', 'p_deadline_days'],
+
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],
   transfer_stock:      ['p_item_id', 'p_from_venue', 'p_to_venue', 'p_qty'],
