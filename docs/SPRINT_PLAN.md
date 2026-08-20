@@ -173,6 +173,39 @@ npm run db:test         ALL DATABASE SUITES PASSED (52 checks)
 emits a Node server entry, but nothing has been deployed, so no claim is made
 that it runs on Vercel yet. That is the first thing to settle in sprint 6.
 
+### Review of sprints 1–2
+
+Run before starting sprint 3. Both suites were green and sixteen write paths
+were broken, because nothing tested whether the screens and the whitelist
+agreed with each other.
+
+| Found | Effect |
+|---|---|
+| `updated_at` written by hand at 13 call sites | Approve, reject, hold, dispatch and complete failed outright on movement orders, notices, stationery and maintenance |
+| The trigger that should maintain it was attached only to `app_users` | Removing the client write alone would have left the column permanently null |
+| `form_fields.id` not writable | Every field placed in the builder failed to save |
+| `reserve_stock`, `release_reservation`, `transfer_stock` | Whitelisted and called, defined in no file and no database; three of four call sites logged the failure and carried on |
+| `transfer_stock` argument names differed from the declaration | Both venues bound as null, so it would have moved stock from nowhere to nowhere even once defined |
+| The seed was not re-runnable once a demo tenant existed | One lookup matched by reference number across every tenant, and a clone carries the same numbers |
+| The shim returned `unknown` | 127 type errors; the project had not typechecked since the cutover |
+
+All fixed. The gap that let them through is closed by
+`scripts/callsites-test.mjs`, which reads every query chain and function call
+out of the syntax tree and pushes it through the real query builder — static,
+no database, no browser. Each of the four defects was reintroduced to confirm
+it fails.
+
+```
+npm test        typecheck · 160 call sites · 19 routes · 52 database checks
+```
+
+Two things were noted and deliberately not changed. The row ceiling now warns
+when it truncates instead of dropping rows in silence, but no screen reads the
+flag. And `runData` is still unauthenticated: anyone with the deployed URL can
+read, write and delete across all 22 whitelisted tables. That is the dependency
+between sign-in and deploy — they are both in sprint 6, and sign-in has to land
+first.
+
 ### Sprint 3 — Make approvals a chain
 
 *Goal: authorization flows up the chain of command, and there is only one
@@ -237,6 +270,21 @@ top bar.
       resetting
 - [ ] Persona switching preserved **inside** a tenant. It is the best thing the
       demo does and it is not authentication.
+
+**One credential per prospect, not one per approval level.** The chain has six
+levels, which is not six logins: the levels are personas, and switching between
+them is a demo feature. Six accounts would mean signing out and back in five
+times to watch one request climb, which is the opposite of the point. A
+prospect gets one login, lands in a sandbox cloned from the template, and
+switches persona with a click.
+
+The reason to gate it is not the data — the platform generates nothing
+sensitive, unlike the survey platform's respondent answers. It is that two
+prospects sharing one URL would edit each other's forms mid-demo, that the data
+endpoint permits deletes across 22 tables, and that an ungated link still works
+a year later in somebody else's browser. Provisioning already does all of this
+(`db/003_provisioning.sql`: mint, extend, revoke, purge, reset); sign-in is a
+form in front of it.
 - [ ] **#14 — save a submission as a draft**
 - [ ] **#16 — Business Card acknowledgment gate**, including the spec's full
       status vocabulary
