@@ -1,9 +1,11 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - tanstackStart, viteReact, tailwindcss, tsConfigPaths, cloudflare (build-only),
-//     componentTagger (dev-only), VITE_* env injection, @ path alias, React/TanStack dedupe,
-//     error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... } }) if needed.
+// @lovable.dev/vite-tanstack-config bundles tanstackStart, viteReact,
+// tailwindcss, tsConfigPaths, the @ alias, VITE_* injection and the dev
+// tooling. Do not add those manually — duplicate plugins break the app.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-export default defineConfig();
+export default defineConfig({
+  // This deploys to Vercel, not Workers. Leaving the Cloudflare plugin on
+  // emits a wrangler.json and builds for the Workers runtime, which has
+  // no TCP sockets — and the database driver needs them.
+  cloudflare: false,
+});
