@@ -149,10 +149,11 @@ function ApprovalsInbox() {
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
   const [modal, setModal] = useState<
-    | { kind: "reject" | "clarify"; row: Row }
+    | { kind: "reject" | "clarify" | "forward" | "reviewer"; row: Row }
     | null
   >(null);
   const [comment, setComment] = useState("");
+  const [personId, setPersonId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -415,8 +416,56 @@ function ApprovalsInbox() {
     fadeAndRemove(row.id);
   };
 
+  // Forwarding moves this step to somebody else and keeps its place in
+  // the chain. Adding a reviewer inserts a step after this one and
+  // shuffles the rest up — both are the database's job, because both
+  // have to leave the chain walkable.
+  const submitPerson = async () => {
+    if (!modal) return;
+    const to = personId.trim();
+    if (!to) {
+      toast.error("Enter an employee ID");
+      return;
+    }
+    setSubmitting(true);
+    const { error } = modal.kind === "forward"
+      ? await db.rpc("reassign_approval", {
+          p_request_id: modal.row.id, p_to: to, p_comment: comment.trim() || null,
+        })
+      : await db.rpc("add_reviewer", {
+          p_request_id: modal.row.id, p_employee: to, p_deadline_days: 7,
+        });
+    if (error) {
+      toast.error(error.message);
+      setSubmitting(false);
+      return;
+    }
+
+    await db.from("activity_log").insert({
+      actor_id: currentUser.employee_id,
+      action: modal.kind === "forward" ? "reassigned" : "reviewer_added",
+      entity_type: modal.row.subject_type ?? "form_submission",
+      entity_id: modal.row.subject_id,
+      detail: (modal.kind === "forward" ? "Forwarded to " : "Added " + to + " as a reviewer on ")
+        + (modal.kind === "forward" ? to + " — " + (modal.row.subjectLabel ?? "a request")
+                                    : (modal.row.subjectLabel ?? "a request")),
+    });
+
+    toast.success(modal.kind === "forward"
+      ? "Forwarded — it is with " + to + " now"
+      : to + " will be asked after you");
+    // Forwarding hands the step away, so it leaves this queue. Adding a
+    // reviewer does not: the step is still ours to answer.
+    if (modal.kind === "forward") fadeAndRemove(modal.row.id);
+    setModal(null);
+    setComment("");
+    setPersonId("");
+    setSubmitting(false);
+  };
+
   const submitModal = async () => {
     if (!modal) return;
+    if (modal.kind === "forward" || modal.kind === "reviewer") return submitPerson();
     if (!comment.trim()) {
       toast.error("Please provide a reason");
       return;
@@ -584,6 +633,38 @@ function ApprovalsInbox() {
                       >
                         Clarify
                       </button>
+                      <button
+                        onClick={() => {
+                          setComment("");
+                          setPersonId("");
+                          setModal({ kind: "forward", row: r });
+                        }}
+                        className="rounded-md font-medium bg-white"
+                        style={{
+                          padding: "7px 12px",
+                          fontSize: 13,
+                          color: "#52525B",
+                          border: "1px solid #E4E4E7",
+                        }}
+                      >
+                        Forward
+                      </button>
+                      <button
+                        onClick={() => {
+                          setComment("");
+                          setPersonId("");
+                          setModal({ kind: "reviewer", row: r });
+                        }}
+                        className="rounded-md font-medium bg-white"
+                        style={{
+                          padding: "7px 12px",
+                          fontSize: 13,
+                          color: "#52525B",
+                          border: "1px solid #E4E4E7",
+                        }}
+                      >
+                        Add reviewer
+                      </button>
                       <span style={{ color: "#A1A1AA", marginLeft: 4 }}>
                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </span>
@@ -675,19 +756,40 @@ function ApprovalsInbox() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {modal?.kind === "reject" ? "Reason for rejection" : "What clarification is needed?"}
+              {modal?.kind === "reject" ? "Reason for rejection"
+                : modal?.kind === "clarify" ? "What clarification is needed?"
+                : modal?.kind === "forward" ? "Forward this step to somebody else"
+                : "Add a reviewer after this step"}
             </DialogTitle>
           </DialogHeader>
-          <Textarea
+          {(modal?.kind === "forward" || modal?.kind === "reviewer") && (
+            <label className="flex flex-col gap-1">
+              <span style={{ fontSize: 11.5, color: "#71717A" }}>Employee ID</span>
+              <input
+                value={personId}
+                onChange={(e) => setPersonId(e.target.value)}
+                placeholder="EMP-0312"
+                className="rounded-md"
+                style={{ padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}
+              />
+              <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>
+                {modal?.kind === "forward"
+                  ? "The step keeps its place in the chain; only who answers it changes."
+                  : "They are asked after you, before anyone above you."}
+              </span>
+            </label>
+          )}
+          {modal?.kind !== "reviewer" && <Textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={4}
             placeholder={
               modal?.kind === "reject"
                 ? "Explain why this request is being rejected…"
-                : "Describe what needs to be clarified…"
+                : modal?.kind === "clarify" ? "Describe what needs to be clarified…"
+                : "Why are you forwarding this? (optional)"
             }
-          />
+          />}
           <DialogFooter>
             <button
               onClick={() => setModal(null)}
