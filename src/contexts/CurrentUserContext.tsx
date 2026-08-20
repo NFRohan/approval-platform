@@ -11,11 +11,10 @@ export type CurrentUser = {
 //
 // These must match rows in `employees`, because every screen filters by
 // employee_id — the approvals queue asks for steps assigned to
-// currentUser.employee_id and nothing else. They had drifted: the
-// database was renumbered to EMP-#### when the schema was ported and
-// this list still said EMP-####, so no persona matched any employee and
-// every queue came back empty. scripts/render-test.mjs now checks the
-// two agree.
+// currentUser.employee_id and nothing else. They had drifted: the schema
+// port renumbered every employee and this list kept the old identifiers,
+// so no persona matched anybody and every queue came back empty.
+// scripts/render-test.mjs now checks the two agree.
 //
 // Safe to hardcode: an evaluation is a clone of the template, and
 // cloning preserves employee_id.

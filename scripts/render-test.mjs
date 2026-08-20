@@ -58,11 +58,11 @@ const pick = async (sql) => (await pool.query(sql)).rows[0]?.id ?? null;
 // ---------------------------------------------------------------------
 // Every persona the switcher offers must be a real employee.
 //
-// These two drifted apart once already: the schema port renumbered
-// employees to EMP-#### and the hardcoded persona list still said
-// EMP-####, so no persona matched anybody and every queue came back
-// empty — while the build, the type checker and every suite stayed
-// green, because nothing compared the two.
+// These two drifted apart once already: the schema port renumbered every
+// employee, and the hardcoded persona list kept the old identifiers. No
+// persona matched anybody and every queue came back empty — while the
+// build, the type checker and every suite stayed green, because nothing
+// compared the two.
 // ---------------------------------------------------------------------
 const { USERS } = await server.ssrLoadModule('/src/contexts/CurrentUserContext.tsx');
 const { rows: known } = await pool.query(
