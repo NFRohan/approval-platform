@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 export const Route = createFileRoute("/activity")({
   // Global search sends a person here — it is the only page that can
   // answer "what has this person been doing".
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { actor?: string } => ({
     actor: typeof search.actor === "string" ? search.actor : undefined,
   }),
   head: () => ({ meta: [{ title: "Activity Log · Admin Services Portal" }] }),

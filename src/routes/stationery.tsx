@@ -23,8 +23,10 @@ type Req = {
 const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   open:      { label: "Open",      color: "#1D4ED8", bg: "#EFF6FF" },
   approved:  { label: "Approved",  color: "#166534", bg: "#DCFCE7" },
-  fulfilled: { label: "Fulfilled", color: "#166534", bg: "#DCFCE7" },
-  rejected:  { label: "Rejected",  color: "#B91C1C", bg: "#FEF2F2" },
+  // Handed over, but nobody has said they received it yet.
+  fulfilled:    { label: "Awaiting acknowledgement", color: "#92400E", bg: "#FEF3C7" },
+  acknowledged: { label: "Acknowledged",             color: "#166534", bg: "#DCFCE7" },
+  rejected:     { label: "Rejected",                 color: "#B91C1C", bg: "#FEF2F2" },
 };
 
 const inputStyle: React.CSSProperties = {
@@ -131,6 +133,30 @@ function StationeryPage() {
     load();
   }
 
+  /**
+   * The requester confirms they actually received it.
+   *
+   * Fulfilment is somebody in HR saying they handed it over;
+   * acknowledgement is the requester saying they got it. Collapsing the
+   * two loses the only record that the handover happened, which for
+   * anything issued as a physical item is the part worth keeping.
+   */
+  async function handleAcknowledge(req: Req) {
+    const { error } = await db
+      .from("stationery_requests")
+      .update({ status: "acknowledged" })
+      .eq("id", req.id);
+    if (error) { toast.error("Failed: " + error.message); return; }
+
+    await db.from("activity_log").insert({
+      actor_id: currentUser.employee_id, action: "acknowledged",
+      entity_type: "stationery_request", entity_id: req.id,
+      detail: `Confirmed receipt of the ${req.kind === "business_card" ? "business card" : "stamp and seal"}`,
+    });
+    toast.success("Receipt confirmed");
+    load();
+  }
+
   async function handleFulfil(req: Req) {
     const { error } = await db.from("stationery_requests").update({ status: "fulfilled" }).eq("id", req.id);
     if (error) { toast.error("Failed: " + error.message); return; }
@@ -146,6 +172,9 @@ function StationeryPage() {
   const pendingForMe = requests.filter((r) => r.status === "open" && r.current_approver_id === currentUser.employee_id);
   const isHrbp = currentUser.employee_id === "EMP-0201";
   const awaitingFulfillment = requests.filter((r) => r.status === "approved");
+  // Handed over and waiting on the person who asked for it.
+  const awaitingMyAcknowledgement = requests.filter(
+    (r) => r.status === "fulfilled" && r.requester_id === currentUser.employee_id);
 
   return (
     <div className="max-w-3xl mx-auto" style={{ padding: "32px 28px 56px" }}>
@@ -208,6 +237,35 @@ function StationeryPage() {
                         <button onClick={() => handleReject(r)} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}>Reject</button>
                       </div>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {awaitingMyAcknowledgement.length > 0 && (
+            <div className="rounded-xl" style={{ border: "1px solid #FDE68A", background: "#FFFBEB", padding: 16, marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#92400E", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Waiting on you
+              </div>
+              <div className="flex flex-col gap-2">
+                {awaitingMyAcknowledgement.map((r) => (
+                  <div key={r.id} className="flex items-center gap-3 flex-wrap rounded-lg bg-white" style={{ border: "1px solid #FDE68A", padding: "10px 13px" }}>
+                    <div className="min-w-0 flex-1">
+                      <div style={{ fontSize: 13.5, fontWeight: 500, color: "#18181B" }}>
+                        {r.kind === "business_card" ? "Business card" : "Stamp and seal"} — {r.name}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "#92400E", marginTop: 2 }}>
+                        Marked as handed over. Confirm you received it.
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAcknowledge(r)}
+                      className="rounded-md text-white font-medium"
+                      style={{ padding: "6px 12px", fontSize: 12.5, background: "#B45309", border: "none", cursor: "pointer" }}
+                    >
+                      I received this
+                    </button>
                   </div>
                 ))}
               </div>

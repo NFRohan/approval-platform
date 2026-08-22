@@ -142,10 +142,14 @@ function SubmissionsPage() {
       ) : (
         <div className="space-y-3">
           {rows.map((r) => (
+            // A draft has no chain to show, so it goes back to the form
+            // it came from with everything already in it. Sending it to
+            // the status screen would show a timeline of nothing.
             <Link
               key={r.id}
-              to="/status/$submissionId"
-              params={{ submissionId: r.id }}
+              {...(r.status === "draft" && r.form_template_id
+                ? { to: "/forms/$formId" as const, params: { formId: r.form_template_id }, search: { draft: r.id } }
+                : { to: "/status/$submissionId" as const, params: { submissionId: r.id } })}
               className="block rounded-xl bg-white"
               style={{ border: "1px solid #E4E4E7", padding: 18 }}
             >

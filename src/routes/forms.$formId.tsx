@@ -10,6 +10,10 @@ import { DEFAULT_LABELS, isEmbedded, isPermission } from "@/components/builder/p
 import { resolveSlabChain, type ApprovalSlab } from "@/lib/approvalSlabs";
 
 export const Route = createFileRoute("/forms/$formId")({
+  // Resuming a draft is the same screen with something already in it.
+  validateSearch: (search: Record<string, unknown>): { draft?: string } => ({
+    draft: typeof search.draft === "string" ? search.draft : undefined,
+  }),
   head: () => ({ meta: [{ title: "Fill Form · Admin Services Portal" }] }),
   component: FillFormPage,
 });
@@ -96,6 +100,12 @@ function FillFormPage() {
   const [loading, setLoading] = useState(true);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
+  const { draft: draftId } = Route.useSearch();
+  // The submission being edited. Set from ?draft= on arrival, or the
+  // moment a draft is first saved, so saving twice updates one row
+  // rather than leaving a trail of abandoned ones.
+  const [openDraft, setOpenDraft] = useState<string | null>(draftId ?? null);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [employeeData, setEmployeeData] = useState<EmployeeRow | null>(null);
   const [approvalRules, setApprovalRules] = useState<ApproverRule[]>([]);
@@ -212,6 +222,93 @@ function FillFormPage() {
     setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   }
 
+  // Values are stored against the field's label rather than its id,
+  // because that is what a submission is read back as. Coming the other
+  // way means matching on the label, which is why two fields sharing one
+  // label would collide — the builder should not allow that, and this is
+  // where it would show.
+  useEffect(() => {
+    if (!openDraft || fields.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await db
+        .from("submission_values")
+        .select("field_name, value")
+        .eq("submission_id", openDraft);
+      if (cancelled || !data?.length) return;
+
+      const byLabel: Record<string, string> = {};
+      data.forEach((row) => { byLabel[row.field_name] = row.value; });
+
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const f of fields) {
+          const saved = byLabel[f.label];
+          if (saved === undefined) continue;
+          next[f.id] = f.kind === "checkbox" ? saved === "Yes" : saved;
+        }
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDraft, fields.length]);
+
+  /** Every answer, in the shape submission_values wants. */
+  function answerRows(submissionId: string) {
+    return fields
+      .filter((f) => !isPermission(f.kind))
+      .map((f) => {
+        const str = f.kind.startsWith("gen_") ? genValue(f.kind) : (() => {
+          if (f.kind === "calculation" && f.formula) {
+            const result = evalFormula(f.formula, fields, values);
+            return result !== null ? String(result) : "";
+          }
+          const v = values[f.id];
+          if (v === undefined || v === null) return "";
+          if (typeof v === "string") return v;
+          if (typeof v === "boolean") return v ? "Yes" : "No";
+          if (typeof v === "number") return String(v);
+          return JSON.stringify(v);
+        })();
+        return { submission_id: submissionId, field_name: f.label, value: str };
+      });
+  }
+
+  /**
+   * Keep what has been entered without asking anybody to approve it.
+   *
+   * A draft deliberately gets no approval chain — that is the whole
+   * difference between saving and submitting, and it is why nobody is
+   * notified. Values are replaced rather than merged, so the draft is
+   * always exactly what is on screen.
+   */
+  async function handleSaveDraft() {
+    setSavingDraft(true);
+    try {
+      let id = openDraft;
+
+      if (!id) {
+        const { data, error } = await db
+          .from("form_submissions")
+          .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "draft" })
+          .select("id")
+          .single();
+        if (error || !data) { toast.error("Could not save the draft: " + (error?.message ?? "unknown")); return; }
+        id = data.id as string;
+        setOpenDraft(id);
+      }
+
+      await db.from("submission_values").delete().eq("submission_id", id);
+      const rows = answerRows(id).filter((r) => r.value !== "");
+      if (rows.length) await db.from("submission_values").insert(rows);
+
+      toast.success("Draft saved — it is in My Submissions");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   async function handleSubmit() {
     // Every field, not the current step's. handleNext only ever checked
     // the step being left, so the last step was never checked at all —
@@ -228,12 +325,27 @@ function FillFormPage() {
 
     setSubmitting(true);
     try {
-      const { data: sub, error: subErr } = await db
-        .from("form_submissions")
-        .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "submitted" })
-        .select("id")
-        .single();
-      if (subErr || !sub) { toast.error("Failed to submit: " + (subErr?.message ?? "unknown")); return; }
+      // A draft becomes the submission rather than spawning a second
+      // one, so resuming and submitting leaves one row with one history.
+      let sub: { id: string } | null = null;
+
+      if (openDraft) {
+        const { error } = await db
+          .from("form_submissions")
+          .update({ status: "submitted", submitted_at: new Date().toISOString() })
+          .eq("id", openDraft);
+        if (error) { toast.error("Failed to submit: " + error.message); return; }
+        await db.from("submission_values").delete().eq("submission_id", openDraft);
+        sub = { id: openDraft };
+      } else {
+        const { data, error } = await db
+          .from("form_submissions")
+          .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "submitted" })
+          .select("id")
+          .single();
+        if (error || !data) { toast.error("Failed to submit: " + (error?.message ?? "unknown")); return; }
+        sub = { id: data.id as string };
+      }
 
       const valueRows = fields
         .filter((f) => !isPermission(f.kind))
@@ -376,6 +488,19 @@ function FillFormPage() {
             <div className="flex items-center gap-3">
               <span className="text-[12px]" style={{ color: "#A1A1AA" }}>Step {stepIndex + 1} of {steps.length}</span>
               {isLastStep ? (
+                <>
+                <button
+                  onClick={handleSaveDraft}
+                  disabled={savingDraft || submitting}
+                  className="rounded-md font-medium bg-white"
+                  style={{
+                    padding: "10px 16px", fontSize: 13.5, color: "#52525B",
+                    border: "1px solid #E4E4E7", marginRight: 8,
+                    cursor: savingDraft ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {savingDraft ? "Saving…" : openDraft ? "Update draft" : "Save draft"}
+                </button>
                 <button
                   onClick={handleSubmit}
                   disabled={submitting}
@@ -385,6 +510,7 @@ function FillFormPage() {
                   {submitting ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
                   {submitting ? "Submitting…" : "Confirm & Submit"}
                 </button>
+                </>
               ) : (
                 <button
                   onClick={handleNext}
