@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as StationeryRouteImport } from './routes/stationery'
+import { Route as StaffRouteImport } from './routes/staff'
 import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as LoginRouteImport } from './routes/login'
@@ -38,6 +39,11 @@ const SubmissionsRoute = SubmissionsRouteImport.update({
 const StationeryRoute = StationeryRouteImport.update({
   id: '/stationery',
   path: '/stationery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StaffRoute = StaffRouteImport.update({
+  id: '/staff',
+  path: '/staff',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MovementOrdersRoute = MovementOrdersRouteImport.update({
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
+  '/staff': typeof StaffRoute
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/approvals/delegate': typeof ApprovalsDelegateRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
+  '/staff': typeof StaffRoute
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/approvals/delegate': typeof ApprovalsDelegateRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
+  '/staff': typeof StaffRoute
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/approvals/delegate': typeof ApprovalsDelegateRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/maintenance'
     | '/movement-orders'
+    | '/staff'
     | '/stationery'
     | '/submissions'
     | '/approvals/delegate'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/maintenance'
     | '/movement-orders'
+    | '/staff'
     | '/stationery'
     | '/submissions'
     | '/approvals/delegate'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/maintenance'
     | '/movement-orders'
+    | '/staff'
     | '/stationery'
     | '/submissions'
     | '/approvals/delegate'
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MaintenanceRoute: typeof MaintenanceRoute
   MovementOrdersRoute: typeof MovementOrdersRoute
+  StaffRoute: typeof StaffRoute
   StationeryRoute: typeof StationeryRoute
   SubmissionsRoute: typeof SubmissionsRoute
   BuilderApproversRoute: typeof BuilderApproversRoute
@@ -302,6 +315,13 @@ declare module '@tanstack/react-router' {
       path: '/stationery'
       fullPath: '/stationery'
       preLoaderRoute: typeof StationeryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/staff': {
+      id: '/staff'
+      path: '/staff'
+      fullPath: '/staff'
+      preLoaderRoute: typeof StaffRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/movement-orders': {
@@ -454,6 +474,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MaintenanceRoute: MaintenanceRoute,
   MovementOrdersRoute: MovementOrdersRoute,
+  StaffRoute: StaffRoute,
   StationeryRoute: StationeryRoute,
   SubmissionsRoute: SubmissionsRoute,
   BuilderApproversRoute: BuilderApproversRoute,

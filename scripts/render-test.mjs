@@ -110,7 +110,7 @@ if (missing.length) {
 }
 
 const PATHS = [
-  '/', '/login', '/activity', '/approvals', '/approvals/delegate', '/approvals/history',
+  '/', '/login', '/staff', '/activity', '/approvals', '/approvals/delegate', '/approvals/history',
   '/builder', '/builder/approvers', '/builder/notifications',
   '/forms', '/maintenance', '/movement-orders',
   '/notices', '/notices/new', '/stationery', '/submissions',
