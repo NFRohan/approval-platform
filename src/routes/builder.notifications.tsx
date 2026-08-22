@@ -1,3 +1,4 @@
+import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
@@ -65,6 +66,7 @@ function NotificationsStep() {
   const [publishing, setPublishing] = useState(false);
   const [fieldTypes, setFieldTypes] = useState<Set<string>>(new Set());
   const [slabNotify, setSlabNotify] = useState<AutoEntryWithRequires[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -76,6 +78,7 @@ function NotificationsStep() {
       ]);
       if (tpl?.name) setFormName(tpl.name);
       setFieldTypes(new Set((fields ?? []).map((f) => f.field_type ?? "").filter(Boolean)));
+      setLoading(false);
       const empMap: Record<string, { name: string; designation: string | null }> = {};
       (emps ?? []).forEach((e) => { empMap[e.employee_id] = { name: e.name, designation: e.designation }; });
       setSlabNotify(
@@ -156,6 +159,11 @@ function NotificationsStep() {
         </>
       }
     >
+      {loading ? (
+        <div style={{ padding: "4px 0 8px" }}>
+          <LoadingRows rows={3} height={72} />
+        </div>
+      ) : (
       <PeopleStep
         formTemplateId={templateId}
         title="Who should be notified?"
@@ -165,6 +173,7 @@ function NotificationsStep() {
         manual={manual}
         onManualChange={setManual}
       />
+      )}
     </BuilderChrome>
   );
 }

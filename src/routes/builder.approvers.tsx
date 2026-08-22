@@ -1,3 +1,4 @@
+import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
@@ -64,6 +65,7 @@ function ApproversStep() {
   const [fieldTypes, setFieldTypes] = useState<Set<string>>(new Set());
   const [slabs, setSlabs] = useState<SlabRow[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -76,6 +78,7 @@ function ApproversStep() {
       if (tpl?.name) setFormName(tpl.name);
       setFieldTypes(new Set((fields ?? []).map((f) => f.field_type ?? "").filter(Boolean)));
       setEmployees((emps ?? []) as EmployeeOption[]);
+      setLoading(false);
       if (existingSlabs && existingSlabs.length > 0) {
         setSlabs(
           existingSlabs.map((s) => ({
@@ -184,6 +187,11 @@ function ApproversStep() {
         </>
       }
     >
+      {loading ? (
+        <div style={{ padding: "4px 0 8px" }}>
+          <LoadingRows rows={3} height={72} />
+        </div>
+      ) : (
       <PeopleStep
         formTemplateId={templateId}
         title="Who needs to approve this form?"
@@ -193,6 +201,7 @@ function ApproversStep() {
         manual={manual}
         onManualChange={setManual}
       />
+      )}
       {fieldTypes.has("money") && (
         <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: 18, margin: "16px 24px" }}>
           <div className="flex items-center justify-between mb-3">

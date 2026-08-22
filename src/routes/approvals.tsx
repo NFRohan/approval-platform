@@ -159,6 +159,13 @@ function ApprovalsInbox() {
   const load = useCallback(async () => {
     setLoading(true);
 
+    // There is no scheduler behind a demo, so the screen that shows
+    // overdue work is the thing that asks for the reminders. In a real
+    // deployment this would be a timer, not a page load — the function
+    // itself only writes one reminder per person per day, so calling it
+    // on every visit is harmless.
+    await db.rpc("remind_overdue", {});
+
     const today = new Date().toISOString().slice(0, 10);
 
     // Load active delegations TO the current user (with optional form scope)

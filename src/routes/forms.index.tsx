@@ -1,3 +1,4 @@
+import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
@@ -24,6 +25,7 @@ type Tab = (typeof TABS)[number];
 
 function FormsPage() {
   const [forms, setForms] = useState<FormRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("HR");
   const { currentUser } = useCurrentUser();
   const isAdmin = currentUser.employee_id === "EMP-0201";
@@ -37,6 +39,7 @@ function FormsPage() {
         .eq("status", "published")
         .order("created_at", { ascending: false });
       setForms((data ?? []) as FormRow[]);
+      setLoading(false);
     })();
   }, []);
 
@@ -86,7 +89,12 @@ function FormsPage() {
 
       {/* Cards */}
       <div className="grid gap-4 md:grid-cols-2">
-        {visible.map((f) => (
+        {loading && (
+          <div className="col-span-full">
+            <LoadingRows rows={4} height={104} />
+          </div>
+        )}
+        {!loading && visible.map((f) => (
           <FormCard
             key={f.id}
             form={f}
@@ -95,7 +103,7 @@ function FormsPage() {
             onDeleted={() => handleDeleted(f.id)}
           />
         ))}
-        {visible.length === 0 && (
+        {!loading && visible.length === 0 && (
           <div className="col-span-full text-center text-muted-foreground py-12 border rounded-xl bg-white">
             No published forms in {tab}.
           </div>
