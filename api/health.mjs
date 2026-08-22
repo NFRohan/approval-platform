@@ -36,8 +36,8 @@ export default async function handler(_req, res) {
 
     },
     database: false,
-    tenant: false,
-    account: false,
+    evaluations: 0,
+    staffAccount: false,
     region: process.env.VERCEL_REGION ?? null,
   };
 
@@ -55,8 +55,13 @@ export default async function handler(_req, res) {
            from public.tenants t
            join public.app_users u on u.tenant_id = t.id
           where app.tenant_status(t.id) = 'active'`);
-      report.tenant = (rows[0]?.usable ?? 0) > 0;
-      report.account = report.tenant;
+      report.evaluations = rows[0]?.usable ?? 0;
+
+      // Without one of these nobody can issue an evaluation, which is a
+      // different kind of broken from having none to sign into.
+      const staff = await client.query(
+        'select count(*)::int as n from public.app_users where is_staff = true');
+      report.staffAccount = (staff.rows[0]?.n ?? 0) > 0;
     } finally {
       client.release();
     }
@@ -64,7 +69,7 @@ export default async function handler(_req, res) {
     console.error('[health]', err instanceof Error ? err.message : err);
   }
 
-  report.ok = report.database && report.tenant && report.account;
+  report.ok = report.database && report.evaluations > 0 && report.staffAccount;
   res.statusCode = report.ok ? 200 : 503;
   res.setHeader('content-type', 'application/json');
   res.setHeader('cache-control', 'no-store');

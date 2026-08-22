@@ -45,6 +45,12 @@ function fail(err: unknown): DataResponse {
   // Postgres refuses a write that row-level security forbids with 42501.
   // Reporting it as 403 keeps the client honest without describing the
   // policy that stopped it.
+  // 28000 is what app.assert_tenant_live() raises when the evaluation
+  // has been withdrawn or has expired mid-session. The message is
+  // written for the person holding the login.
+  if (e?.code === '28000') {
+    return { data: null, error: { message: e.message ?? 'this evaluation is no longer available', status: 401 } };
+  }
   if (e?.code === '42501') {
     return { data: null, error: { message: 'not permitted', status: 403 } };
   }

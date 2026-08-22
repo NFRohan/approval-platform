@@ -135,16 +135,20 @@ export const changePassword = createServerFn({ method: 'POST' })
     const session = await sessionFromCookie();
     if (!session) return { ok: false, error: 'You are not signed in.' };
 
+    const current = String(data?.current ?? '');
     const next = String(data?.next ?? '');
     if (next.length < 10) {
       return { ok: false, error: 'Use at least 10 characters.' };
+    }
+    if (next === current) {
+      return { ok: false, error: 'That is the password you already have.' };
     }
 
     const client = await getPool().connect();
     try {
       const { rows } = await client.query(
         'select password_hash from public.app_users where id = $1', [session.userId]);
-      if (!rows[0] || !(await verifyPassword(String(data?.current ?? ''), rows[0].password_hash))) {
+      if (!rows[0] || !(await verifyPassword(current, rows[0].password_hash))) {
         return { ok: false, error: 'That is not your current password.' };
       }
 

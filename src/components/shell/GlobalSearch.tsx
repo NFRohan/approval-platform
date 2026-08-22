@@ -68,7 +68,11 @@ export function GlobalSearch() {
   }, []);
 
   const run = useCallback(async (q: string) => {
-    const like = `%${q}%`;
+    // % and _ are wildcards to LIKE, so an unescaped query means typing
+    // "%" matched every row in six tables and "a_ex" found "Alex".
+    // Backslash is the default escape character, so escaping is enough
+    // and no ESCAPE clause is needed.
+    const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
     setBusy(true);
 
     const [forms, values, people, notices, maint, stationery] = await Promise.all([

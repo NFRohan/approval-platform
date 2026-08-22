@@ -55,6 +55,42 @@ $$;
 -- =====================================================================
 -- provision_demo — a new sandbox, cloned whole from the template.
 -- =====================================================================
+-- ---------------------------------------------------------------------
+-- Is this evaluation still live, right now?
+--
+-- tenant_status was only ever consulted at sign-in, which made revoke
+-- and expiry advisory for the life of a token: a withdrawn prospect
+-- kept full read and write for up to twelve hours. This runs in the
+-- session preamble of every request instead, so withdrawing takes
+-- effect on the next click rather than the next login.
+--
+-- Fails closed. If row-level security hides the tenant row the status
+-- comes back null, and null is not active.
+-- ---------------------------------------------------------------------
+create or replace function app.assert_tenant_live() returns void
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_state text;
+begin
+  -- Staff hold no tenant, so there is nothing to expire.
+  if app.current_tenant() is null then
+    return;
+  end if;
+
+  v_state := app.tenant_status(app.current_tenant());
+
+  if coalesce(v_state, 'unknown') <> 'active' then
+    raise exception 'this evaluation is %', coalesce(v_state, 'not available')
+      using errcode = '28000';
+  end if;
+end $$;
+
+grant execute on function app.assert_tenant_live() to app_api;
+
 create or replace function app.provision_demo(
   p_name     text,
   p_username text,

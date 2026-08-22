@@ -14,7 +14,7 @@
 
 import { createServerFn } from '@tanstack/react-start';
 import { withContext } from '@/server/db';
-import { hashPassword } from '@/server/auth';
+import { hashPassword, generatePassword } from '@/server/auth';
 import { sessionFromCookie } from '@/server/session';
 import { HttpError } from '@/server/tables';
 
@@ -79,9 +79,7 @@ export const mintEvaluation = createServerFn({ method: 'POST' })
       return { ok: false, error: 'Length must be between 1 and 365 days.' };
     }
 
-    // Readable enough to send to somebody, long enough not to be the
-    // weak part. Generated here so it is never chosen by a person.
-    const password = `demo-${Math.random().toString(36).slice(2, 8)}-${Math.random().toString(36).slice(2, 8)}`;
+    const password = generatePassword();
 
     try {
       const slug = await withContext(ctx, async (client) => {
@@ -128,7 +126,7 @@ export const resetEvaluationPassword = createServerFn({ method: 'POST' })
   .inputValidator((input: { tenantId: string }) => input)
   .handler(async ({ data }): Promise<{ ok: boolean; password?: string; error?: string }> => {
     const ctx = await staffContext();
-    const password = `demo-${Math.random().toString(36).slice(2, 8)}-${Math.random().toString(36).slice(2, 8)}`;
+    const password = generatePassword();
     try {
       await withContext(ctx, async (client) =>
         client.query('select app.reset_demo_password($1, $2, $3)',

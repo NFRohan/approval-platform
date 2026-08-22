@@ -40,18 +40,40 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt$${salt.toString('hex')}$${derived.toString('hex')}`;
 }
 
+/**
+ * Always derives, even when the stored value is unusable.
+ *
+ * The sign-in path hands this a fake hash when no such user exists, so
+ * that a missing username costs the same as a wrong password. Returning
+ * early on a malformed hash defeated that completely: the missing-user
+ * path skipped scrypt and came back in microseconds, which is exactly
+ * the difference it was supposed to hide.
+ */
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = String(stored ?? '').split('$');
-  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  const usable = parts.length === 3 && parts[0] === 'scrypt';
 
-  const salt = Buffer.from(parts[1], 'hex');
-  const expected = Buffer.from(parts[2], 'hex');
-  if (expected.length !== KEYLEN) return false;
+  const salt = usable ? Buffer.from(parts[1], 'hex') : Buffer.alloc(16);
+  const expected = usable ? Buffer.from(parts[2], 'hex') : Buffer.alloc(KEYLEN);
 
-  const derived = await scrypt(password, salt, KEYLEN);
+  // Derive first, decide afterwards. The work happens either way.
+  const derived = await scrypt(password, salt.length ? salt : Buffer.alloc(16), KEYLEN);
+  if (!usable || expected.length !== KEYLEN) return false;
+
   // Constant time: a comparison that returns early leaks how much of the
   // hash matched, one byte at a time.
   return timingSafeEqual(derived, expected);
+}
+
+/**
+ * A password to hand somebody, generated rather than chosen.
+ *
+ * randomBytes, not Math.random — these gate a public URL, and V8's
+ * generator is predictable from its own output. Readable enough to send
+ * in a message, long enough not to be the weak part.
+ */
+export function generatePassword(prefix = 'demo'): string {
+  return `${prefix}-${randomBytes(4).toString('hex')}-${randomBytes(4).toString('hex')}`;
 }
 
 // ---------------------------------------------------------------------
@@ -59,7 +81,14 @@ export async function verifyPassword(password: string, stored: string): Promise<
 // ---------------------------------------------------------------------
 
 export type Session = {
-  tenantId: string;
+  /**
+   * Null for staff, and that is the schema's rule rather than an
+   * oversight: app_users_tenancy_rule requires a staff account to have
+   * no tenant, so that it cannot be read into one. Typing this as
+   * `string` is what let a staff session be issued and then rejected on
+   * the very next request.
+   */
+  tenantId: string | null;
   tenantSlug: string;
   userId: string;
   username: string;
@@ -96,9 +125,14 @@ export async function verifySession(token: string | undefined): Promise<Session 
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    if (!payload.tenantId || !payload.userId) return null;
+    // A session needs a user. It does not need a tenant — staff have
+    // none by design, and requiring one made the staff console
+    // unreachable: sign-in set a cookie that never verified, so every
+    // request bounced back to the login screen.
+    if (!payload.userId) return null;
+    if (!payload.tenantId && payload.isStaff !== true) return null;
     return {
-      tenantId: String(payload.tenantId),
+      tenantId: payload.tenantId ? String(payload.tenantId) : null,
       tenantSlug: String(payload.tenantSlug ?? ''),
       userId: String(payload.userId),
       username: String(payload.username ?? ''),
@@ -117,7 +151,10 @@ export async function verifySession(token: string | undefined): Promise<Session 
 export const cookieOptions = {
   httpOnly: true,
   sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
+  // Secure unless something says otherwise. Keying this off a positive
+  // "is production" check meant any host that failed to set NODE_ENV
+  // silently served the session cookie over plain HTTP.
+  secure: process.env.NODE_ENV !== 'development',
   path: '/',
   maxAge: TTL_SECONDS,
 };

@@ -69,12 +69,16 @@ function preamble(ctx: RequestContext): string {
   const role = ctx.role && ROLES.has(ctx.role) ? ctx.role : 'anon';
   const staff = ctx.isStaff ? 'true' : 'false';
 
+  // The liveness check rides along in the same batch, so enforcing it
+  // on every request costs no extra round trip. It raises 28000 when
+  // the evaluation has been withdrawn or has run out.
   return `begin;
           set local role app_api;
           select set_config('app.tenant_id', '${tenant}', true),
                  set_config('app.user_id',   '${user}',   true),
                  set_config('app.role',      '${role}',   true),
-                 set_config('app.is_staff',  '${staff}',  true);`;
+                 set_config('app.is_staff',  '${staff}',  true);
+          select app.assert_tenant_live();`;
 }
 
 /** Run `fn` with the given identity applied to the session. */
