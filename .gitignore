@@ -45,3 +45,5 @@ supabase/.temp/
 
 .vercel
 .env*
+
+qa-artifacts/

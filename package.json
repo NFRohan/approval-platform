@@ -16,7 +16,8 @@
     "test:auth": "node --env-file=.env scripts/auth-test.mjs",
     "test:render": "node --env-file=.env scripts/render-test.mjs",
     "db:apply": "node --env-file=.env scripts/db-apply.mjs",
-    "db:test": "node --env-file=.env scripts/db-test.mjs"
+    "db:test": "node --env-file=.env scripts/db-test.mjs",
+    "qa": "node scripts/qa.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
@@ -94,6 +95,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "jsdom": "^29.1.1",
+    "playwright": "^1.62.1",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
