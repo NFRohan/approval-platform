@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, ChevronRight, HelpCircle, Search } from "lucide-react";
+import { Bell, ChevronRight, HelpCircle } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
+import { GlobalSearch } from "./GlobalSearch";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
@@ -256,22 +257,7 @@ export function TopBar() {
         ))}
       </div>
 
-      <div
-        className="flex-1 flex items-center gap-2.5 rounded-[10px]"
-        style={{ maxWidth: 480, padding: "8px 14px", background: "var(--color-zinc-100)" }}
-      >
-        <Search size={14} className="text-zinc-500" />
-        <input
-          placeholder="Search submissions, forms, people…"
-          className="flex-1 bg-transparent outline-none text-[13px] text-zinc-900 font-sans"
-        />
-        <kbd
-          className="font-mono text-zinc-500 bg-white border rounded"
-          style={{ fontSize: 10, padding: "2px 6px", borderColor: "var(--color-zinc-200)" }}
-        >
-          ⌘K
-        </kbd>
-      </div>
+      <GlobalSearch />
 
       <div className="ml-auto flex items-center gap-2 relative">
         <button
