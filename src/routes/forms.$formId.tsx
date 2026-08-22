@@ -186,6 +186,30 @@ function FillFormPage() {
     return result;
   }, [fields]);
 
+  // The person filling the form in, so the fields marked "auto-filled"
+  // have something to fill from.
+  //
+  // employeeData was only ever set by an employee-picker field, and no
+  // seeded form has one — so every gen_ field resolved to an empty
+  // string, and because they are required, handleNext refused to move
+  // on. Four of the five forms could not be submitted at all, and the
+  // field the person was told to fill had no input to fill it with.
+  useEffect(() => {
+    if (!currentUser.employee_id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await db
+        .from("employees")
+        .select("employee_id, name, designation, department, gate_pass_card_number")
+        .eq("employee_id", currentUser.employee_id)
+        .maybeSingle();
+      // A picker on the form still wins: it is asking about somebody
+      // else, which is the whole point of having one.
+      if (!cancelled && data) setEmployeeData((prev) => prev ?? (data as EmployeeRow));
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser.employee_id]);
+
   function setValue(id: string, v: unknown) {
     setValues((prev) => ({ ...prev, [id]: v }));
     const field = fields.find((f) => f.id === id);

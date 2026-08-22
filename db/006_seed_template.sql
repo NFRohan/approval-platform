@@ -72,25 +72,25 @@ insert into public.form_templates (id, name, category, created_by, status) value
 
 insert into public.form_fields (form_template_id, field_type, field_name, order_index, is_required, field_config) values
   -- Travel & Expense: the money field is what pulls in the finance chain
-  ('11111111-0000-4000-8000-000000000001', 'gen_name',   'Employee name',      0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000001', 'gen_employee_name',   'Employee name',      0, true,  '{}'),
   ('11111111-0000-4000-8000-000000000001', 'text',       'Purpose of travel',  1, true,  '{"placeholder":"Client visit, conference…"}'),
   ('11111111-0000-4000-8000-000000000001', 'date',       'Travel date',        2, true,  '{}'),
   ('11111111-0000-4000-8000-000000000001', 'money',      'Amount claimed',     3, true,  '{}'),
   ('11111111-0000-4000-8000-000000000001', 'textarea',   'Notes',              4, false, '{"placeholder":"Anything the approver should know"}'),
 
-  ('11111111-0000-4000-8000-000000000002', 'gen_name',   'Employee name',      0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000002', 'gen_employee_name',   'Employee name',      0, true,  '{}'),
   ('11111111-0000-4000-8000-000000000002', 'select',     'Leave type',         1, true,  '{"options":["Annual","Sick","Unpaid","Parental"]}'),
   ('11111111-0000-4000-8000-000000000002', 'date',       'From',               2, true,  '{}'),
   ('11111111-0000-4000-8000-000000000002', 'date',       'To',                 3, true,  '{}'),
   ('11111111-0000-4000-8000-000000000002', 'textarea',   'Reason',             4, false, '{}'),
 
-  ('11111111-0000-4000-8000-000000000003', 'gen_name',   'Employee name',      0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000003', 'gen_employee_name',   'Employee name',      0, true,  '{}'),
   ('11111111-0000-4000-8000-000000000003', 'select',     'System',             1, true,  '{"options":["Finance ledger","HR records","Source control","Analytics"]}'),
   ('11111111-0000-4000-8000-000000000003', 'select',     'Access level',       2, true,  '{"options":["Read only","Contributor","Administrator"]}'),
   ('11111111-0000-4000-8000-000000000003', 'textarea',   'Justification',      3, true,  '{}'),
 
-  ('11111111-0000-4000-8000-000000000004', 'gen_name',   'Employee name',      0, true,  '{}'),
-  ('11111111-0000-4000-8000-000000000004', 'gen_card',   'Gate pass card',     1, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000004', 'gen_employee_name',   'Employee name',      0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000004', 'gen_gate_pass',   'Gate pass card',     1, true,  '{}'),
   ('11111111-0000-4000-8000-000000000004', 'select',     'Pass type',          2, true,  '{"options":["Returnable","Non-Returnable","Daily"]}'),
   ('11111111-0000-4000-8000-000000000004', 'text',       'Item description',   3, true,  '{}'),
   ('11111111-0000-4000-8000-000000000004', 'number',     'Quantity',           4, true,  '{}'),

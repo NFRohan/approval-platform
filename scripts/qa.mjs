@@ -284,6 +284,179 @@ await check('the notification bell opens and shows real notifications', async ()
 });
 
 // ---------------------------------------------------------------------
+// 5b. Filling in a form: validation, drafts, and submitting
+// ---------------------------------------------------------------------
+await check('a form opens and can be filled in', async () => {
+  await page.goto(`${BASE}/forms`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2000);
+  const card = page.locator('a[href^="/forms/"], [role="button"]').first();
+  const link = await page.locator('a[href^="/forms/"]').first().getAttribute('href').catch(() => null);
+  if (!link) {
+    // the list may use buttons rather than links
+    const openable = page.getByRole('button', { name: /open|fill|start/i }).first();
+    if (!(await openable.count())) throw new Error('no way to open a form from the list');
+    await openable.click();
+  } else {
+    await page.goto(`${BASE}${link}`, { waitUntil: 'networkidle' });
+  }
+  await page.waitForTimeout(2500);
+  const inputs = await page.locator('input:visible, textarea:visible, select:visible').count();
+  if (inputs === 0) throw new Error('the form has no fields to fill in');
+  return `${inputs} field(s)`;
+});
+
+// Fill only what is inside the page body. The top bar's search box is
+// a visible, editable input too, and typing the form's answers into it
+// is how the first version of this check spent three runs stuck on
+// step one.
+async function fillStep() {
+  const scope = page.locator('div.max-w-2xl, main, form').first();
+  const boxes = scope.locator('input:visible:not([readonly]):not([type=checkbox]), textarea:visible, select:visible');
+  const n = await boxes.count();
+  for (let i = 0; i < n; i += 1) {
+    const el = boxes.nth(i);
+    const tag = await el.evaluate((e) => e.tagName.toLowerCase());
+    if (tag === 'select') { await el.selectOption({ index: 1 }).catch(() => {}); continue; }
+    if (await el.inputValue().catch(() => '')) continue;
+    const type = await el.getAttribute('type');
+    await el.fill(type === 'number' ? '1500' : type === 'date' ? '2026-09-10' : 'QA check').catch(() => {});
+  }
+  return n;
+}
+
+async function walkToReview() {
+  for (let i = 0; i < 6; i += 1) {
+    await fillStep();
+    if (await page.getByRole('button', { name: /Save draft|Update draft/ }).count()) return true;
+    const next = page.getByRole('button', { name: /^Next/ });
+    if (!(await next.count())) return false;
+    await next.first().click();
+    await page.waitForTimeout(1100);
+  }
+  return false;
+}
+
+await check('an auto-filled field is actually filled in', async () => {
+  const text = (await page.locator('body').innerText()).replace(/s+/g, ' ');
+  const at = text.indexOf('Auto-filled');
+  if (at < 0) return 'this form has no auto-filled field';
+  const after = text.slice(at + 'Auto-filled'.length, at + 60).trim();
+  if (/^(Cancel|Step|Next)/.test(after) || !after) {
+    throw new Error('an auto-filled field is empty, so a required field has no way to be filled');
+  }
+  return after.split(' ').slice(0, 2).join(' ');
+});
+
+await check('a draft can be saved from the review step', async () => {
+  if (!(await walkToReview())) throw new Error('could not reach the review step');
+  await page.getByRole('button', { name: /Save draft|Update draft/ }).first().click();
+  await page.waitForTimeout(3000);
+  return 'saved';
+});
+
+await check('the draft shows up in My Submissions and reopens with its answers', async () => {
+  await page.goto(`${BASE}/submissions`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500);
+  if (!/draft/i.test(await page.locator('body').innerText())) {
+    throw new Error('no draft listed after saving one');
+  }
+  const link = await page.locator('a[href*="draft="]').first().getAttribute('href').catch(() => null);
+  if (!link) throw new Error('the draft row does not link back to its form');
+
+  await page.goto(`${BASE}${link}`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(3000);
+
+  // The draft button lives on the review step, so getting there is part
+  // of the check rather than something to do before it.
+  for (let i = 0; i < 6; i += 1) {
+    if (await page.getByRole('button', { name: /Save draft|Update draft/ }).count()) break;
+    const next = page.getByRole('button', { name: /^Next/ });
+    if (!(await next.count())) break;
+    await next.first().click();
+    await page.waitForTimeout(1000);
+  }
+
+  const label = await page.getByRole('button', { name: /Save draft|Update draft/ }).first().innerText().catch(() => '');
+  if (!/Update draft/.test(label)) {
+    throw new Error(`reopening offered "${label.trim()}" — the draft was not picked up from the url`);
+  }
+
+  // And the answers themselves came back.
+  const review = (await page.locator('body').innerText()).replace(/s+/g, ' ');
+  if (!review.includes('QA check')) {
+    throw new Error('the draft reopened empty — its saved answers did not come back');
+  }
+  return 'reopened with answers intact';
+});
+
+await check('a filled form can actually be submitted', async () => {
+  if (!(await walkToReview())) throw new Error('could not reach the review step');
+  await page.getByRole('button', { name: /Confirm & Submit/ }).first().click();
+  await page.waitForURL((u) => u.pathname.startsWith('/status/'), { timeout: 25000 });
+  await page.waitForTimeout(2500);
+  const text = await page.locator('body').innerText();
+  if (!/approv|pending|progress|submitted/i.test(text)) {
+    throw new Error('submitted but the status screen shows no chain');
+  }
+  return 'submitted, status screen shows a chain';
+});
+
+// ---------------------------------------------------------------------
+// 5c. Stationery: the acknowledgement gate
+// ---------------------------------------------------------------------
+await check('stationery shows its full status vocabulary', async () => {
+  await page.goto(`${BASE}/stationery`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(2500);
+  const body = await page.locator('body').innerText();
+  if (/Fulfilled/.test(body) && !/Awaiting acknowledgement/i.test(body)) {
+    throw new Error('still says "Fulfilled" where it now means awaiting acknowledgement');
+  }
+  return 'ok';
+});
+
+// ---------------------------------------------------------------------
+// 5d. The breadcrumb, which was stuck on Home / Dashboard for months
+// ---------------------------------------------------------------------
+await check('the breadcrumb follows the route', async () => {
+  const expect = [
+    ['/', 'Dashboard'],
+    ['/approvals', 'Approvals'],
+    ['/approvals/delegate', 'Delegate Authority'],
+    ['/notices', 'Notice Board'],
+    ['/movement-orders', 'Movement Orders'],
+  ];
+  const wrong = [];
+  for (const [path, want] of expect) {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(900);
+    const crumb = await page.locator('span.text-\\[13px\\].font-semibold').first().innerText().catch(() => '');
+    if (crumb.trim() !== want) wrong.push(`${path} said "${crumb.trim()}" not "${want}"`);
+  }
+  if (wrong.length) throw new Error(wrong.join('; '));
+  return `${expect.length} routes correct`;
+});
+
+// ---------------------------------------------------------------------
+// 5e. Narrow viewport — the layout class of bug a script can catch
+// ---------------------------------------------------------------------
+await check('nothing scrolls sideways on a narrow screen', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const broken = [];
+  for (const [path, label] of SCREENS) {
+    await page.goto(`${BASE}${path}`, { waitUntil: 'networkidle', timeout: 30000 });
+    await page.waitForTimeout(700);
+    const s = await scrollReport();
+    if (s.horizontal) broken.push(label);
+    if (s.contentTaller > 40 && !s.pageScrollable && s.clippedByHiddenOverflow.length) {
+      broken.push(`${label} (clipped)`);
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  if (broken.length) throw new Error(broken.join(', '));
+  return `${SCREENS.length} screens at 390px`;
+});
+
+// ---------------------------------------------------------------------
 // 6. Signing out
 // ---------------------------------------------------------------------
 await check('signing out returns you to the gate', async () => {
