@@ -13,7 +13,9 @@
 // =====================================================================
 
 import pg from 'pg';
+import { getCookie } from '@tanstack/react-start/server';
 import { HttpError } from './tables';
+import { SESSION_COOKIE, verifySession } from './auth';
 
 const { Pool } = pg;
 
@@ -127,51 +129,23 @@ export async function withContext<T>(
 // ---------------------------------------------------------------------
 // Which tenant is this?
 //
-// Sign-in arrives in a later sprint. Until then the server acts as one
-// configured evaluation, resolved here and never sent by the browser —
-// so the guarantee that a client cannot choose its tenant holds from the
-// first day of the cutover rather than from the day auth lands.
+// The signed session says so, and nothing else does. Before sign-in
+// existed this came from configuration; either way the browser has
+// never been allowed to name its own tenant, because that value is what
+// every row-level security policy reads.
+//
+// No session is a 401 rather than a fallback. A data endpoint that
+// quietly serves some default tenant to anonymous callers is the thing
+// this sprint exists to remove.
 // ---------------------------------------------------------------------
-// Cached, because this is a lookup on every request and the answer
-// almost never changes — but not forever. A warm serverless instance
-// outlives a re-provisioned tenant, and a context that can never be
-// re-read means restarting the process is the only way to correct it.
-const CONTEXT_TTL_MS = 60_000;
-let cached: { at: number; ctx: RequestContext } | null = null;
-
 export async function resolveContext(): Promise<RequestContext> {
-  if (cached && Date.now() - cached.at < CONTEXT_TTL_MS) return cached.ctx;
+  const session = await verifySession(getCookie(SESSION_COOKIE));
+  if (!session) throw new HttpError(401, "not signed in");
 
-  const slug = process.env.DEMO_TENANT_SLUG || 'template';
-  const client = await getPool().connect();
-  try {
-    const { rows } = await client.query(
-      `select t.id as tenant_id, u.id as user_id, u.role
-         from public.tenants t
-         left join public.app_users u on u.tenant_id = t.id
-        where t.slug = $1
-        order by u.created_at
-        limit 1`,
-      [slug],
-    );
-    if (!rows.length) {
-      throw new Error(
-        `no tenant with slug "${slug}" — set DEMO_TENANT_SLUG, or seed one with db/004_seed_template.sql`,
-      );
-    }
-    const row = rows[0];
-    if (!row.user_id) {
-      throw new Error(`tenant "${slug}" has no account; every policy requires a signed-in member`);
-    }
-    const ctx: RequestContext = {
-      tenantId: row.tenant_id,
-      userId: row.user_id,
-      role: row.role || 'admin',
-      isStaff: false,
-    };
-    cached = { at: Date.now(), ctx };
-    return ctx;
-  } finally {
-    client.release();
-  }
+  return {
+    tenantId: session.tenantId,
+    userId: session.userId,
+    role: session.role,
+    isStaff: session.isStaff,
+  };
 }

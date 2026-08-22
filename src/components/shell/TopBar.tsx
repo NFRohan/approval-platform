@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, ChevronRight, HelpCircle } from "lucide-react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Bell, ChevronRight, HelpCircle, LogOut } from "lucide-react";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { currentSession, signOut, type PublicSession } from "@/lib/auth-fn";
 
 // =====================================================================
 // The breadcrumb.
@@ -227,6 +228,58 @@ function NotificationsDropdown({
   );
 }
 
+// ---------------------------------------------------------------------
+// Who is signed in, how long the evaluation has left, and the way out.
+//
+// The countdown is here rather than tucked away because an evaluation
+// that expires without warning reads as something breaking. Under a
+// week it turns amber, which is the point at which somebody should be
+// asking for an extension rather than discovering the problem.
+// ---------------------------------------------------------------------
+function AccountMenu() {
+  const router = useRouter();
+  const [session, setSession] = useState<PublicSession | null>(null);
+  const [leaving, setLeaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void currentSession().then((s) => { if (alive) setSession(s); });
+    return () => { alive = false; };
+  }, []);
+
+  if (!session) return null;
+  const soon = session.daysLeft !== null && session.daysLeft <= 7;
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="text-right" style={{ lineHeight: 1.25 }}>
+        <div className="text-[12px] font-medium text-zinc-900">{session.username}</div>
+        {session.daysLeft !== null && (
+          <div style={{ fontSize: 10.5, color: soon ? "#B45309" : "var(--color-zinc-400)" }}>
+            {session.daysLeft === 0
+              ? "expires today"
+              : `${session.daysLeft} day${session.daysLeft === 1 ? "" : "s"} left`}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={async () => {
+          setLeaving(true);
+          await signOut();
+          await router.invalidate();
+          window.location.href = "/login";
+        }}
+        disabled={leaving}
+        title="Sign out"
+        className="inline-flex items-center justify-center rounded-lg cursor-pointer"
+        style={{ width: 32, height: 32, border: "1px solid var(--color-zinc-200)", background: "#fff" }}
+      >
+        <LogOut size={14} style={{ color: "var(--color-zinc-600)" }} />
+      </button>
+    </div>
+  );
+}
+
 export function TopBar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const { currentUser } = useCurrentUser();
@@ -288,6 +341,8 @@ export function TopBar() {
         </button>
         <span className="mx-1" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
         <RoleSwitcher />
+        <span className="mx-1" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
+        <AccountMenu />
 
         {notifOpen && (
           <NotificationsDropdown

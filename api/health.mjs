@@ -33,7 +33,7 @@ export default async function handler(_req, res) {
     env: {
       DATABASE_URL: Boolean(process.env.DATABASE_URL),
       JWT_SECRET: Boolean(process.env.JWT_SECRET),
-      DEMO_TENANT_SLUG: Boolean(process.env.DEMO_TENANT_SLUG),
+
     },
     database: false,
     tenant: false,
@@ -47,19 +47,16 @@ export default async function handler(_req, res) {
       await client.query('select 1');
       report.database = true;
 
-      // The tenant the server acts as must exist and must have an
-      // account: every policy requires a signed-in member, so a tenant
-      // without one reads nothing and every screen comes back empty.
+      // Nothing is "the configured tenant" any more — the session names
+      // it. What matters is that there is at least one live evaluation
+      // with an account somebody could actually sign into.
       const { rows } = await client.query(
-        `select count(u.id)::int as accounts
+        `select count(*)::int as usable
            from public.tenants t
-           left join public.app_users u on u.tenant_id = t.id
-          where t.slug = $1
-          group by t.id`,
-        [process.env.DEMO_TENANT_SLUG ?? ''],
-      );
-      report.tenant = rows.length > 0;
-      report.account = (rows[0]?.accounts ?? 0) > 0;
+           join public.app_users u on u.tenant_id = t.id
+          where app.tenant_status(t.id) = 'active'`);
+      report.tenant = (rows[0]?.usable ?? 0) > 0;
+      report.account = report.tenant;
     } finally {
       client.release();
     }

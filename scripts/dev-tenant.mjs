@@ -14,16 +14,39 @@
 // signed-in member, local development needs a real evaluation rather
 // than the template, which is also how production will work.
 //
-// Prints the slug to put in DEMO_TENANT_SLUG.
+// Prints the credentials once. Sign-in reads them from the database, so
+// there is nothing to put in .env any more.
 // =====================================================================
 
 import pg from 'pg';
+import { randomBytes, scrypt as scryptCb } from 'node:crypto';
+import { promisify } from 'node:util';
+
+const scrypt = promisify(scryptCb);
+
+// The same format src/server/auth.ts reads: scrypt$<salt>$<hash>.
+// Duplicated here rather than imported because this is a plain script
+// and that is TypeScript inside the app's module graph — if the format
+// ever changes, both move together.
+async function hashPassword(password) {
+  const salt = randomBytes(16);
+  const derived = await scrypt(password, salt, 64);
+  return ['scrypt', salt.toString('hex'), derived.toString('hex')].join('$');
+}
 
 const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
 if (!url) { console.error('set DIRECT_URL or DATABASE_URL'); process.exit(1); }
 
-const NAME = 'Local Development';
-const USERNAME = 'dev.local';
+const arg = (flag, fallback) => {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+};
+
+const NAME = arg('--name', 'Local Development');
+const USERNAME = arg('--user', 'dev.local');
+const DAYS = Number(arg('--days', '365'));
+// Readable, and long enough that it is not the weak part. Printed once.
+const PASSWORD = arg('--password', 'demo-' + randomBytes(6).toString('hex'));
 
 const c = new pg.Client({
   connectionString: url,
@@ -39,11 +62,8 @@ const existing = await c.query(
 const fresh = process.argv.includes('--fresh');
 
 if (existing.rows.length && !fresh) {
-  console.log(`
-  already exists
-
-  DEMO_TENANT_SLUG=${existing.rows[0].slug}
-`);
+  console.log(`\n  ${USERNAME} already exists (slug ${existing.rows[0].slug}).`);
+  console.log('  Use --fresh to discard it and issue a new one with a new password.\n');
   await c.end();
   process.exit(0);
 }
@@ -51,17 +71,20 @@ if (existing.rows.length && !fresh) {
 if (existing.rows.length && fresh) {
   // Cascades through every table the clone owns.
   await c.query('delete from public.tenants where slug = $1', [existing.rows[0].slug]);
-  console.log(`
-  discarded ${existing.rows[0].slug}`);
+  console.log(`\n  discarded ${existing.rows[0].slug}`);
 }
 
 await c.query(`select set_config('app.is_staff', 'true', false)`);
 const { rows } = await c.query(
-  `select * from app.provision_demo($1, $2, $3, interval '365 days')`,
-  [NAME, USERNAME, 'not-a-real-hash-until-sign-in-lands'],
+  'select * from app.provision_demo($1, $2, $3, $4::interval)',
+  [NAME, USERNAME, await hashPassword(PASSWORD), `${DAYS} days`],
 );
 
-console.log(`\n  minted "${NAME}"\n\n  DEMO_TENANT_SLUG=${rows[0].slug}\n`);
-console.log('  Put that in .env. It is a full clone of the template, so every');
-console.log('  screen has data.\n');
+console.log(`\n  minted "${NAME}", expires in ${DAYS} days\n`);
+console.log(`  username  ${USERNAME}`);
+console.log(`  password  ${PASSWORD}`);
+console.log(`  slug      ${rows[0].slug}\n`);
+console.log('  The password is shown once and is not recoverable — it is stored');
+console.log('  hashed. Sign in at /login. The evaluation is a full clone of the');
+console.log('  template, so every screen has data.\n');
 await c.end();

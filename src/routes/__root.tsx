@@ -2,6 +2,7 @@ import {
   Outlet,
   Link,
   createRootRoute,
+  redirect,
   HeadContent,
   Scripts,
   useRouterState,
@@ -10,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { useEffect } from "react";
 import { CurrentUserProvider, USERS, useCurrentUser } from "@/contexts/CurrentUserContext";
+import { currentSession } from "@/lib/auth-fn";
 import { AppShell } from "@/components/shell/AppShell";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -75,6 +77,21 @@ export const Route = createRootRoute({
     ],
   }),
   shellComponent: RootShell,
+  // Every route is behind sign-in except the sign-in page. Doing this
+  // once at the root means a new screen is protected by existing rather
+  // than by somebody remembering to add a guard to it.
+  beforeLoad: async ({ location }) => {
+    const onLogin = location.pathname === "/login";
+    const session = await currentSession();
+
+    if (!session && !onLogin) {
+      throw redirect({ to: "/login" });
+    }
+    if (session && onLogin) {
+      throw redirect({ to: "/" });
+    }
+    return { session };
+  },
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
 });
@@ -97,6 +114,17 @@ function RootComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { as } = Route.useSearch();
   const isBuilder = pathname.startsWith("/builder");
+
+  // The sign-in page is not part of the application chrome — no sidebar,
+  // no top bar, nothing that implies you are already inside.
+  if (pathname === "/login") {
+    return (
+      <>
+        <Outlet />
+        <Toaster />
+      </>
+    );
+  }
 
   return (
     <CurrentUserProvider>

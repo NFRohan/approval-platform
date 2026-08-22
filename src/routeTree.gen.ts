@@ -13,6 +13,7 @@ import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as StationeryRouteImport } from './routes/stationery'
 import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
@@ -47,6 +48,11 @@ const MovementOrdersRoute = MovementOrdersRouteImport.update({
 const MaintenanceRoute = MaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApprovalsRoute = ApprovalsRouteImport.update({
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/approvals': typeof ApprovalsRouteWithChildren
+  '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/stationery': typeof StationeryRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/approvals': typeof ApprovalsRouteWithChildren
+  '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/stationery': typeof StationeryRoute
@@ -172,6 +180,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/approvals': typeof ApprovalsRouteWithChildren
+  '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/stationery': typeof StationeryRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/approvals'
+    | '/login'
     | '/maintenance'
     | '/movement-orders'
     | '/stationery'
@@ -216,6 +226,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/approvals'
+    | '/login'
     | '/maintenance'
     | '/movement-orders'
     | '/stationery'
@@ -237,6 +248,7 @@ export interface FileRouteTypes {
     | '/'
     | '/activity'
     | '/approvals'
+    | '/login'
     | '/maintenance'
     | '/movement-orders'
     | '/stationery'
@@ -259,6 +271,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivityRoute: typeof ActivityRoute
   ApprovalsRoute: typeof ApprovalsRouteWithChildren
+  LoginRoute: typeof LoginRoute
   MaintenanceRoute: typeof MaintenanceRoute
   MovementOrdersRoute: typeof MovementOrdersRoute
   StationeryRoute: typeof StationeryRoute
@@ -303,6 +316,13 @@ declare module '@tanstack/react-router' {
       path: '/maintenance'
       fullPath: '/maintenance'
       preLoaderRoute: typeof MaintenanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/approvals': {
@@ -431,6 +451,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivityRoute: ActivityRoute,
   ApprovalsRoute: ApprovalsRouteWithChildren,
+  LoginRoute: LoginRoute,
   MaintenanceRoute: MaintenanceRoute,
   MovementOrdersRoute: MovementOrdersRoute,
   StationeryRoute: StationeryRoute,

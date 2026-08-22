@@ -80,27 +80,44 @@ if (strangers.length) {
 console.log(`  ${USERS.length} personas, all of them real employees`);
 
 
+// Ids come from any real evaluation rather than one named in the
+// environment. Sign-in replaced DEMO_TENANT_SLUG, so a test that still
+// read it silently found nothing and quietly rendered four routes fewer
+// while still printing that everything passed.
 const submissionId = await pick(
   `select s.id from public.form_submissions s
      join public.tenants t on t.id = s.tenant_id
-    where t.slug = '${process.env.DEMO_TENANT_SLUG}' limit 1`);
+    where t.kind = 'demo' order by s.submitted_at desc limit 1`);
 const formId = await pick(
   `select f.id from public.form_templates f
      join public.tenants t on t.id = f.tenant_id
-    where t.slug = '${process.env.DEMO_TENANT_SLUG}' and f.status = 'published' limit 1`);
+    where t.kind = 'demo' and f.status = 'published' limit 1`);
 const noticeId = await pick(
   `select n.id from public.notices n
      join public.tenants t on t.id = n.tenant_id
-    where t.slug = '${process.env.DEMO_TENANT_SLUG}' limit 1`);
+    where t.kind = 'demo' limit 1`);
+
+// A missing id is a broken fixture, not a reason to test less. The
+// detail screens are the ones most likely to break, so skipping them is
+// the worst possible thing to do quietly.
+const missing = Object.entries({ submissionId, formId, noticeId })
+  .filter(([, v]) => !v)
+  .map(([k]) => k);
+if (missing.length) {
+  console.log(`\n  NO FIXTURE FOR: ${missing.join(', ')}`);
+  console.log('  Mint an evaluation first: node --env-file=.env scripts/dev-tenant.mjs\n');
+  process.exit(1);
+}
 
 const PATHS = [
-  '/', '/activity', '/approvals', '/approvals/delegate', '/approvals/history',
+  '/', '/login', '/activity', '/approvals', '/approvals/delegate', '/approvals/history',
   '/builder', '/builder/approvers', '/builder/notifications',
   '/forms', '/maintenance', '/movement-orders',
   '/notices', '/notices/new', '/stationery', '/submissions',
-  ...(formId ? [`/forms/${formId}`] : []),
-  ...(submissionId ? [`/status/${submissionId}`, `/certificate/${submissionId}`] : []),
-  ...(noticeId ? [`/notices/${noticeId}`] : []),
+  `/forms/${formId}`,
+  `/status/${submissionId}`,
+  `/certificate/${submissionId}`,
+  `/notices/${noticeId}`,
 ];
 
 let failed = 0;
