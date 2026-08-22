@@ -336,38 +336,49 @@ The files are renumbered so dependencies come first and the seed is last.
 
 *Goal: it can be handed to a stranger.*
 
-- [ ] Sign-in, and evaluation credentials that expire — ported from the survey
-      platform, including the staff console for issuing, extending, revoking and
-      resetting
-- [ ] Persona switching preserved **inside** a tenant. It is the best thing the
-      demo does and it is not authentication.
+- [x] Sign-in, and evaluation credentials that expire, enforced at the door
+      through `app.tenant_status()`
+- [x] The staff console: issue, extend, withdraw, reset a password
+- [x] Persona switching preserved **inside** a tenant
+- [x] **#14 — save a submission as a draft**
+- [x] **#16 — Business Card acknowledgment gate**, with the missing status
+- [x] Full de-brand sweep (done early, before the repository went public)
+- [x] Deploy to Vercel, region pinned to the database
+- [x] `docs/DEPLOY.md`, README rewrite
 
-**One credential per prospect, not one per approval level.** The chain has six
-levels, which is not six logins: the levels are personas, and switching between
-them is a demo feature. Six accounts would mean signing out and back in five
-times to watch one request climb, which is the opposite of the point. A
-prospect gets one login, lands in a sandbox cloned from the template, and
-switches persona with a click.
+**Exit met.** A prospect is issued a login that expires on its own, and sees a
+demo that names nobody.
 
-The reason to gate it is not the data — the platform generates nothing
-sensitive, unlike the survey platform's respondent answers. It is that two
-prospects sharing one URL would edit each other's forms mid-demo, that the data
-endpoint permits deletes across 22 tables, and that an ungated link still works
-a year later in somebody else's browser. Provisioning already does all of this
-(`db/003_provisioning.sql`: mint, extend, revoke, purge, reset); sign-in is a
-form in front of it.
-- [ ] **#14 — save a submission as a draft**
-- [ ] **#16 — Business Card acknowledgment gate**, including the spec's full
-      status vocabulary
-- [ ] Full de-brand sweep — 31 source files, 8 database files, personas,
-      identifiers, regional details
-- [ ] Deploy to Vercel, region pinned to the database
-- [ ] `docs/DEPLOY.md`, README rewrite
+**What sign-in actually changed.** `resolveContext` reads a signed session and
+returns 401 without one, so the tenant a request sees comes from a token rather
+than an environment variable. The browser could never name its own tenant; that
+property held before sign-in existed and holds after it, which was the point of
+doing it this way round. Passwords are scrypt — a fast hash is the attacker's
+advantage — and a wrong username and a wrong password give the same message in
+the same time, because telling them apart says which usernames exist.
 
-**Exit:** a prospect is issued a login that expires on its own, and sees a demo
-that names nobody.
+**The console reaches what the data endpoint cannot.** Provisioning lives in
+`app.*` behind `app.require_staff()`, and the endpoint's whitelist only reaches
+`public.*` — so it gets its own server functions, each running with no tenant
+at all. A staff session cannot read a prospect's data by accident, because
+every policy is written against a tenant it does not have.
+
+**Two bugs this sprint surfaced.** The render test read `DEMO_TENANT_SLUG` to
+find fixture ids; once sign-in removed that variable it found none and quietly
+rendered four routes fewer while still reporting that everything passed — it
+fails loudly now. And the provisioning script had been writing a placeholder
+string where a password hash belonged, so no account it ever created could have
+been signed into.
 
 ---
+
+## Status
+
+All six sprints complete; all 17 polish items closed.
+
+```
+npm test     typecheck · 195 call sites · 21 routes · 75 database checks
+```
 
 ## 4. Deliberately excluded
 
