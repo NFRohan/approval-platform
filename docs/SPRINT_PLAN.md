@@ -287,18 +287,50 @@ into `chain.ts` rather than copied — two copies drift, as the band tables did.
 
 *Goal: the parts a prospect touches first stop feeling unfinished.*
 
-- [ ] **#12 — in-app notifications.** Drive the `notifications` table from chain
-      events and the existing `notification_rules`. No mail or SMS gateway; the
-      interface says so rather than implying one.
-- [ ] **#5 — global search wired** across submissions, forms and people, with
-      the ⌘K the badge already advertises.
-- [ ] **#6 — breadcrumb reflects the route.**
-- [ ] **#9 — loading states** on the builder screens and the forms list.
-- [ ] **#15 — working-day SLA and overdue reminders**, which turns #10 from
-      indicative into real.
+- [x] **#12 — in-app notifications**, written by the chain at the four moments
+      that matter: a step opening, a step forwarded, a chain finishing, and a
+      rejection or clarification going back to whoever raised it. Watchers in
+      `notification_rules` hear about new submissions.
+- [x] **#5 — global search wired** across submissions, forms, people, notices,
+      maintenance and stationery, with the ⌘K the badge already advertised.
+- [x] **#6 — breadcrumb reflects the route** (done early, on report).
+- [x] **#9 — loading states** on the forms list and both builder people-steps.
+- [x] **#15 — working-day targets and overdue reminders**, which is what turns
+      #10 from indicative into real.
 
-**Exit:** an approver is told it is their turn, and can find anything from the
-top bar.
+**Exit met.** An approver is told it is their turn, proved against the deployed
+tenant's own data:
+
+```
+620,000 claim is with EMP-0312; approving it…
+approval.turn notifications: 2 -> 3
+newest: Dana Whitfield — "Your approval is needed"
+        Travel & Expense Reimbursement has cleared the previous approver
+        and is now with you.
+```
+
+**Delivery is in-app only and the interface says so.** No mail, no SMS. A
+notification that silently goes nowhere is worse than none, because people stop
+checking the place it should have appeared.
+
+**Targets now count working days.** "Three days" meaning Friday to Monday is
+what made the old ones useless — a third of every target landed on a weekend
+nobody was working, so requests arrived already overdue.
+`remind_overdue()` writes one reminder per person per day; the approvals screen
+asks for it on load, because a demo has no scheduler, and the comment says so
+rather than implying a timer exists.
+
+**Search results all go somewhere real.** A submission has no name of its own,
+so it is found through the values inside it — typing a person's name finds
+their claim. A person opens the activity log filtered to them, which meant
+giving that route an `actor` parameter and actually filtering on it: a result
+that navigates somewhere and changes nothing would have been the same class of
+lie the last sprint removed.
+
+**Found while doing it.** The seed called the chain engine while being applied
+*before* it. It only worked because the functions survived from a previous
+apply — on a genuinely fresh database `db:apply` would have failed at the seed.
+The files are renumbered so dependencies come first and the seed is last.
 
 ### Sprint 6 — Access, remaining features, ship
 
