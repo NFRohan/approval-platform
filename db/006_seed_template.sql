@@ -12,6 +12,9 @@
 -- have imported the defect this rebuild exists to fix. Its people and
 -- identifiers named the client, which full de-branding removes anyway.
 --
+-- Applied last, because it calls the chain engine to build its own
+-- approval chains — the seed cannot run before the functions exist.
+--
 -- Re-runnable: the template is removed and rebuilt, so applying twice
 -- leaves one copy rather than two. Demo tenants are independent clones
 -- and are untouched.
@@ -269,7 +272,7 @@ insert into public.notifications (recipient_id, kind, title, body, entity_type, 
   ('EMP-0312', 'approval.turn',     'Your approval is needed',
    'Travel & Expense Reimbursement from Mei Sun has reached the Finance Controller.',
    'form_submission', '22222222-0000-4000-8000-000000000002', null, now() - interval '3 days'),
-  ('EMP-3120', 'submission.rejected', 'Your request was rejected',
+  ('EMP-3120', 'request.rejected', 'Your request was rejected',
    'IT System Access Request was rejected by Farah Haddad.',
    'form_submission', '22222222-0000-4000-8000-000000000004', now() - interval '4 days', now() - interval '5 days');
 

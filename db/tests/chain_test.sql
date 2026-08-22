@@ -68,7 +68,11 @@ insert into public.form_submissions (id, tenant_id, form_template_id, submitted_
   ('44444444-0000-4000-8000-000000000004', current_setting('t.c')::uuid,
    '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
   ('44444444-0000-4000-8000-000000000005', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress');
+   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
+  ('44444444-0000-4000-8000-000000000006', current_setting('t.c')::uuid,
+   '33333333-0000-4000-8000-000000000001', 'EMP-EX', 'in_progress'),
+  ('44444444-0000-4000-8000-000000000007', current_setting('t.c')::uuid,
+   '33333333-0000-4000-8000-000000000001', 'EMP-EX', 'in_progress');
 
 create or replace function pg_temp.check(label text, got anyelement, want anyelement)
 returns void language plpgsql as $$
@@ -448,6 +452,126 @@ begin
   reset role;
   if not ok then raise exception 'FAIL: a step was created with no subject'; end if;
   raise notice 'pass: a step with no subject is refused';
+end $$;
+
+-- =====================================================================
+-- 12. Targets fall on working days
+-- =====================================================================
+begin;
+  set local role app_api;
+  set local timezone = 'UTC';
+  select pg_temp.ctx();
+
+  -- 21 August 2026 is a Friday. Three working days is the following
+  -- Wednesday, not the following Monday.
+  select pg_temp.check('three working days from a Friday lands on Wednesday',
+    to_char(app.add_working_days(timestamptz '2026-08-21 09:00+00', 3), 'Dy'), 'Wed'::text);
+
+  select pg_temp.check('no target ever lands on a weekend',
+    (select count(*)::int from generate_series(1, 20) g
+      where extract(isodow from app.add_working_days(timestamptz '2026-08-21 09:00+00', g)) >= 6), 0);
+commit;
+
+-- =====================================================================
+-- 13. The chain tells the person whose turn it is
+-- =====================================================================
+do $$
+declare
+  v_id  uuid;
+  n     int;
+begin
+  set local role app_api;
+  perform pg_temp.ctx();
+
+  delete from public.notifications;   -- start from a known count
+
+  perform public.build_approval_chain('form_submission',
+    '44444444-0000-4000-8000-000000000006',
+    '33333333-0000-4000-8000-000000000001', 84500);
+
+  select count(*)::int into n from public.notifications
+   where recipient_id = 'EMP-LM' and kind = 'approval.turn'
+     and entity_id = '44444444-0000-4000-8000-000000000006';
+  if n <> 1 then raise exception 'FAIL: step zero approver got % turn notices, expected 1', n; end if;
+
+  -- the approver two steps up must NOT be told yet
+  select count(*)::int into n from public.notifications where recipient_id = 'EMP-C1';
+  if n <> 0 then raise exception 'FAIL: a waiting approver was notified early'; end if;
+
+  reset role;
+  raise notice 'pass: building a chain tells only the first approver';
+end $$;
+
+do $$
+declare v_id uuid; n int;
+begin
+  set local role app_api;
+  perform pg_temp.ctx();
+
+  select id into v_id from public.approval_requests
+   where submission_id = '44444444-0000-4000-8000-000000000006' and status = 'pending';
+  perform public.act_on_approval(v_id, 'approve', null);
+
+  select count(*)::int into n from public.notifications
+   where recipient_id = 'EMP-C1' and kind = 'approval.turn';
+  if n <> 1 then raise exception 'FAIL: the next approver was not told, got %', n; end if;
+
+  reset role;
+  raise notice 'pass: approving hands the notification to the next approver';
+end $$;
+
+do $$
+declare v_id uuid; n int;
+begin
+  set local role app_api;
+  perform pg_temp.ctx();
+
+  select id into v_id from public.approval_requests
+   where submission_id = '44444444-0000-4000-8000-000000000006' and status = 'pending';
+  perform public.act_on_approval(v_id, 'approve', null);
+
+  -- EMP-EX raised this one, so EMP-EX hears that it finished
+  select count(*)::int into n from public.notifications
+   where recipient_id = 'EMP-EX' and kind = 'request.completed';
+  if n <> 1 then raise exception 'FAIL: the requester was not told it completed, got %', n; end if;
+
+  reset role;
+  raise notice 'pass: finishing a chain tells whoever raised it';
+end $$;
+
+-- =====================================================================
+-- 14. An overdue step produces one reminder, not one per call
+-- =====================================================================
+do $$
+declare first_run int; second_run int; n int;
+begin
+  set local role app_api;
+  perform pg_temp.ctx();
+
+  delete from public.notifications;
+
+  perform public.build_approval_chain('form_submission',
+    '44444444-0000-4000-8000-000000000007',
+    '33333333-0000-4000-8000-000000000001', 84500);
+
+  -- backdate the live step so it is genuinely overdue
+  update public.approval_requests
+     set deadline_at = now() - interval '2 days'
+   where submission_id = '44444444-0000-4000-8000-000000000007' and status = 'pending';
+
+  first_run  := public.remind_overdue();
+  second_run := public.remind_overdue();
+
+  if first_run < 1 then raise exception 'FAIL: an overdue step produced no reminder'; end if;
+  if second_run <> 0 then
+    raise exception 'FAIL: calling twice produced % more reminders', second_run;
+  end if;
+
+  select count(*)::int into n from public.notifications where kind = 'approval.overdue';
+  if n <> first_run then raise exception 'FAIL: % reminders stored, % reported', n, first_run; end if;
+
+  reset role;
+  raise notice 'pass: overdue reminders fire once per day, not once per page load';
 end $$;
 
 delete from public.tenants where slug = 'chain-t';

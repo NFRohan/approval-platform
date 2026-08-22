@@ -20,6 +20,117 @@
 begin;
 
 -- ---------------------------------------------------------------------
+-- Targets land on working days.
+--
+-- "Three days" meaning Friday to Monday is the kind of detail that makes
+-- a deadline useless: a third of every target used to fall on a weekend
+-- nobody was working, so requests arrived already overdue. Saturday and
+-- Sunday are skipped.
+-- ---------------------------------------------------------------------
+create or replace function app.add_working_days(p_from timestamptz, p_days int)
+returns timestamptz
+language plpgsql
+immutable
+as $$
+declare
+  d timestamptz := p_from;
+  n int := 0;
+begin
+  if p_days is null or p_days <= 0 then
+    return p_from;
+  end if;
+  while n < p_days loop
+    d := d + interval '1 day';
+    -- isodow: 1 = Monday … 6 = Saturday, 7 = Sunday
+    if extract(isodow from d) < 6 then
+      n := n + 1;
+    end if;
+  end loop;
+  return d;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Who asked for this, and what is it called?
+--
+-- Four subject tables, four different column names for the same two
+-- questions. Answered here so the notification text does not have to
+-- know which kind of thing it is describing.
+-- ---------------------------------------------------------------------
+create or replace function app.subject_requester(p_type text, p_id uuid)
+returns text
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select case p_type
+    when 'form_submission'     then (select submitted_by from public.form_submissions where id = p_id)
+    when 'notice'              then (select created_by   from public.notices           where id = p_id)
+    when 'stationery_request'  then (select requester_id from public.stationery_requests where id = p_id)
+    when 'maintenance_request' then (select requester_id from public.maintenance_requests where id = p_id)
+  end
+$$;
+
+create or replace function app.subject_label(p_type text, p_id uuid)
+returns text
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select coalesce(case p_type
+    when 'form_submission' then (
+      select ft.name from public.form_submissions fs
+        left join public.form_templates ft
+          on ft.id = fs.form_template_id and ft.tenant_id = fs.tenant_id
+       where fs.id = p_id)
+    when 'notice' then (select title from public.notices where id = p_id)
+    when 'stationery_request' then (
+      select case kind when 'business_card' then 'Business card'
+                       when 'stamp_seal'    then 'Stamp and seal'
+                       else coalesce(kind, 'Stationery') end
+        from public.stationery_requests where id = p_id)
+    when 'maintenance_request' then (select ref_number from public.maintenance_requests where id = p_id)
+  end, 'a request')
+$$;
+
+-- ---------------------------------------------------------------------
+-- Tell somebody.
+--
+-- In-app only. There is no mail or SMS gateway behind this and the
+-- interface says so rather than implying one — a notification that
+-- silently goes nowhere is worse than none, because people stop
+-- checking the place it should have appeared.
+--
+-- A recipient who is not an employee of this tenant is skipped rather
+-- than raised: a chain event should never fail because somebody's
+-- record was removed.
+-- ---------------------------------------------------------------------
+create or replace function app.notify(
+  p_recipient   text,
+  p_kind        text,
+  p_title       text,
+  p_body        text default null,
+  p_entity_type text default null,
+  p_entity_id   uuid default null
+) returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if p_recipient is null or p_recipient = '' then
+    return;
+  end if;
+  if not exists (select 1 from public.employees where employee_id = p_recipient) then
+    return;
+  end if;
+
+  insert into public.notifications (recipient_id, kind, title, body, entity_type, entity_id)
+  values (p_recipient, p_kind, p_title, p_body, p_entity_type, p_entity_id);
+end $$;
+
+-- ---------------------------------------------------------------------
 -- Which approvers does an amount involve?
 --
 -- Cumulative. A slab is a threshold that has been crossed, not a bucket
@@ -151,7 +262,7 @@ begin
             or ar.form_template_id = p_form_template_id)
      order by ar.step_index, ar.id
   loop
-    v_deadline := now() + make_interval(days => coalesce(r.deadline_days, 7));
+    v_deadline := app.add_working_days(now(), coalesce(r.deadline_days, 7));
 
     if r.label = 'slab_finance' and p_subject_type = 'form_submission' then
       -- Every threshold crossed, in order, each its own step.
@@ -186,10 +297,36 @@ begin
   end loop;
 
   if v_step > 0 then
-    perform app.set_subject_status(
-      p_subject_type, p_subject_id, 'open',
-      (select approver_user_id from public.approval_requests
-        where subject_id = p_subject_id and step_index = 0));
+    select approver_user_id into v_approver
+      from public.approval_requests
+     where subject_id = p_subject_id and step_index = 0;
+
+    perform app.set_subject_status(p_subject_type, p_subject_id, 'open', v_approver);
+
+    -- The notification that actually matters: it is your turn.
+    perform app.notify(
+      v_approver, 'approval.turn',
+      'Your approval is needed',
+      app.subject_label(p_subject_type, p_subject_id)
+        || ' is waiting on you, step 1 of ' || v_step || '.',
+      p_subject_type, p_subject_id);
+
+    -- Watchers configured against the form want to know it was raised.
+    if p_subject_type = 'form_submission' then
+      for r in
+        select distinct nr.notifyee_user_id
+          from public.notification_rules nr
+         where nr.form_template_id = p_form_template_id
+           and nr.notifyee_user_id is not null
+           and nr.notifyee_user_id <> coalesce(v_approver, '')
+      loop
+        perform app.notify(
+          r.notifyee_user_id, 'submission.raised',
+          'New submission',
+          app.subject_label(p_subject_type, p_subject_id) || ' was submitted.',
+          p_subject_type, p_subject_id);
+      end loop;
+    end if;
   end if;
 
   return v_step;
@@ -251,11 +388,27 @@ begin
 
     if found then
       update public.approval_requests set status = 'pending' where id = v_next.id;
+
+      perform app.notify(
+        v_next.approver_user_id, 'approval.turn',
+        'Your approval is needed',
+        app.subject_label(v_req.subject_type, v_req.subject_id)
+          || ' has cleared the previous approver and is now with you.',
+        v_req.subject_type, v_req.subject_id);
+
       return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'open',
                                     v_next.approver_user_id);
     end if;
 
     -- Nothing above it: the chain is finished.
+    perform app.notify(
+      app.subject_requester(v_req.subject_type, v_req.subject_id),
+      'request.completed',
+      'Fully approved',
+      app.subject_label(v_req.subject_type, v_req.subject_id)
+        || ' has cleared every approver.',
+      v_req.subject_type, v_req.subject_id);
+
     return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'done', null);
 
   elsif p_action = 'reject' then
@@ -272,6 +425,14 @@ begin
        and step_index > v_req.step_index
        and status = 'waiting';
 
+    perform app.notify(
+      app.subject_requester(v_req.subject_type, v_req.subject_id),
+      'request.rejected',
+      'Rejected',
+      app.subject_label(v_req.subject_type, v_req.subject_id)
+        || ' was rejected' || coalesce(': ' || p_comment, '.'),
+      v_req.subject_type, v_req.subject_id);
+
     return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'rejected', null);
 
   elsif p_action = 'clarification' then
@@ -280,6 +441,14 @@ begin
     update public.approval_requests
        set status = 'clarification', acted_at = now(), comment = p_comment
      where id = p_request_id;
+
+    perform app.notify(
+      app.subject_requester(v_req.subject_type, v_req.subject_id),
+      'request.clarification',
+      'Clarification needed',
+      app.subject_label(v_req.subject_type, v_req.subject_id)
+        || ' is on hold' || coalesce(': ' || p_comment, '.'),
+      v_req.subject_type, v_req.subject_id);
 
     return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'held',
                                   v_req.approver_user_id);
@@ -329,6 +498,13 @@ begin
          reassigned_from  = coalesce(v_req.reassigned_from, v_req.approver_user_id),
          comment          = coalesce(p_comment, comment)
    where id = p_request_id;
+
+  perform app.notify(
+    p_to, 'approval.turn',
+    'An approval was forwarded to you',
+    app.subject_label(v_req.subject_type, v_req.subject_id)
+      || ' was forwarded by ' || coalesce(v_req.approver_user_id, 'another approver') || '.',
+    v_req.subject_type, v_req.subject_id);
 
   perform app.set_subject_status(v_req.subject_type, v_req.subject_id,
                                  case when v_req.status = 'pending' then 'open' else 'held' end,
@@ -386,6 +562,59 @@ begin
 
   return v_new;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- Overdue reminders.
+--
+-- This is what turns a target from something displayed into something
+-- that does anything. A pending step past its date produces one reminder
+-- per day for whoever is sitting on it — once per day, not once per
+-- page load, which is why the existence check looks back twenty hours.
+--
+-- There is no scheduler in this demo, so the approvals screen calls this
+-- when it loads. In a real deployment it would be a timer.
+-- ---------------------------------------------------------------------
+create or replace function public.remind_overdue()
+returns int
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  r record;
+  n int := 0;
+begin
+  for r in
+    select ar.approver_user_id, ar.subject_type, ar.subject_id, ar.deadline_at
+      from public.approval_requests ar
+     where ar.status = 'pending'
+       and ar.approver_user_id is not null
+       and ar.deadline_at is not null
+       and ar.deadline_at < now()
+       and not exists (
+         select 1 from public.notifications nt
+          where nt.recipient_id = ar.approver_user_id
+            and nt.kind = 'approval.overdue'
+            and nt.entity_id = ar.subject_id
+            and nt.created_at > now() - interval '20 hours')
+  loop
+    perform app.notify(
+      r.approver_user_id, 'approval.overdue',
+      'Overdue: ' || app.subject_label(r.subject_type, r.subject_id),
+      'This was due ' || to_char(r.deadline_at, 'Mon DD') || ' and is still with you.',
+      r.subject_type, r.subject_id);
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+grant execute on function
+  public.remind_overdue(),
+  app.add_working_days(timestamptz, int),
+  app.subject_requester(text, uuid),
+  app.subject_label(text, uuid),
+  app.notify(text, text, text, text, text, uuid)
+to app_api;
 
 grant execute on function
   public.build_approval_chain(text, uuid, uuid, numeric),

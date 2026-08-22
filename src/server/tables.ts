@@ -208,6 +208,9 @@ export const RPCS: Record<string, readonly string[]> = {
   act_on_approval:      ['p_request_id', 'p_action', 'p_comment'],
   reassign_approval:    ['p_request_id', 'p_to', 'p_comment'],
   add_reviewer:         ['p_request_id', 'p_employee', 'p_deadline_days'],
+  // No scheduler in a demo, so the approvals screen asks for this on
+  // load. In a real deployment it would be a timer.
+  remind_overdue:       [],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],
