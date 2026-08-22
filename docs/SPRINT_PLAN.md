@@ -377,8 +377,26 @@ been signed into.
 All six sprints complete; all 17 polish items closed.
 
 ```
-npm test     typecheck · 195 call sites · 21 routes · 75 database checks
+npm test   typecheck · 195 call sites · 24 auth · 21 routes · 75 database checks
 ```
+
+### Review of sprint 6
+
+Three bugs, all in the seams between layers that each existing suite tests one
+side of. The SQL suites test policies, the call-site test checks shapes, the
+render test mounts components — none of them walked a path *through* the
+layers, which is where all three lived.
+
+| Found | Effect |
+|---|---|
+| `verifySession` required a tenant | Staff have none by schema rule, so the console could be signed into and never opened — every request bounced to the login screen |
+| `tenant_status` was only read at sign-in | Withdrawing or expiring an evaluation did nothing for up to twelve hours |
+| The timing equalisation returned early | A missing username was measurably faster than a wrong password — the leak it was written to prevent |
+| Issued passwords used `Math.random()` | Predictable from its own output, for credentials gating a public URL |
+| Search did not escape LIKE wildcards | "%" matched every row of six tables; "a_ex" found "Alex" |
+
+All fixed, and `scripts/auth-test.mjs` now covers them. Verified by reverting
+each fix and watching six checks fail.
 
 ## 4. Deliberately excluded
 

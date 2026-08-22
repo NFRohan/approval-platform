@@ -102,13 +102,14 @@ node --env-file=.env scripts/dev-tenant.mjs --fresh
 ### Tests
 
 ```bash
-npm test          # all four, cheapest first
+npm test          # all five, cheapest first
 ```
 
 | | |
 |---|---|
 | `typecheck` | TypeScript, no emit |
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
+| `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
 | `db:test` | 75 checks: tenant isolation, the security policies, provisioning, and the approval chain |
 
