@@ -3,6 +3,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Link2, Loader2, Sparkles, User } from "lucide-react";
 import { db } from "@/lib/db";
+import { validateField } from "@/lib/validateField";
+import { evaluateFormula } from "@/lib/formula";
 import { toast } from "sonner";
 import { FieldRenderer } from "@/components/builder/FieldRenderer";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
@@ -17,46 +19,6 @@ export const Route = createFileRoute("/forms/$formId")({
   head: () => ({ meta: [{ title: "Fill Form · Admin Services Portal" }] }),
   component: FillFormPage,
 });
-
-
-const SYSTEM_VARS: Record<string, number> = {
-  DEPT_BUDGET: 1_000_000,
-  ALLOWANCE: 20_000,
-  PETTY_CASH: 50_000,
-};
-
-function evalFormula(formula: string, fields: PlacedField[], values: Record<string, unknown>): number | null {
-  let expr = formula;
-  for (const [name, val] of Object.entries(SYSTEM_VARS)) {
-    expr = expr.replace(new RegExp(`\\{${name}\\}`, "g"), String(val));
-  }
-  for (const f of fields) {
-    const token = `{${f.label}}`;
-    if (expr.includes(token)) {
-      const raw = values[f.id];
-      const num = parseFloat(String(raw ?? "0").replace(/[^0-9.]/g, "")) || 0;
-      expr = expr.replace(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), String(num));
-    }
-  }
-  expr = expr
-    .replace(/\bFLOOR\s*\(/gi, "Math.floor(")
-    .replace(/\bCEILING\s*\(/gi, "Math.ceil(")
-    .replace(/\bCEIL\s*\(/gi, "Math.ceil(")
-    .replace(/\bROUND\s*\(/gi, "Math.round(")
-    .replace(/\bMAX\s*\(/gi, "Math.max(")
-    .replace(/\bMIN\s*\(/gi, "Math.min(")
-    .replace(/\bABS\s*\(/gi, "Math.abs(")
-    .replace(/\bAVERAGE\s*\(([^)]+)\)/gi, (_m, args) => {
-      const parts = args.split(",").map((s: string) => s.trim()).filter(Boolean);
-      return `((${parts.join("+")})/${parts.length})`;
-    });
-  if (!/^[\d\s+\-*/().,Matha-z]+$/.test(expr)) return null;
-  try {
-    // eslint-disable-next-line no-new-func
-    const result = Function(`"use strict"; return (${expr})`)() as number;
-    return typeof result === "number" && isFinite(result) ? result : null;
-  } catch { return null; }
-}
 
 type EmployeeRow = {
   employee_id: string;
@@ -226,21 +188,23 @@ function FillFormPage() {
     return "";
   }
 
-  function isMissing(field: PlacedField): boolean {
-    if (!field.required || isPermission(field.kind) || field.kind === "calculation") return false;
-    if (field.kind.startsWith("gen_")) return !genValue(field.kind);
-    const v = values[field.id];
-    if (v === undefined || v === null || v === "") return true;
-    if (typeof v === "object" && !Array.isArray(v))
-      return Object.values(v as Record<string, unknown>).every((x) => !x);
-    return false;
+  // What is wrong with this field, or null. This used to answer only
+  // "is it empty", so every min, max, length and pattern the builder
+  // collected went unenforced — and a date range passed with one end
+  // filled, because it asked whether *every* half was empty.
+  function problemWith(field: PlacedField): string | null {
+    if (isPermission(field.kind) || field.kind === "calculation") return null;
+    if (field.kind.startsWith("gen_")) {
+      return field.required && !genValue(field.kind) ? `${field.label} is required` : null;
+    }
+    return validateField(field, values[field.id]);
   }
 
   function handleNext() {
     const current = steps[stepIndex];
-    const missing = current.fields.filter(isMissing);
-    if (missing.length > 0) {
-      toast.error(`Please fill: ${missing.map((m) => m.label).join(", ")}`);
+    const problems = current.fields.map(problemWith).filter(Boolean) as string[];
+    if (problems.length > 0) {
+      toast.error(problems[0]);
       return;
     }
     setStepIndex((i) => Math.min(i + 1, steps.length - 1));
@@ -285,7 +249,7 @@ function FillFormPage() {
       .map((f) => {
         const str = f.kind.startsWith("gen_") ? genValue(f.kind) : (() => {
           if (f.kind === "calculation" && f.formula) {
-            const result = evalFormula(f.formula, fields, values);
+            const result = evaluateFormula(f.formula, fields, values, f.id);
             return result !== null ? String(result) : "";
           }
           const v = values[f.id];
@@ -337,13 +301,13 @@ function FillFormPage() {
     // Every field, not the current step's. handleNext only ever checked
     // the step being left, so the last step was never checked at all —
     // and a single-step form was never checked once.
-    const missing = fields.filter(isMissing);
-    if (missing.length > 0) {
-      const offending = steps.findIndex((st) => st.fields.some((f) => f.id === missing[0].id));
+    const firstBad = fields.find((fl) => problemWith(fl) !== null);
+    if (firstBad) {
+      const offending = steps.findIndex((st) => st.fields.some((fl) => fl.id === firstBad.id));
       // Land on the step that needs attention rather than naming a
       // field the submitter cannot see from here.
       if (offending >= 0 && offending !== stepIndex) setStepIndex(offending);
-      toast.error(`Please fill: ${missing.map((m) => m.label).join(", ")}`);
+      toast.error(problemWith(firstBad)!);
       return;
     }
 
@@ -376,7 +340,7 @@ function FillFormPage() {
         .map((f) => {
           let str = f.kind.startsWith("gen_") ? genValue(f.kind) : (() => {
             if (f.kind === "calculation" && f.formula) {
-              const result = evalFormula(f.formula, fields, values);
+              const result = evaluateFormula(f.formula, fields, values, f.id);
               return result !== null ? String(result) : "";
             }
             const v = values[f.id];

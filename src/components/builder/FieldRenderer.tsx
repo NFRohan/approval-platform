@@ -3,62 +3,8 @@ import { Calendar, CalendarRange, ChevronDown, FileUp, FunctionSquare, Link2, Li
 import { db } from "@/lib/db";
 import type { FieldKind, PlacedField } from "./types";
 import { PALETTE, isEmbedded, isSmart, isLayout } from "./palette";
-
-function escapeForRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-const SYSTEM_VARS: Record<string, number> = {
-  DEPT_BUDGET: 1_000_000,
-  ALLOWANCE: 20_000,
-  PETTY_CASH: 50_000,
-};
-
-function evaluateFormula(
-  formula: string,
-  allFields: PlacedField[],
-  allValues: Record<string, unknown>,
-): number | null {
-  let expr = formula;
-
-  // System variables
-  for (const [name, val] of Object.entries(SYSTEM_VARS)) {
-    expr = expr.replace(new RegExp(`\\{${name}\\}`, "g"), String(val));
-  }
-
-  // Field tokens
-  for (const f of allFields) {
-    const token = `{${f.label}}`;
-    if (expr.includes(token)) {
-      const raw = allValues[f.id];
-      const num = parseFloat(String(raw ?? "0").replace(/[^0-9.]/g, "")) || 0;
-      expr = expr.replace(new RegExp(escapeForRegex(token), "g"), String(num));
-    }
-  }
-
-  // Named math functions → JS equivalents
-  expr = expr
-    .replace(/\bFLOOR\s*\(/gi, "Math.floor(")
-    .replace(/\bCEILING\s*\(/gi, "Math.ceil(")
-    .replace(/\bCEIL\s*\(/gi, "Math.ceil(")
-    .replace(/\bROUND\s*\(/gi, "Math.round(")
-    .replace(/\bMAX\s*\(/gi, "Math.max(")
-    .replace(/\bMIN\s*\(/gi, "Math.min(")
-    .replace(/\bABS\s*\(/gi, "Math.abs(")
-    .replace(/\bAVERAGE\s*\(([^)]+)\)/gi, (_m, args) => {
-      const parts = args.split(",").map((s: string) => s.trim()).filter(Boolean);
-      return `((${parts.join("+")})/${parts.length})`;
-    });
-
-  if (!/^[\d\s+\-*/().,Matha-z]+$/.test(expr)) return null;
-  try {
-    // eslint-disable-next-line no-new-func
-    const result = Function(`"use strict"; return (${expr})`)() as number;
-    return typeof result === "number" && isFinite(result) ? result : null;
-  } catch {
-    return null;
-  }
-}
+import { inputBounds } from "@/lib/validateField";
+import { evaluateFormula } from "@/lib/formula";
 
 function iconForKind(kind: FieldKind) {
   for (const sec of PALETTE) {
@@ -215,7 +161,7 @@ function FieldInput({
 
   if (k === "calculation") {
     const result = field.formula
-      ? evaluateFormula(field.formula, allFields, allValues)
+      ? evaluateFormula(field.formula, allFields, allValues, field.id)
       : null;
     const display =
       result !== null
@@ -360,6 +306,7 @@ function FieldInput({
         value={(value as string) ?? ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={field.placeholder ?? (k === "money" ? "0.00" : "0")}
+        {...inputBounds(field)}
       />
     );
   }
