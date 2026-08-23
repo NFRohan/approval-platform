@@ -96,8 +96,11 @@ function StationeryPage() {
       contact_number: contactNumber.trim() || null, reason: reason.trim(), comments: comments.trim() || null,
       status: "open",
     }).select("id").single();
-    setSaving(false);
-    if (error || !data) { toast.error("Failed to submit: " + (error?.message ?? "unknown")); return; }
+    if (error || !data) {
+      setSaving(false);
+      toast.error("Failed to submit: " + (error?.message ?? "unknown"));
+      return;
+    }
     const { error: chainErr } = await startChain("stationery_request", data.id);
     if (chainErr) toast.error("Submitted, but approvals were not set up: " + chainErr.message);
 
@@ -105,8 +108,13 @@ function StationeryPage() {
       actor_id: currentUser.employee_id, action: "created", entity_type: "stationery_request", entity_id: data.id,
       detail: `Requested a ${kind === "business_card" ? "business card" : "stamp seal"} for ${name.trim()}`,
     });
-    toast.success("Request submitted");
+    // Released only here. Releasing it after the first insert left the
+    // button live with the same values still in the form, so a second
+    // click raised a duplicate request while the chain was still being
+    // built.
     setReason(""); setComments("");
+    setSaving(false);
+    toast.success("Request submitted");
     load();
   }
 

@@ -32,6 +32,7 @@ function NoticeDetailPage() {
   const [creatorName, setCreatorName] = useState("");
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
+  const [busy, setBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
@@ -59,51 +60,62 @@ function NoticeDetailPage() {
   useEffect(() => { load(); }, [load]);
 
   async function handleApprove() {
-    if (!notice) return;
-    // Where this goes next is the chain's business, not this screen's.
-    // What used to be here was a two-element array of employee ids that
-    // had stopped existing, walked by index.
-    const { error } = await actOnSubject("notice", notice.id, "approve");
-    if (error) { toast.error("Failed to approve: " + error.message); return; }
-    const isLastStep = !(await openStep("notice", notice.id));
-    await db.from("activity_log").insert({
-      actor_id: currentUser.employee_id,
-      action: isLastStep ? "published" : "approved",
-      entity_type: "notice",
-      entity_id: notice.id,
-      detail: isLastStep ? `Published notice "${notice.title}"` : `Approved notice "${notice.title}" (forwarded to next approver)`,
-    });
-    toast.success(isLastStep ? "Notice published" : "Approved — forwarded to next approver");
-    load();
+    if (!notice || busy) return;
+    setBusy(true);
+    try {
+      // Where this goes next is the chain's business, not this screen's.
+      // What used to be here was a two-element array of employee ids that
+      // had stopped existing, walked by index.
+      const { error } = await actOnSubject("notice", notice.id, "approve");
+      if (error) { toast.error("Failed to approve: " + error.message); return; }
+      const isLastStep = !(await openStep("notice", notice.id));
+      await db.from("activity_log").insert({
+        actor_id: currentUser.employee_id,
+        action: isLastStep ? "published" : "approved",
+        entity_type: "notice",
+        entity_id: notice.id,
+        detail: isLastStep ? `Published notice "${notice.title}"` : `Approved notice "${notice.title}" (forwarded to next approver)`,
+      });
+      toast.success(isLastStep ? "Notice published" : "Approved — forwarded to next approver");
+      load();
+    } finally { setBusy(false); }
   }
 
   async function handleReject() {
+    if (busy) return;
     if (!notice || !rejectReason.trim()) { toast.error("Please provide a reason"); return; }
-    const { error } = await actOnSubject("notice", notice.id, "reject", rejectReason);
-    if (error) { toast.error("Failed to reject: " + error.message); return; }
-    await db.from("activity_log").insert({
-      actor_id: currentUser.employee_id,
-      action: "rejected",
-      entity_type: "notice",
-      entity_id: notice.id,
-      detail: `Rejected notice "${notice.title}": ${rejectReason.trim()}`,
-    });
-    setRejectOpen(false);
-    setRejectReason("");
-    toast.success("Notice rejected");
-    load();
+    setBusy(true);
+    try {
+      const { error } = await actOnSubject("notice", notice.id, "reject", rejectReason);
+      if (error) { toast.error("Failed to reject: " + error.message); return; }
+      await db.from("activity_log").insert({
+        actor_id: currentUser.employee_id,
+        action: "rejected",
+        entity_type: "notice",
+        entity_id: notice.id,
+        detail: `Rejected notice "${notice.title}": ${rejectReason.trim()}`,
+      });
+      setRejectOpen(false);
+      setRejectReason("");
+      toast.success("Notice rejected");
+      load();
+    } finally { setBusy(false); }
   }
 
   async function handleComment() {
-    if (!commentText.trim()) return;
-    const { error } = await db.from("notice_comments").insert({
-      notice_id: noticeId,
-      author_id: currentUser.employee_id,
-      text: commentText.trim(),
-    });
-    if (error) { toast.error("Failed to comment: " + error.message); return; }
-    setCommentText("");
-    load();
+    // Without this a fast double-click posted the same comment twice.
+    if (!commentText.trim() || busy) return;
+    setBusy(true);
+    try {
+      const { error } = await db.from("notice_comments").insert({
+        notice_id: noticeId,
+        author_id: currentUser.employee_id,
+        text: commentText.trim(),
+      });
+      if (error) { toast.error("Failed to comment: " + error.message); return; }
+      setCommentText("");
+      load();
+    } finally { setBusy(false); }
   }
 
   if (loading) return <div style={{ padding: 32, fontSize: 13, color: "#A1A1AA" }}>Loading…</div>;
@@ -128,7 +140,7 @@ function NoticeDetailPage() {
 
         {canApprove && (
           <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: "1px solid #F0F0F0" }}>
-            <button onClick={handleApprove} className="rounded-md text-white font-medium" style={{ padding: "7px 14px", fontSize: 13, background: "#4F46E5", border: "none", cursor: "pointer" }}>
+            <button onClick={handleApprove} disabled={busy} className="rounded-md text-white font-medium" style={{ padding: "7px 14px", fontSize: 13, background: "#4F46E5", border: "none", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 }}>
               Approve
             </button>
             <button onClick={() => setRejectOpen(true)} className="rounded-md font-medium bg-white" style={{ padding: "7px 12px", fontSize: 13, color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}>
@@ -162,7 +174,7 @@ function NoticeDetailPage() {
               style={{ flex: 1, padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7", borderRadius: 6 }}
               onKeyDown={(e) => { if (e.key === "Enter") handleComment(); }}
             />
-            <button onClick={handleComment} className="rounded-md text-white font-medium" style={{ padding: "8px 14px", fontSize: 13, background: "var(--color-brand-500)", border: "none", cursor: "pointer" }}>
+            <button onClick={handleComment} disabled={busy} className="rounded-md text-white font-medium" style={{ padding: "8px 14px", fontSize: 13, background: "var(--color-brand-500)", border: "none", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1 }}>
               Post
             </button>
           </div>
@@ -175,7 +187,7 @@ function NoticeDetailPage() {
           <Textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={4} placeholder="Explain why this notice is being rejected…" />
           <DialogFooter>
             <button onClick={() => setRejectOpen(false)} className="rounded-md font-medium bg-white" style={{ padding: "7px 12px", fontSize: 13, color: "#52525B", border: "1px solid #E4E4E7" }}>Cancel</button>
-            <button onClick={handleReject} className="rounded-md text-white font-medium" style={{ padding: "7px 14px", fontSize: 13, background: "#B91C1C", border: "none" }}>Confirm</button>
+            <button onClick={handleReject} disabled={busy} className="rounded-md text-white font-medium" style={{ padding: "7px 14px", fontSize: 13, background: "#B91C1C", border: "none", opacity: busy ? 0.6 : 1 }}>Confirm</button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

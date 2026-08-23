@@ -1,5 +1,6 @@
 import { useEffect, useState, type SVGProps } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { signOut } from "@/lib/auth-fn";
 import {
   LayoutDashboard,
   FileText,
@@ -8,7 +9,6 @@ import {
   CheckCircle2,
   Layers,
   Activity,
-  Settings,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -202,6 +202,7 @@ function buildNav(
 export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boolean } = {}) {
   const [hover, setHover] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [leaving, setLeaving] = useState(false);
   const { currentUser } = useCurrentUser();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -458,16 +459,15 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
               </div>
             </div>
             <button
-              title="Settings"
-              className="inline-flex items-center justify-center rounded-md cursor-pointer"
-              style={{ width: 26, height: 26 }}
-            >
-              <Settings size={14} style={{ color: "var(--color-zinc-400)" }} />
-            </button>
-            <button
               title="Logout"
+              onClick={async () => {
+                setLeaving(true);
+                await signOut();
+                window.location.href = "/login";
+              }}
+              disabled={leaving}
               className="inline-flex items-center justify-center rounded-md cursor-pointer"
-              style={{ width: 26, height: 26 }}
+              style={{ width: 26, height: 26, opacity: leaving ? 0.5 : 1 }}
             >
               <LogOut size={14} style={{ color: "var(--color-zinc-400)" }} />
             </button>
