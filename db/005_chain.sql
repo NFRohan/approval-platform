@@ -71,6 +71,16 @@ as $$
   end
 $$;
 
+-- The reference a person sees on screen, so a notification can name the
+-- same thing the status page does.
+create or replace function app.subject_ref(p_id uuid)
+returns text
+language sql
+immutable
+as $$
+  select 'AMS-' || upper(left(p_id::text, 8))
+$$;
+
 create or replace function app.subject_label(p_type text, p_id uuid)
 returns text
 language sql
@@ -78,9 +88,16 @@ stable
 security invoker
 set search_path = public, pg_temp
 as $$
+  -- The reference matters as much as the name. A maintenance request
+  -- carries its ref_number here, so "MR-2201 is waiting on you" names one
+  -- thing; a form submission carried only its template name, so somebody
+  -- with two travel claims open got "Travel & Expense Reimbursement has
+  -- cleared every approver" and no way to tell which. AMS- plus the head
+  -- of the id is the same reference the status screen already prints.
   select coalesce(case p_type
     when 'form_submission' then (
-      select ft.name from public.form_submissions fs
+      select ft.name || ' (' || app.subject_ref(fs.id) || ')'
+        from public.form_submissions fs
         left join public.form_templates ft
           on ft.id = fs.form_template_id and ft.tenant_id = fs.tenant_id
        where fs.id = p_id)
@@ -89,6 +106,7 @@ as $$
       select case kind when 'business_card' then 'Business card'
                        when 'stamp_seal'    then 'Stamp and seal'
                        else coalesce(kind, 'Stationery') end
+             || coalesce(' for ' || nullif(btrim(name), ''), '')
         from public.stationery_requests where id = p_id)
     when 'maintenance_request' then (select ref_number from public.maintenance_requests where id = p_id)
   end, 'a request')
@@ -612,6 +630,7 @@ grant execute on function
   public.remind_overdue(),
   app.add_working_days(timestamptz, int),
   app.subject_requester(text, uuid),
+  app.subject_ref(uuid),
   app.subject_label(text, uuid),
   app.notify(text, text, text, text, text, uuid)
 to app_api;
