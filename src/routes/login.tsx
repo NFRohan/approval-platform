@@ -94,7 +94,7 @@ function LoginPage() {
             <div style={{ fontSize: 15, fontWeight: 650, color: "#18181B", letterSpacing: "-0.01em" }}>
               Admin Services Portal
             </div>
-            <div style={{ fontSize: 12, color: "#71717A" }}>Evaluation access</div>
+            <div style={{ fontSize: 12, color: "#71717A" }}>Sign in</div>
           </div>
         </div>
 
@@ -154,7 +154,8 @@ function LoginPage() {
 
         <p style={{ fontSize: 11.5, color: "#A1A1AA", marginTop: 16, lineHeight: 1.55 }}>
           Evaluation accounts expire on their own. If yours has run out, ask for an extension
-          rather than a new one — extending keeps everything you have already entered.
+          rather than a new one — extending keeps everything you have already entered. Staff
+          accounts do not expire.
         </p>
       </div>
     </div>
