@@ -722,40 +722,28 @@ function OrderCard({
 
   async function handleApprove() {
     if (!moverIdInput.trim()) { toast.error("Enter a mover employee ID"); return; }
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+      toast.error("Enter a quantity of at least 1");
+      return;
+    }
     setActioning(true);
 
-    if (order.item_id && order.source_venue_id) {
-      await db.rpc("release_reservation", {
-        p_item_id: order.item_id,
-        p_venue_id: order.source_venue_id,
-        p_qty: order.quantity,
-      });
-    }
-
-    if (editItemId && editSourceVenueId && editDestVenueId) {
-      const { error: stockErr } = await db.rpc("transfer_stock", {
-        p_item_id: editItemId,
-        p_from_venue: editSourceVenueId,
-        p_to_venue: editDestVenueId,
-        p_qty: parseInt(editQuantity, 10),
-      });
-      // The order still moved; only the stock ledger did not. Say so
-      // rather than logging it where nobody looks.
-      if (stockErr) toast.warning("Stock not transferred: " + stockErr.message);
-    }
-
-    const { error } = await db.from("movement_orders").update({
-      status: "approved",
-      item_id: editItemId || null,
-      source_venue_id: editSourceVenueId || null,
-      destination_venue_id: editDestVenueId || null,
-      quantity: parseInt(editQuantity, 10),
-      assigned_mover_id: moverIdInput.trim(),
-      admin_comment: comment.trim() || null,
-    }).eq("id", order.id);
+    // Releasing the reservation, moving the stock and setting the status
+    // are one thing, not three. They used to be three separate calls and
+    // a failure part-way left the stock moved with the order still
+    // awaiting approval — see db/004_stock.sql.
+    const { error } = await db.rpc("approve_movement_order", {
+      p_order_id: order.id,
+      p_item_id: editItemId || null,
+      p_from_venue: editSourceVenueId || null,
+      p_to_venue: editDestVenueId || null,
+      p_qty: parsedQuantity,
+      p_mover: moverIdInput.trim(),
+      p_comment: comment.trim() || null,
+    });
 
     setActioning(false);
-    if (error) { toast.error("Update failed: " + error.message); return; }
+    if (error) { toast.error("Approval failed: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
       action: "approved",
@@ -842,14 +830,17 @@ function OrderCard({
     onRefresh();
   }
 
-  const isMoverView = order.assigned_mover_id === order.requester_id; // simplified — in real app check current user
 
   const effectiveVenueId = editSourceVenueId !== "" ? editSourceVenueId : order.source_venue_id;
   const isSameVenue = effectiveVenueId !== null && effectiveVenueId === order.source_venue_id;
   const othersReserved = stockInfo
     ? isSameVenue ? Math.max(0, stockInfo.reserved_quantity - order.quantity) : stockInfo.reserved_quantity
     : 0;
-  const isOverStock = stockInfo !== null && parseInt(editQuantity, 10) > stockInfo.quantity;
+  // parseInt("") is NaN, and every comparison against NaN is false — so
+  // an empty box used to read as "not over stock" and left Approve live.
+  const parsedQuantity = Number.parseInt(editQuantity, 10);
+  const quantityValid = Number.isFinite(parsedQuantity) && parsedQuantity > 0;
+  const isOverStock = stockInfo !== null && quantityValid && parsedQuantity > stockInfo.quantity;
 
   return (
     <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7" }}>
@@ -978,9 +969,9 @@ function OrderCard({
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={handleApprove} disabled={actioning || isOverStock}
+                <button onClick={handleApprove} disabled={actioning || isOverStock || !quantityValid}
                   className="inline-flex items-center gap-1.5 rounded-md font-medium text-white"
-                  style={{ padding: "7px 14px", fontSize: 13, background: "#4F46E5", border: "none", cursor: (actioning || isOverStock) ? "not-allowed" : "pointer", opacity: (actioning || isOverStock) ? 0.6 : 1 }}>
+                  style={{ padding: "7px 14px", fontSize: 13, background: "#4F46E5", border: "none", cursor: (actioning || isOverStock || !quantityValid) ? "not-allowed" : "pointer", opacity: (actioning || isOverStock || !quantityValid) ? 0.6 : 1 }}>
                   <User size={13} /> Approve & Assign Mover
                 </button>
                 <button onClick={handleReject} disabled={actioning}
@@ -998,7 +989,7 @@ function OrderCard({
           )}
 
           {/* Mover / admin in-transit → complete flow */}
-          {order.status === "approved" && (isAdmin || order.assigned_mover_id === order.requester_id) && (
+          {order.status === "approved" && (isAdmin || order.assigned_mover_id === currentUser.employee_id) && (
             <div className="flex gap-2 pt-2" style={{ borderTop: "1px solid #F0F0F0" }}>
               <button
                 onClick={markInTransit}
@@ -1010,7 +1001,7 @@ function OrderCard({
               </button>
             </div>
           )}
-          {order.status === "in_transit" && (isAdmin || order.assigned_mover_id === order.requester_id) && (
+          {order.status === "in_transit" && (isAdmin || order.assigned_mover_id === currentUser.employee_id) && (
             <div className="flex gap-2 pt-2" style={{ borderTop: "1px solid #F0F0F0" }}>
               <button
                 onClick={markCompleted}

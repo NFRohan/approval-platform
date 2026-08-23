@@ -118,10 +118,78 @@ begin
   do update set quantity = public.item_stock.quantity + excluded.quantity;
 end $$;
 
+-- ---------------------------------------------------------------------
+-- Approving a movement order.
+--
+-- This was three round-trips from the browser: release the reservation,
+-- transfer the stock, then set the status. Each was its own transaction
+-- and nothing rolled back the earlier ones, so a failure on the last
+-- left the stock already moved with the order still "submitted" — and
+-- approving again moved the same stock a second time, because nothing
+-- recorded that this order had already been fulfilled.
+--
+-- All three belong together, so they happen here or not at all. The
+-- status guard is what makes a retry safe: the second call finds the
+-- order already approved and refuses instead of transferring again.
+-- ---------------------------------------------------------------------
+create or replace function public.approve_movement_order(
+  p_order_id  uuid,
+  p_item_id   uuid,
+  p_from_venue uuid,
+  p_to_venue  uuid,
+  p_qty       int,
+  p_mover     text,
+  p_comment   text default null
+) returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_order record;
+begin
+  select * into v_order from public.movement_orders where id = p_order_id for update;
+  if not found then
+    raise exception 'no such movement order';
+  end if;
+  if v_order.status <> 'submitted' then
+    raise exception 'this order is not awaiting approval: it is %', v_order.status;
+  end if;
+  if p_qty is null or p_qty <= 0 then
+    raise exception 'approve: quantity must be a positive whole number';
+  end if;
+  if coalesce(btrim(p_mover), '') = '' then
+    raise exception 'approve: a mover must be assigned';
+  end if;
+
+  -- The reservation this order took at submission, against the venue it
+  -- was submitted for — not the edited one.
+  if v_order.item_id is not null and v_order.source_venue_id is not null then
+    perform public.release_reservation(
+      v_order.item_id, v_order.source_venue_id, v_order.quantity);
+  end if;
+
+  if p_item_id is not null and p_from_venue is not null and p_to_venue is not null then
+    perform public.transfer_stock(p_item_id, p_from_venue, p_to_venue, p_qty);
+  end if;
+
+  update public.movement_orders
+     set status               = 'approved',
+         item_id              = p_item_id,
+         source_venue_id      = p_from_venue,
+         destination_venue_id = p_to_venue,
+         quantity             = p_qty,
+         assigned_mover_id    = btrim(p_mover),
+         admin_comment        = nullif(btrim(coalesce(p_comment, '')), ''),
+         updated_at           = now()
+   where id = p_order_id;
+end $$;
+
 grant execute on function
   public.reserve_stock(uuid, uuid, int),
   public.release_reservation(uuid, uuid, int),
-  public.transfer_stock(uuid, uuid, uuid, int)
+  public.transfer_stock(uuid, uuid, uuid, int),
+  public.approve_movement_order(uuid, uuid, uuid, uuid, int, text, text)
 to app_api;
 
 commit;

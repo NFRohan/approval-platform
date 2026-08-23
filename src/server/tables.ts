@@ -215,6 +215,10 @@ export const RPCS: Record<string, readonly string[]> = {
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],
   transfer_stock:      ['p_item_id', 'p_from_venue', 'p_to_venue', 'p_qty'],
+  // Release, transfer and status in one transaction — see the note in
+  // db/004_stock.sql for why these cannot be three calls.
+  approve_movement_order: ['p_order_id', 'p_item_id', 'p_from_venue',
+                           'p_to_venue', 'p_qty', 'p_mover', 'p_comment'],
 };
 
 export const OPERATORS: Record<string, string> = {
