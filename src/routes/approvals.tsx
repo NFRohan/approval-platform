@@ -15,6 +15,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/approvals")({
+  // A notification that says your approval is needed can name which
+  // request it means, so the queue opens on that one rather than leaving
+  // somebody to find it among the others.
+  validateSearch: (search: Record<string, unknown>): { focus?: string } => ({
+    focus: typeof search.focus === "string" ? search.focus : undefined,
+  }),
   head: () => ({
     meta: [{ title: "Approvals · Admin Services Portal" }],
   }),
@@ -148,6 +154,8 @@ function ApprovalsInbox() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { focus } = Route.useSearch();
+  const [focused, setFocused] = useState(false);
   const [values, setValues] = useState<Record<string, SubVal[]>>({});
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
@@ -403,6 +411,26 @@ function ApprovalsInbox() {
     }
   };
 
+  // Open the request the notification named, once, after the rows land.
+  // Only once, or reopening it after somebody closed it would fight them.
+  useEffect(() => {
+    if (!focus || focused || rows.length === 0) return;
+    const row = rows.find((r) => r.subject_id === focus || r.id === focus);
+    setFocused(true);
+    if (!row) {
+      // It was theirs a moment ago and is not now — forwarded, withdrawn,
+      // or already dealt with from another screen.
+      toast.info("That request is no longer waiting on you.");
+      return;
+    }
+    void toggleExpand(row);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`approval-${row.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [focus, focused, rows, toggleExpand]);
+
   const fadeAndRemove = (id: string) => {
     setRemoving((s) => new Set(s).add(id));
     setTimeout(() => {
@@ -578,6 +606,7 @@ function ApprovalsInbox() {
             return (
               <div
                 key={r.id}
+                id={`approval-${r.id}`}
                 className="rounded-xl bg-white"
                 style={{
                   border: "1px solid #E4E4E7",

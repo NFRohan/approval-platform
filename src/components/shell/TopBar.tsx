@@ -133,6 +133,19 @@ function NoteRow({
   children: React.ReactNode;
 }) {
   const shared = { className, style, onClick: onOpen };
+
+  // What it is asking of you decides where it goes, not what it is about.
+  // "Your approval is needed" used to open the requester's status page —
+  // read-only, no way to act, and the only route on was the sidebar. It
+  // belongs in the queue, on the request it named.
+  if (n.kind === "approval.turn" && n.entity_id) {
+    return (
+      <Link to="/approvals" search={{ focus: n.entity_id }} {...shared}>
+        {children}
+      </Link>
+    );
+  }
+
   if (n.entity_id) {
     switch (n.entity_type) {
       case "form_submission":

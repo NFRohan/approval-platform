@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import { Award, Clipboard, FileText, Link2 } from "lucide-react";
+import { Award, Clipboard, Clock, FileText, Link2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { StatusBadge, type StatusKey } from "@/components/StatusBadge";
+import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import {
   ApprovalTimeline,
   StateChip,
@@ -109,6 +110,7 @@ function deriveOverallStatus(rows: ApprovalRow[]): StatusKey {
 
 function StatusPage() {
   const { submissionId } = Route.useParams();
+  const { currentUser } = useCurrentUser();
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [form, setForm] = useState<FormRow | null>(null);
   const [submitter, setSubmitter] = useState<EmployeeRow | null>(null);
@@ -240,6 +242,16 @@ function StatusPage() {
 
   const overall = deriveOverallStatus(approvals);
   const refCode = `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
+
+  // This screen is the requester's view and has no actions on it. An
+  // approver who arrives here — from a notification, the dashboard, or a
+  // link — could read the whole history and had no way to act on it
+  // except finding the queue again through the sidebar.
+  const myOpenStep = approvals.find(
+    (r) =>
+      r.approver_user_id === currentUser.employee_id &&
+      (r.status === "pending" || r.status === "clarification"),
+  );
 
   const steps: Step[] = approvals.map((r, i) => {
     const emp = r.approver_user_id ? employees[r.approver_user_id] : undefined;
@@ -389,6 +401,31 @@ function StatusPage() {
           </div>
         </div>
       </div>
+
+      {/* Waiting on the person reading it */}
+      {myOpenStep && (
+        <Link
+          to="/approvals"
+          search={{ focus: submissionId }}
+          className="flex items-center gap-3 rounded-xl mb-6"
+          style={{ padding: "16px 20px", background: "#EEF2FF", border: "1px solid #C7D2FE", textDecoration: "none" }}
+        >
+          <Clock size={20} style={{ color: "#4338CA", flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[14px]" style={{ color: "#3730A3" }}>
+              {myOpenStep.status === "clarification"
+                ? "You put this on hold"
+                : "This is waiting on you"}
+            </div>
+            <div className="text-[12px]" style={{ color: "#4338CA" }}>
+              {myOpenStep.status === "clarification"
+                ? "Open it in your queue to resume it"
+                : "Open it in your queue to approve, reject or ask for clarification"}
+            </div>
+          </div>
+          <span className="text-[13px] font-medium" style={{ color: "#4338CA" }}>Open →</span>
+        </Link>
+      )}
 
       {/* Clearance Certificate banner */}
       {overall === "completed" && (
