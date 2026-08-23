@@ -51,10 +51,11 @@ const BASE_AUTO_NOTIFY: AutoEntryWithRequires[] = [
   },
 ];
 
-function formatSlabRange(min: number, max: number | null): string {
+// Thresholds are cumulative, so a slab has a floor and no ceiling — the
+// upper bound the column once held was never read by either engine.
+function formatSlabRange(min: number): string {
   const fmt = (n: number) => n.toLocaleString("en-IN");
-  if (max === null) return `Band: above ${fmt(min)}`;
-  return min === 0 ? `Band: up to ${fmt(max)}` : `Band: ${fmt(min)} – ${fmt(max)}`;
+  return min === 0 ? "Band: any amount" : `Band: ${fmt(min)} and above`;
 }
 
 function NotificationsStep() {
@@ -87,7 +88,7 @@ function NotificationsStep() {
           user_id: s.approver_user_id,
           name: empMap[s.approver_user_id]?.name ?? s.approver_user_id,
           designation: empMap[s.approver_user_id]?.designation ?? "",
-          reason: formatSlabRange(s.min_amount, s.max_amount),
+          reason: formatSlabRange(s.min_amount),
           _requires: "money",
         })),
       );

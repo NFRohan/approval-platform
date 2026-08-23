@@ -102,7 +102,7 @@ export function SlabTable({ formTemplateId }: { formTemplateId?: string | null }
             style={{ gridTemplateColumns: "1fr 1fr 1.4fr", background: "#FAFAFA", borderBottom: "1px solid #E4E4E7", padding: "8px 10px", fontSize: 10, letterSpacing: "0.06em", color: "#71717A", gap: 8 }}
           >
             <span>From</span>
-            <span>To</span>
+            <span>Applies</span>
             <span>Approver</span>
           </div>
           {slabs.map((s, i) => (
@@ -112,7 +112,7 @@ export function SlabTable({ formTemplateId }: { formTemplateId?: string | null }
               style={{ gridTemplateColumns: "1fr 1fr 1.4fr", padding: "10px 10px", gap: 8, borderBottom: i === slabs.length - 1 ? "none" : "1px solid #F4F4F5", fontSize: 11.5 }}
             >
               <span className="font-mono" style={{ color: "#3F3F46" }}>{money(s.min_amount)}</span>
-              <span className="font-mono" style={{ color: "#3F3F46" }}>→ {money(s.max_amount)}</span>
+              <span style={{ color: "#71717A" }}>and above</span>
               <div>
                 <div className="font-medium" style={{ color: "#18181B" }}>
                   {s.name ?? s.approver_user_id}
@@ -152,7 +152,7 @@ export function SlabBreakdown({ formTemplateId }: { formTemplateId?: string | nu
               style={{ fontSize: 11, color: "#78350F", padding: "3px 0" }}
             >
               <span className="font-mono">
-                {money(s.min_amount)} → {money(s.max_amount)}
+                {money(s.min_amount)} and above
               </span>
               <span style={{ fontWeight: 500 }}>{s.name ?? s.approver_user_id}</span>
             </div>

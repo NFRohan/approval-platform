@@ -147,7 +147,10 @@ function ApproversStep() {
         .map((s, i) => ({
           form_template_id: templateId,
           min_amount: parseFloat(s.min_amount),
-          max_amount: s.max_amount === "" ? null : parseFloat(s.max_amount),
+          // Never read — app.slab_approvers and resolveSlabChain both filter
+          // on min_amount alone. Stored as null rather than left to imply a
+          // ceiling the engine does not honour.
+          max_amount: null,
           approver_user_id: s.approver_user_id,
           order_index: i,
         }));
@@ -208,7 +211,9 @@ function ApproversStep() {
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "#18181B" }}>Finance Approval Slabs</div>
               <div style={{ fontSize: 12, color: "#71717A", marginTop: 2 }}>
-                The amount entered in the money field routes to whichever slab it falls into.
+                Thresholds are cumulative: a claim is asked of every approver whose threshold it
+                reaches, lowest first. A claim of 620,000 climbs all three — it does not go
+                straight to the top one.
               </div>
             </div>
             <button
@@ -222,21 +227,15 @@ function ApproversStep() {
           <div className="flex flex-col gap-2">
             {slabs.map((s, i) => (
               <div key={i} className="flex items-center gap-2" style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid #F4F4F5" : "none" }}>
+                <span style={{ color: "#A1A1AA", fontSize: 12 }}>from</span>
                 <input
                   type="number"
-                  placeholder="Min amount"
+                  placeholder="Amount"
                   value={s.min_amount}
                   onChange={(e) => updateSlab(i, { min_amount: e.target.value })}
                   style={{ width: 110, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
                 />
-                <span style={{ color: "#A1A1AA", fontSize: 12 }}>to</span>
-                <input
-                  type="number"
-                  placeholder="No limit"
-                  value={s.max_amount}
-                  onChange={(e) => updateSlab(i, { max_amount: e.target.value })}
-                  style={{ width: 110, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
-                />
+                <span style={{ color: "#A1A1AA", fontSize: 12 }}>and above</span>
                 <select
                   value={s.approver_user_id}
                   onChange={(e) => updateSlab(i, { approver_user_id: e.target.value })}
