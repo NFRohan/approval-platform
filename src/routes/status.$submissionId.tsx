@@ -84,6 +84,15 @@ function mapApprovalState(s: string | null): StepState {
     case "clarification_requested":
       return "clarification";
     case "pending":
+      // The live step, and the only one anybody can act on. The steps
+      // above it are "waiting"; collapsing both into "pending" made an
+      // advancing chain look frozen to whoever submitted it.
+      return "active";
+    case "waiting":
+      return "locked";
+    case "skipped":
+      // Never asked, because a rejection below ended the chain.
+      return "idle";
     default:
       return "pending";
   }

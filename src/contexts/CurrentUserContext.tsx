@@ -25,6 +25,7 @@ export const USERS: CurrentUser[] = [
   { employee_id: "EMP-0600", name: "Dana Whitfield", designation: "Head of Finance",          initials: "DW" },
   { employee_id: "EMP-0700", name: "Alex Mercer",    designation: "Chief Financial Officer",  initials: "AM" },
   { employee_id: "EMP-0201", name: "Nadia Okonjo",   designation: "HR Business Partner",      initials: "NO" },
+  { employee_id: "EMP-0650", name: "Priya Raman",    designation: "Head of People",           initials: "PR" },
   { employee_id: "EMP-0445", name: "Farah Haddad",   designation: "Admin Officer",            initials: "FH" },
   { employee_id: "EMP-9001", name: "Ivan Petrov",    designation: "Facilities Coordinator",   initials: "IP" },
 ];
