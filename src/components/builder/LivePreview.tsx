@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { FieldRenderer } from "./FieldRenderer";
 import { isEmbedded, isPermission, isLayout } from "./palette";
+import { evaluateFormula } from "@/lib/formula";
 import type { PlacedField } from "./types";
 
 type PreviewStep = {
@@ -66,43 +67,14 @@ function StepDots({ total, current }: { total: number; current: number }) {
   );
 }
 
-const SYSTEM_VARS: Record<string, number> = {
-  DEPT_BUDGET: 1_000_000,
-  ALLOWANCE: 20_000,
-  PETTY_CASH: 50_000,
-};
-
-function evalForSummary(formula: string, fields: PlacedField[], values: Record<string, unknown>): string | null {
-  let expr = formula;
-  for (const [name, val] of Object.entries(SYSTEM_VARS)) {
-    expr = expr.replace(new RegExp(`\\{${name}\\}`, "g"), String(val));
-  }
-  for (const f of fields) {
-    const token = `{${f.label}}`;
-    if (expr.includes(token)) {
-      const raw = values[f.id];
-      const num = parseFloat(String(raw ?? "0").replace(/[^0-9.]/g, "")) || 0;
-      expr = expr.replace(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), String(num));
-    }
-  }
-  expr = expr
-    .replace(/\bFLOOR\s*\(/gi, "Math.floor(")
-    .replace(/\bCEILING\s*\(/gi, "Math.ceil(")
-    .replace(/\bCEIL\s*\(/gi, "Math.ceil(")
-    .replace(/\bROUND\s*\(/gi, "Math.round(")
-    .replace(/\bMAX\s*\(/gi, "Math.max(")
-    .replace(/\bMIN\s*\(/gi, "Math.min(")
-    .replace(/\bABS\s*\(/gi, "Math.abs(")
-    .replace(/\bAVERAGE\s*\(([^)]+)\)/gi, (_m, args) => {
-      const parts = args.split(",").map((s: string) => s.trim()).filter(Boolean);
-      return `((${parts.join("+")})/${parts.length})`;
-    });
-  if (!/^[\d\s+\-*/().,Matha-z]+$/.test(expr)) return null;
-  try {
-    // eslint-disable-next-line no-new-func
-    const result = Function(`"use strict"; return (${expr})`)() as number;
-    return typeof result === "number" && isFinite(result) ? result.toLocaleString() : null;
-  } catch { return null; }
+function evalForSummary(
+  formula: string,
+  fields: PlacedField[],
+  values: Record<string, unknown>,
+  selfId?: string,
+): string | null {
+  const n = evaluateFormula(formula, fields, values, selfId);
+  return n === null ? null : n.toLocaleString();
 }
 
 function SummaryTable({ fields, values }: { fields: PlacedField[]; values: Record<string, unknown> }) {
@@ -119,7 +91,7 @@ function SummaryTable({ fields, values }: { fields: PlacedField[]; values: Recor
       {dataFields.map((f) => {
         let display = "—";
         if (f.kind === "calculation" && f.formula) {
-          const result = evalForSummary(f.formula, fields, values);
+          const result = evalForSummary(f.formula, fields, values, f.id);
           if (result !== null) display = result;
         } else {
           const v = values[f.id];
