@@ -51,8 +51,13 @@ function LoginPage() {
       return;
     }
     // The router cached a "no session" answer on the way in.
+    // The router cached a "no session" answer on the way in.
     await router.invalidate();
-    navigate({ to: "/" });
+
+    // Staff hold no tenant, so the prospect screens have nothing to show
+    // them — landing there means a dashboard of zeroes under somebody
+    // else's name. Their work is the console.
+    navigate({ to: result.isStaff ? "/staff" : "/" });
   }
 
   async function submitNewPassword(e: React.FormEvent) {

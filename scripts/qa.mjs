@@ -479,18 +479,30 @@ await check('signing out returns you to the gate', async () => {
 // 7. The staff console
 // ---------------------------------------------------------------------
 if (STAFF_USER && STAFF_PASS) {
-  await check('a staff account can sign in and open the console', async () => {
+  await check('signing in as staff lands on the console, not the dashboard', async () => {
     await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
     await page.fill('input[autocomplete="username"]', STAFF_USER);
     await page.fill('input[type="password"]', STAFF_PASS);
     await page.click('button[type="submit"]');
     await page.waitForURL((u) => !u.pathname.endsWith('/login'), { timeout: 25000 });
+    await page.waitForTimeout(2500);
+    const where = new URL(page.url()).pathname;
+    if (where !== '/staff') {
+      throw new Error(`landed on ${where} — the prospect screens have no tenant to show a staff account`);
+    }
+  });
 
+  await check('a staff account has a visible way back to the console', async () => {
+    const link = page.getByRole('link', { name: /Evaluations/i });
+    if (!(await link.count())) throw new Error('no link to the console anywhere in the chrome');
+  });
+
+  await check('the console shows the form for issuing one', async () => {
     await page.goto(`${BASE}/staff`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(2000);
     const body = await page.locator('body').innerText();
     if (/Not your console/i.test(body)) throw new Error('the console refused a staff account');
-    if (!/Issue evaluation/i.test(body)) throw new Error('the issue form is not on the page');
-    return 'console opened';
+    if (!/Issue evaluation/i.test(body)) throw new Error('no way to issue an evaluation');
   });
 
   await check('the console lists the evaluations that exist', async () => {

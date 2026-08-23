@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, ChevronRight, HelpCircle, LogOut } from "lucide-react";
+import { Bell, ChevronRight, HelpCircle, KeyRound, LogOut } from "lucide-react";
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
@@ -252,6 +252,22 @@ function AccountMenu() {
 
   return (
     <div className="flex items-center gap-2.5">
+      {/* Staff only. A prospect should not be shown a link to the console
+          that issues their own evaluation — and until now the only way
+          to reach it at all was to know the path and type it. */}
+      {session.isStaff && (
+        <Link
+          to="/staff"
+          className="inline-flex items-center gap-1.5 rounded-lg"
+          style={{
+            padding: "5px 10px", fontSize: 12, fontWeight: 500,
+            color: "var(--color-brand-600)", border: "1px solid var(--color-zinc-200)",
+            background: "#fff", textDecoration: "none",
+          }}
+        >
+          <KeyRound size={13} /> Evaluations
+        </Link>
+      )}
       <div className="text-right" style={{ lineHeight: 1.25 }}>
         <div className="text-[12px] font-medium text-zinc-900">{session.username}</div>
         {session.daysLeft !== null && (

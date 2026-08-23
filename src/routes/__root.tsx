@@ -88,7 +88,12 @@ export const Route = createRootRoute({
       throw redirect({ to: "/login" });
     }
     if (session && onLogin) {
-      throw redirect({ to: "/" });
+      throw redirect({ to: session.isStaff ? "/staff" : "/" });
+    }
+
+    // A staff bookmark of the dashboard is a dashboard of zeroes.
+    if (session?.isStaff && location.pathname === "/") {
+      throw redirect({ to: "/staff" });
     }
     return { session };
   },

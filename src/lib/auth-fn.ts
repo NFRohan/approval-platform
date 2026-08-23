@@ -21,7 +21,7 @@ import {
 import { sessionFromCookie } from '@/server/session';
 
 export type SignInResult =
-  | { ok: true; mustChangePassword: boolean }
+  | { ok: true; mustChangePassword: boolean; isStaff: boolean }
   | { ok: false; error: string };
 
 export type PublicSession = {
@@ -93,7 +93,7 @@ export const signIn = createServerFn({ method: 'POST' })
       setCookie(SESSION_COOKIE, await signSession(session), cookieOptions);
       await client.query('update public.app_users set last_login_at = now() where id = $1', [row.id]);
 
-      return { ok: true, mustChangePassword: session.mustChangePassword };
+      return { ok: true, mustChangePassword: session.mustChangePassword, isStaff: session.isStaff };
     } catch (err) {
       console.error('[auth] sign-in failed', err instanceof Error ? err.message : err);
       return { ok: false, error: 'Something went wrong signing in. Try again.' };
