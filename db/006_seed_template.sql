@@ -208,18 +208,22 @@ insert into public.venues (id, name, floor) values
   ('44444444-0000-4000-8000-000000000002', 'North Wing',      '4th Floor'),
   ('44444444-0000-4000-8000-000000000003', 'South Wing',      '2nd Floor');
 
+-- MO-1041 is approved, so its four desk chairs have already left Main
+-- Store and its reservation has been released — approving is what runs
+-- release_reservation and transfer_stock. MO-1042 is still only
+-- submitted, so its two filing cabinets are reserved and have not moved.
 insert into public.item_stock (item_id, venue_id, quantity, reserved_quantity) values
-  ('33333333-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000001', 40, 4),
+  ('33333333-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000001', 36, 0),
   ('33333333-0000-4000-8000-000000000002', '44444444-0000-4000-8000-000000000001', 25, 0),
   ('33333333-0000-4000-8000-000000000003', '44444444-0000-4000-8000-000000000001', 12, 2),
   ('33333333-0000-4000-8000-000000000004', '44444444-0000-4000-8000-000000000001', 18, 0),
-  ('33333333-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000002', 15, 0),
+  ('33333333-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000002', 19, 0),
   ('33333333-0000-4000-8000-000000000004', '44444444-0000-4000-8000-000000000002',  6, 0);
 
 insert into public.movement_orders (ref_number, requester_id, item_name, item_type, quantity,
                                     source_location, destination_location, justification,
                                     assigned_mover_id, status, item_id, source_venue_id, destination_venue_id, created_at) values
-  ('MO-1041', 'EMP-1134', 'Desk chair',       'Furniture',    4, 'Main Store', 'North Wing', 'New joiners in the analytics pod', 'EMP-9001', 'in_progress', '33333333-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000002', now() - interval '3 days'),
+  ('MO-1041', 'EMP-1134', 'Desk chair',       'Furniture',    4, 'Main Store', 'North Wing', 'New joiners in the analytics pod', 'EMP-9001', 'approved',    '33333333-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000002', now() - interval '3 days'),
   ('MO-1042', 'EMP-0445', 'Filing cabinet',   'Furniture',    2, 'Main Store', 'South Wing', 'Records consolidation',            'EMP-9001', 'submitted',   '33333333-0000-4000-8000-000000000003', '44444444-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000003', now() - interval '1 day'),
   ('MO-1039', 'EMP-3120', 'Monitor, 27 inch', 'IT Equipment', 6, 'Main Store', 'North Wing', 'Second screens for the design team','EMP-9001', 'completed',  '33333333-0000-4000-8000-000000000004', '44444444-0000-4000-8000-000000000001', '44444444-0000-4000-8000-000000000002', now() - interval '11 days');
 

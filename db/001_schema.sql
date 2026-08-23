@@ -472,6 +472,25 @@ create table if not exists public.movement_orders (
 create index if not exists movement_orders_tenant_idx
   on public.movement_orders(tenant_id, created_at desc);
 
+-- Every other workflow table enumerates its statuses inline. This one
+-- did not, and the seed shipped 'in_progress' — a value the movement
+-- orders screen does not recognise, so the row fell out of every filter
+-- tab and rendered no badge. It cannot be added inline now, because
+-- "create table if not exists" is a no-op against a database that
+-- already has the table; hence the alter. Existing strays are normalised
+-- first, or adding the constraint would fail on them.
+update public.movement_orders
+   set status = 'submitted'
+ where status not in
+   ('submitted', 'approved', 'in_transit', 'completed', 'rejected', 'on_hold');
+
+alter table public.movement_orders
+  drop constraint if exists movement_orders_status_check;
+alter table public.movement_orders
+  add constraint movement_orders_status_check
+  check (status in
+    ('submitted', 'approved', 'in_transit', 'completed', 'rejected', 'on_hold'));
+
 create table if not exists public.notices (
   id                  uuid primary key default gen_random_uuid(),
   tenant_id           uuid not null default app.current_tenant()
