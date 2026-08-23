@@ -47,7 +47,28 @@ type Item = {
 };
 type Section = { section: string; items: Item[] };
 
+const DASHBOARD: Item = { id: "dash", label: "Dashboard", Icon: LayoutDashboard, to: "/" };
+
+/**
+ * The navigation for a persona, with a way home guaranteed.
+ *
+ * Only two of the five branches below listed the dashboard, so most
+ * personas could leave it and had no route back short of editing the
+ * address bar. Rather than adding the same line in four places and
+ * hoping the fifth branch remembers, it is put back here for anybody
+ * whose navigation does not already offer it.
+ */
 function buildNav(
+  user: CurrentUser,
+  ctx: { activeSubmissionId: string | null; pendingCount: number },
+): Section[] {
+  const sections = buildNavFor(user, ctx);
+  if (sections.some((s) => s.items.some((i) => i.to === "/"))) return sections;
+  const [first, ...rest] = sections;
+  return [{ ...first, items: [DASHBOARD, ...first.items] }, ...rest];
+}
+
+function buildNavFor(
   user: CurrentUser,
   ctx: { activeSubmissionId: string | null; pendingCount: number },
 ): Section[] {

@@ -133,7 +133,13 @@ function StatCard({ s, loading }: { s: Stat; loading?: boolean }) {
   );
 }
 
-type Recent = { form: string; sub: string | null; date: string; status: StatusKey; next: string };
+type Recent = { id: string; form: string; sub: string | null; date: string; status: StatusKey; next: string };
+
+// The same reference the status screen prints and notifications now
+// carry, so two claims on one form can be told apart at a glance.
+function subjectRef(id: string) {
+  return `AMS-${id.slice(0, 8).toUpperCase()}`;
+}
 
 // ---------------------------------------------------------------------
 // Both panels below used to be constants: four invented approvals and
@@ -190,8 +196,9 @@ function useRecentSubmissions(employeeId: string) {
 
       if (cancel) return;
       setRows(list.map((r) => ({
+        id: r.id,
         form: r.form_template_id ? (names[r.form_template_id] ?? "Submission") : "Submission",
-        sub: null,
+        sub: subjectRef(r.id),
         date: r.submitted_at ? String(r.submitted_at).slice(0, 10) : "—",
         status: (r.status ?? "in_progress") as StatusKey,
         next: nextBy[r.id] ?? "—",
@@ -295,8 +302,10 @@ function RecentTable({ rows }: { rows: Recent[] | null }) {
         </div>
       )}
       {(rows ?? []).map((r, i) => (
-        <div
-          key={i}
+        <Link
+          key={r.id}
+          to="/status/$submissionId"
+          params={{ submissionId: r.id }}
           className="grid items-center cursor-pointer transition-colors hover:bg-zinc-50"
           style={{
             gridTemplateColumns: "2fr 1fr 1fr 2fr",
@@ -325,7 +334,7 @@ function RecentTable({ rows }: { rows: Recent[] | null }) {
           >
             {r.next}
           </div>
-        </div>
+        </Link>
       ))}
     </div>
   );
