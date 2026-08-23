@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, ChevronRight, HelpCircle, KeyRound, LogOut } from "lucide-react";
 import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -149,15 +149,17 @@ export function useNotifications(employeeId: string) {
 }
 
 function NotificationsDropdown({
-  onClose, notes, unread, markAllRead,
+  onClose, notes, unread, markAllRead, panelRef,
 }: {
   onClose: () => void;
   notes: Note[] | null;
   unread: number;
   markAllRead: () => void;
+  panelRef: React.RefObject<HTMLDivElement | null>;
 }) {
   return (
     <div
+      ref={panelRef}
       className="absolute right-0 bg-white rounded-xl border z-50"
       style={{
         top: 44,
@@ -298,10 +300,34 @@ function AccountMenu() {
 
 export function TopBar() {
   const [notifOpen, setNotifOpen] = useState(false);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
   const { currentUser } = useCurrentUser();
   const { notes, unread, markAllRead } = useNotifications(currentUser.employee_id);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const crumbs = crumbsFor(pathname);
+
+  // Clicking anywhere else closes it, the same way the search box works.
+  // The bell is excluded because it is a toggle: letting this fire first
+  // would close the panel and then the button would reopen it.
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (bellRef.current?.contains(target)) return;
+      if (notifRef.current?.contains(target)) return;
+      setNotifOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNotifOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [notifOpen]);
 
   return (
     <div
@@ -330,7 +356,10 @@ export function TopBar() {
 
       <div className="ml-auto flex items-center gap-2 relative">
         <button
+          ref={bellRef}
           onClick={() => setNotifOpen((v) => !v)}
+          aria-expanded={notifOpen}
+          aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
           className="inline-flex items-center justify-center rounded-lg cursor-pointer relative"
           style={{ width: 36, height: 36 }}
         >
@@ -362,6 +391,7 @@ export function TopBar() {
 
         {notifOpen && (
           <NotificationsDropdown
+            panelRef={notifRef}
             onClose={() => setNotifOpen(false)}
             notes={notes}
             unread={unread}
