@@ -557,7 +557,7 @@ begin
   values (v_req.submission_id, v_req.notice_id, v_req.stationery_request_id,
           v_req.maintenance_request_id,
           p_employee, v_req.step_index + 1, 'waiting',
-          now() + make_interval(days => coalesce(p_deadline_days, 7)))
+          app.add_working_days(now(), coalesce(p_deadline_days, 7)))
   returning id into v_new;
 
   return v_new;

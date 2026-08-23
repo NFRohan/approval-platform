@@ -164,7 +164,12 @@ function StatusPage() {
       .from("approval_requests")
       .select("*")
       .eq("submission_id", submissionId)
-      .order("deadline_at", { ascending: true });
+      // By step, not by deadline. Every slab step of one rule shares a
+      // deadline computed before the loop that creates them, so ordering
+      // by date left the finance ladder in an arbitrary order — and a
+      // rule with a shorter deadline could float above the step that
+      // approves before it.
+      .order("step_index", { ascending: true });
     const list = (appr as ApprovalRow[] | null) || [];
     setApprovals(list);
 
