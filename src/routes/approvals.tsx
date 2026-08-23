@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Inbox, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
+import { OPEN_STATUSES } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import {
   Dialog,
@@ -201,7 +202,7 @@ function ApprovalsInbox() {
       // is still assigned to you and still needs you to act — leaving it
       // out meant the only screen that could resume it never showed it,
       // and the request could never move again.
-      .in("status", ["pending", "clarification"])
+      .in("status", [...OPEN_STATUSES])
       // Soonest target first, so the queue is ordered by what is most
       // pressing rather than by insertion. This is the one thing the
       // target date actually drives — see the note in the timeline.

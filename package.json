@@ -11,12 +11,13 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run test:callsites && npm run test:auth && npm run test:render && npm run db:test",
+    "test": "npm run typecheck && npm run test:callsites && npm run test:auth && npm run test:render && npm run db:test && npm run test:journey",
     "test:callsites": "node scripts/callsites-test.mjs",
     "test:auth": "node --env-file=.env scripts/auth-test.mjs",
     "test:render": "node --env-file=.env scripts/render-test.mjs",
     "db:apply": "node --env-file=.env scripts/db-apply.mjs",
     "db:test": "node --env-file=.env scripts/db-test.mjs",
+    "test:journey": "node --env-file=.env scripts/journey-test.mjs",
     "qa": "node scripts/qa.mjs"
   },
   "dependencies": {

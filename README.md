@@ -102,7 +102,7 @@ node --env-file=.env scripts/dev-tenant.mjs --fresh
 ### Tests
 
 ```bash
-npm test          # all five, cheapest first
+npm test          # all six, cheapest first
 ```
 
 | | |
@@ -112,8 +112,9 @@ npm test          # all five, cheapest first
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
 | `db:test` | 75 checks: tenant isolation, the security policies, provisioning, and the approval chain |
+| `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
 
-`db:test` refuses a pooled connection string. The suites carry fixture ids in
+`db:test` and `test:journey` refuse a pooled connection string. The suites carry fixture ids in
 session settings, and a transaction pooler hands one server connection to
 several clients.
 
@@ -135,6 +136,11 @@ Stated plainly, because a demo that hides its edges wastes everyone's time.
 - **Five of the ten specified admin modules are absent on purpose** — dispatch,
   event coordination, visitor management, air ticketing and standalone stock
   are each their own project.
+
+Twenty-one findings from the August 2026 review are open on purpose —
+none reachable by using the demo, all of them written down in
+[docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) with the five that stop
+being theoretical the moment there is real data.
 
 Sequencing is in [docs/SPRINT_PLAN.md](docs/SPRINT_PLAN.md), and deployment —
 including the two non-obvious things about it — is in

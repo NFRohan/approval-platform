@@ -22,6 +22,18 @@ export type SubjectType =
 
 export type ChainAction = 'approve' | 'reject' | 'clarification' | 'resume';
 
+/**
+ * The statuses a step can be in while it still needs somebody.
+ *
+ * Every queue filters on this, and it has to match what the engine can
+ * actually produce. It did not once: the approvals screen asked for
+ * 'pending' alone, so a step paused for clarification disappeared from
+ * the only screen that could have resumed it and the request stopped
+ * there permanently. One constant, so a queue and the engine cannot
+ * drift apart again — scripts/journey-test.mjs asserts against it.
+ */
+export const OPEN_STATUSES = ['pending', 'clarification'] as const;
+
 /** Each subject has its own column on approval_requests. */
 const COLUMN: Record<SubjectType, string> = {
   form_submission: 'submission_id',
@@ -48,7 +60,7 @@ export async function openStep(type: SubjectType, subjectId: string): Promise<St
     .from('approval_requests')
     .select('id, approver_user_id, step_index, status')
     .eq(COLUMN[type], subjectId)
-    .in('status', ['pending', 'clarification'])
+    .in('status', [...OPEN_STATUSES])
     .order('step_index')
     .maybeSingle();
   return (data as Step) ?? null;

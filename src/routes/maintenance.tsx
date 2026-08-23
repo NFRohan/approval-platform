@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Plus, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
-import { actOnSubject, startChain, type Step } from "@/lib/chain";
+import { actOnSubject, startChain, OPEN_STATUSES, type Step } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export const Route = createFileRoute("/maintenance")({
@@ -276,7 +276,7 @@ function MaintenancePage() {
       db.from("approval_requests")
         .select("id, maintenance_request_id, approver_user_id, step_index, status")
         .eq("subject_type", "maintenance_request")
-        .in("status", ["pending", "clarification"]),
+        .in("status", [...OPEN_STATUSES]),
       db.from("approval_rules")
         .select("label, step_index")
         .eq("subject_type", "maintenance_request")
