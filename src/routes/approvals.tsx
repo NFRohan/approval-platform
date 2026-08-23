@@ -197,7 +197,11 @@ function ApprovalsInbox() {
       .from("approval_requests")
       .select("*")
       .in("approver_user_id", approverIds)
-      .eq("status", "pending")
+      // 'clarification' belongs here too. A step paused for clarification
+      // is still assigned to you and still needs you to act — leaving it
+      // out meant the only screen that could resume it never showed it,
+      // and the request could never move again.
+      .in("status", ["pending", "clarification"])
       // Soonest target first, so the queue is ordered by what is most
       // pressing rather than by insertion. This is the one thing the
       // target date actually drives — see the note in the timeline.
@@ -391,7 +395,7 @@ function ApprovalsInbox() {
   // it read "waiting" as "not approved yet" and completed nothing.
   const act = async (
     row: Row,
-    action: "approve" | "reject" | "clarification",
+    action: "approve" | "reject" | "clarification" | "resume",
     note?: string,
   ): Promise<boolean> => {
     const { error } = await db.rpc("act_on_approval", {
@@ -410,12 +414,14 @@ function ApprovalsInbox() {
       action:
         action === "approve" ? "approved"
         : action === "reject" ? "rejected"
+        : action === "resume" ? "resumed"
         : "clarification_requested",
       entity_type: row.subject_type ?? "form_submission",
       entity_id: row.subject_id,
       detail:
         (action === "approve" ? "Approved "
          : action === "reject" ? "Rejected "
+         : action === "resume" ? "Resumed "
          : "Requested clarification on ") + what,
     });
     return true;
@@ -425,6 +431,14 @@ function ApprovalsInbox() {
     if (!(await act(row, "approve"))) return;
     toast.success("Approved — it has moved to the next approver");
     fadeAndRemove(row.id);
+  };
+
+  // Resuming puts the step back to pending with you, so it stays in the
+  // queue rather than leaving it — reload instead of fading out.
+  const handleResume = async (row: Row) => {
+    if (!(await act(row, "resume"))) return;
+    toast.success("Resumed — it is back with you to decide");
+    void load();
   };
 
   // Forwarding moves this step to somebody else and keeps its place in
@@ -602,6 +616,35 @@ function ApprovalsInbox() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {r.status === "clarification" ? (
+                        <>
+                          <span
+                            className="inline-flex items-center rounded-full font-medium"
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: 11,
+                              background: "#FFFBEB",
+                              color: "#B45309",
+                              border: "1px solid #FDE68A",
+                            }}
+                          >
+                            Awaiting clarification
+                          </span>
+                          <button
+                            onClick={() => handleResume(r)}
+                            className="rounded-md text-white font-medium"
+                            style={{
+                              padding: "7px 14px",
+                              fontSize: 13,
+                              background: "#4F46E5",
+                              border: "1px solid #4F46E5",
+                            }}
+                          >
+                            Resume
+                          </button>
+                        </>
+                      ) : (
+                      <>
                       <button
                         onClick={() => handleApprove(r)}
                         className="rounded-md text-white font-medium"
@@ -676,6 +719,8 @@ function ApprovalsInbox() {
                       >
                         Add reviewer
                       </button>
+                      </>
+                      )}
                       <span style={{ color: "#A1A1AA", marginLeft: 4 }}>
                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </span>

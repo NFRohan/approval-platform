@@ -153,7 +153,7 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
   // Approving is not setting a status. It is acting on this tier's step,
   // which may hand the request to the next tier rather than finishing
   // it — so the chain decides what the request becomes.
-  async function chainAct(action: "approve" | "reject" | "clarification") {
+  async function chainAct(action: "approve" | "reject" | "clarification" | "resume") {
     setActioning(true);
     if (action === "approve" && (assignedTo.trim() || comment.trim())) {
       await db.from("maintenance_requests")
@@ -166,13 +166,14 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
 
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id,
-      action: action === "approve" ? "approved" : action === "reject" ? "rejected" : "on_hold",
+      action: action === "approve" ? "approved" : action === "reject" ? "rejected" : action === "resume" ? "resumed" : "on_hold",
       entity_type: "maintenance_request", entity_id: req.id,
-      detail: (action === "approve" ? "Approved " : action === "reject" ? "Rejected " : "Held ") + req.ref_number,
+      detail: (action === "approve" ? "Approved " : action === "reject" ? "Rejected " : action === "resume" ? "Resumed " : "Held ") + req.ref_number,
     });
     toast.success(
       action === "approve" ? "Approved — passed to the next tier if there is one"
       : action === "reject" ? "Rejected — the tiers above were not asked"
+      : action === "resume" ? "Resumed — it is back with you to decide"
       : "Held pending clarification",
     );
     onRefresh();
@@ -229,9 +230,18 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
                 <input style={{ ...inputStyle, fontSize: 12 }} placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} />
               </div>
               <div className="flex gap-2">
-                <button disabled={actioning} onClick={() => chainAct("approve")} className="rounded-md text-white font-medium" style={{ padding: "6px 12px", fontSize: 12.5, background: "#4F46E5", border: "none", cursor: "pointer" }}>Approve</button>
-                <button disabled={actioning} onClick={() => chainAct("reject")} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}>Reject</button>
-                <button disabled={actioning} onClick={() => chainAct("clarification")} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#52525B", border: "1px solid #E4E4E7", cursor: "pointer" }}>Hold</button>
+                {myStep.status === "clarification" ? (
+                  <>
+                    <span className="inline-flex items-center rounded-full font-medium" style={{ padding: "2px 8px", fontSize: 11, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A" }}>Awaiting clarification</span>
+                    <button disabled={actioning} onClick={() => chainAct("resume")} className="rounded-md text-white font-medium" style={{ padding: "6px 12px", fontSize: 12.5, background: "#4F46E5", border: "none", cursor: "pointer" }}>Resume</button>
+                  </>
+                ) : (
+                  <>
+                    <button disabled={actioning} onClick={() => chainAct("approve")} className="rounded-md text-white font-medium" style={{ padding: "6px 12px", fontSize: 12.5, background: "#4F46E5", border: "none", cursor: "pointer" }}>Approve</button>
+                    <button disabled={actioning} onClick={() => chainAct("reject")} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#B91C1C", border: "1px solid #FECACA", cursor: "pointer" }}>Reject</button>
+                    <button disabled={actioning} onClick={() => chainAct("clarification")} className="rounded-md font-medium bg-white" style={{ padding: "6px 12px", fontSize: 12.5, color: "#52525B", border: "1px solid #E4E4E7", cursor: "pointer" }}>Hold</button>
+                  </>
+                )}
               </div>
             </div>
           )}
