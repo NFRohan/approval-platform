@@ -60,7 +60,12 @@ function HistoryPage() {
         .from("approval_requests")
         .select("*")
         .eq("approver_user_id", currentUser.employee_id)
-        .neq("status", "pending")
+        // Acted on, which is narrower than "not pending". A rejection
+        // lower down marks everything above it 'skipped' and leaves
+        // acted_at null — those were never asked of this person, and
+        // listing them here claimed they had dealt with them. 'waiting'
+        // is excluded for the same reason.
+        .in("status", ["approved", "rejected", "clarification"])
         .order("acted_at", { ascending: false });
       const list = (appr || []) as Row[];
 

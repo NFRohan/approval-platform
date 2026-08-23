@@ -18,7 +18,7 @@ import { Canvas } from "@/components/builder/Canvas";
 import { ConfigPanel } from "@/components/builder/ConfigPanel";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
 import { LivePreview } from "@/components/builder/LivePreview";
-import { DEFAULT_LABELS, DEFAULT_OPTIONS } from "@/components/builder/palette";
+import { DEFAULT_LABELS, DEFAULT_OPTIONS, isLayout, isPermission } from "@/components/builder/palette";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { toast } from "sonner";
 
@@ -185,6 +185,37 @@ function BuilderPage() {
     await db.from("form_fields").delete().eq("id", id);
   }
 
+  /**
+   * The finance ladder only means anything while there is an amount to
+   * measure. Removing the last money field used to leave the slab rule
+   * and its bands in place, and build_approval_chain would then run with
+   * an amount of zero — resolving the lowest band alone and asking
+   * nobody above it, silently.
+   */
+  async function dropSlabsIfNoMoneyField(remaining: PlacedField[]) {
+    if (!templateId) return;
+    if (remaining.some((f) => f.kind === "money")) return;
+
+    const { data: slabs } = await db
+      .from("approval_slabs")
+      .select("id")
+      .eq("form_template_id", templateId);
+    const { data: rules } = await db
+      .from("approval_rules")
+      .select("id")
+      .eq("form_template_id", templateId)
+      .eq("label", "slab_finance");
+    if ((slabs ?? []).length === 0 && (rules ?? []).length === 0) return;
+
+    await db.from("approval_slabs").delete().eq("form_template_id", templateId);
+    await db
+      .from("approval_rules")
+      .delete()
+      .eq("form_template_id", templateId)
+      .eq("label", "slab_finance");
+    toast.info("Finance approval bands removed — they needed an amount field.");
+  }
+
   async function persistReorder(next: PlacedField[]) {
     if (!templateId) return;
     await Promise.all(
@@ -199,6 +230,13 @@ function BuilderPage() {
     const fromPalette = active.data.current?.from === "palette";
     if (fromPalette) {
       const kind = active.data.current?.kind as FieldKind;
+      // Where it was dropped, not the end. This branch ignored `over`
+      // entirely and always appended, while the reorder branch below it
+      // reads `over` correctly — so dropping between two fields sent the
+      // new one to the bottom.
+      const overIndex = fields.findIndex((f) => f.id === over.id);
+      const at = overIndex < 0 ? fields.length : overIndex;
+
       const newField: PlacedField = {
         id: crypto.randomUUID(),
         kind,
@@ -207,12 +245,17 @@ function BuilderPage() {
         helper: "",
         options: DEFAULT_OPTIONS[kind] ? [...DEFAULT_OPTIONS[kind]!] : undefined,
         placeholder: undefined,
-        order_index: fields.length,
+        order_index: at,
       };
-      const next = [...fields, newField];
+      const next = [...fields.slice(0, at), newField, ...fields.slice(at)]
+        .map((f, i) => ({ ...f, order_index: i }));
       setFields(next);
       setSelectedId(newField.id);
-      void persistInsert(newField);
+      // Inserting in the middle shifts everything after it, so the whole
+      // order has to be written, not just the new row.
+      void persistInsert(newField).then(() => {
+        if (at < fields.length) void persistReorder(next);
+      });
       return;
     }
 
@@ -234,9 +277,10 @@ function BuilderPage() {
   }
 
   function deleteField(id: string) {
-    setFields((prev) => prev.filter((f) => f.id !== id));
+    const remaining = fields.filter((f) => f.id !== id);
+    setFields(remaining);
     if (selectedId === id) setSelectedId(null);
-    void persistDelete(id);
+    void persistDelete(id).then(() => dropSlabsIfNoMoneyField(remaining));
   }
 
   function duplicateField(id: string) {
@@ -261,6 +305,23 @@ function BuilderPage() {
   function handleNext() {
     if (fields.length === 0) {
       toast.warning("Add at least one field before continuing.");
+      return;
+    }
+    // An answer is stored against its field's label, so two fields
+    // sharing one label write two rows with the same key: reopening the
+    // draft recovers only one of them and the other answer is gone
+    // without a word. It also breaks {token} resolution in formulas.
+    const seen = new Map<string, number>();
+    for (const f of fields) {
+      if (isPermission(f.kind) || isLayout(f.kind)) continue;
+      const key = f.label.trim().toLowerCase();
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+    const clashes = [...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k);
+    if (clashes.length > 0) {
+      toast.error(
+        `Two fields share the label "${clashes[0]}". Answers are stored by label, so give each field its own.`,
+      );
       return;
     }
     if (!templateId) return;

@@ -1,15 +1,12 @@
 import {
   AlignLeft,
   AlignJustify,
-  AlertTriangle,
   Building,
   Calendar,
   CalendarRange,
   CheckSquare,
   ChevronDown,
   DollarSign,
-  Edit,
-  Eye,
   Hash,
   Layers,
   LayoutTemplate,
@@ -20,7 +17,6 @@ import {
   Paperclip,
   Pen,
   Phone,
-  Shield,
   Sparkles,
   Star,
   Type,
@@ -99,16 +95,14 @@ export const PALETTE: PaletteSection[] = [
       { kind: "section_header", label: "Section Divider", Icon: Minus, hint: "Group fields with a label" },
     ],
   },
-  {
-    id: "permissions",
-    title: "Permissions",
-    Icon: Shield,
-    items: [
-      { kind: "perm_visibility", label: "Visibility Rules", Icon: Eye, hint: "Show field if…" },
-      { kind: "perm_edit", label: "Edit Rules", Icon: Edit, hint: "Editable only by role…" },
-      { kind: "perm_required", label: "Required Conditions", Icon: AlertTriangle },
-    ],
-  },
+  // The Permissions group lived here: Visibility Rules, Edit Rules and
+  // Required Conditions. Every one of them rendered a placeholder that
+  // said "show_if: <condition>" with no input to enter a condition, and
+  // nothing anywhere read one — the fields were stripped from rendering
+  // and from submission unconditionally. An affordance that cannot work
+  // is worse than its absence, so it is not offered until the
+  // conditional logic behind it exists. The perm_* kinds stay defined so
+  // a template that already holds one still opens.
 ];
 
 export const DEFAULT_LABELS: Record<FieldKind, string> = {
