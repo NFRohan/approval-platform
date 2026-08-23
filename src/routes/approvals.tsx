@@ -37,6 +37,8 @@ type Row = {
   formName?: string;
   subjectLabel?: string;
   submittedAt?: string | null;
+  raisedAt?: string | null;
+  subjectRef?: string;
   submittedBy?: string | null;
   submitterName?: string;
   submitterDept?: string;
@@ -270,6 +272,9 @@ function ApprovalsInbox() {
     // and reduced to a label and a requester.
     const subjectLabels: Record<string, string> = {};
     const subjectRequesters: Record<string, string> = {};
+    // When the request itself was raised — the only thing that tells the
+    // one you just fired from the ones that came with the demo.
+    const subjectRaised: Record<string, string> = {};
 
     const idsOf = (t: string) =>
       Array.from(new Set(
@@ -280,9 +285,10 @@ function ApprovalsInbox() {
     const noticeIds = idsOf("notice");
     if (noticeIds.length) {
       const { data } = await db
-        .from("notices").select("id, title, created_by").in("id", noticeIds);
+        .from("notices").select("id, title, created_by, created_at").in("id", noticeIds);
       (data ?? []).forEach((n) => {
         subjectLabels[n.id] = n.title ?? "Notice";
+        if (n.created_at) subjectRaised[n.id] = n.created_at;
         if (n.created_by) subjectRequesters[n.id] = n.created_by;
       });
     }
@@ -290,11 +296,12 @@ function ApprovalsInbox() {
     const stationeryIds = idsOf("stationery_request");
     if (stationeryIds.length) {
       const { data } = await db
-        .from("stationery_requests").select("id, kind, name, requester_id").in("id", stationeryIds);
+        .from("stationery_requests").select("id, kind, name, requester_id, created_at").in("id", stationeryIds);
       (data ?? []).forEach((r) => {
         const kind = r.kind === "business_card" ? "Business card"
           : r.kind === "stamp_seal" ? "Stamp and seal" : String(r.kind ?? "Stationery");
         subjectLabels[r.id] = r.name ? kind + " — " + r.name : kind;
+        if (r.created_at) subjectRaised[r.id] = r.created_at;
         if (r.requester_id) subjectRequesters[r.id] = r.requester_id;
       });
     }
@@ -302,9 +309,10 @@ function ApprovalsInbox() {
     const maintenanceIds = idsOf("maintenance_request");
     if (maintenanceIds.length) {
       const { data } = await db
-        .from("maintenance_requests").select("id, ref_number, location, requester_id").in("id", maintenanceIds);
+        .from("maintenance_requests").select("id, ref_number, location, requester_id, created_at").in("id", maintenanceIds);
       (data ?? []).forEach((m) => {
         subjectLabels[m.id] = [m.ref_number, m.location].filter(Boolean).join(" — ") || "Maintenance";
+        if (m.created_at) subjectRaised[m.id] = m.created_at;
         if (m.requester_id) subjectRequesters[m.id] = m.requester_id;
       });
     }
@@ -344,11 +352,33 @@ function ApprovalsInbox() {
           formName: label,
           subjectLabel: label,
           submittedAt: sub?.submitted_at,
+          raisedAt: sub?.submitted_at ?? (r.subject_id ? subjectRaised[r.subject_id] : undefined),
+          // Two claims against one form are otherwise the same sentence
+          // twice. Same reference the status screen and the bell print.
+          subjectRef: r.submission_id
+            ? `AMS-${r.submission_id.slice(0, 8).toUpperCase()}`
+            : undefined,
           submittedBy: requester,
           submitterName: submitter?.name,
           submitterDept: submitter?.department || undefined,
         };
       });
+
+    // Grouped by the request rather than by target date. The queue is
+    // one queue across four kinds of thing, and with seeded requests
+    // sitting in it there was no way to find the one you just raised —
+    // a date three days out told you nothing about which was which.
+    // Newest first, and anything without a timestamp settles at the end.
+    enriched.sort((a, b) => {
+      const at = a.raisedAt ? Date.parse(a.raisedAt) : NaN;
+      const bt = b.raisedAt ? Date.parse(b.raisedAt) : NaN;
+      if (Number.isNaN(at) && Number.isNaN(bt)) return 0;
+      if (Number.isNaN(at)) return 1;
+      if (Number.isNaN(bt)) return -1;
+      if (bt !== at) return bt - at;
+      // Same request, more than one step showing: keep chain order.
+      return (a.step_index ?? 0) - (b.step_index ?? 0);
+    });
 
     setRows(enriched);
     setLoading(false);
@@ -572,6 +602,14 @@ function ApprovalsInbox() {
                         }}
                       >
                         {r.formName || "Submission"}
+                        {r.subjectRef && (
+                          <span
+                            className="font-mono"
+                            style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: "#71717A" }}
+                          >
+                            {r.subjectRef}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: 13, color: "#52525B" }}>
                         Submitted by{" "}

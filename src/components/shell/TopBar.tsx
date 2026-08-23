@@ -98,9 +98,65 @@ type Note = {
   kind: string | null;
   title: string | null;
   body: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
   read_at: string | null;
   created_at: string;
 };
+
+/**
+ * Does this notification have somewhere to go?
+ *
+ * The bell said something had happened and then left you to find it. A
+ * movement order, a maintenance request and a stationery request have no
+ * page of their own, so those land on the list that holds them.
+ */
+const ROUTED = new Set([
+  "form_submission",
+  "notice",
+  "stationery_request",
+  "maintenance_request",
+  "movement_order",
+]);
+function hasTarget(n: Note): boolean {
+  return Boolean(n.entity_id && ROUTED.has(n.entity_type ?? ""));
+}
+
+/** The row, as a link when there is somewhere to go and a div when not. */
+function NoteRow({
+  n, onOpen, className, style, children,
+}: {
+  n: Note;
+  onOpen: () => void;
+  className: string;
+  style: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const shared = { className, style, onClick: onOpen };
+  if (n.entity_id) {
+    switch (n.entity_type) {
+      case "form_submission":
+        return (
+          <Link to="/status/$submissionId" params={{ submissionId: n.entity_id }} {...shared}>
+            {children}
+          </Link>
+        );
+      case "notice":
+        return (
+          <Link to="/notices/$noticeId" params={{ noticeId: n.entity_id }} {...shared}>
+            {children}
+          </Link>
+        );
+      case "stationery_request":
+        return <Link to="/stationery" {...shared}>{children}</Link>;
+      case "maintenance_request":
+        return <Link to="/maintenance" {...shared}>{children}</Link>;
+      case "movement_order":
+        return <Link to="/movement-orders" {...shared}>{children}</Link>;
+    }
+  }
+  return <div className={className} style={style}>{children}</div>;
+}
 
 const DOT: Record<string, string> = {
   "submission.rejected": "var(--color-danger, #B91C1C)",
@@ -126,7 +182,7 @@ export function useNotifications(employeeId: string) {
     if (!employeeId) return;
     const { data } = await db
       .from("notifications")
-      .select("id, kind, title, body, read_at, created_at")
+      .select("id, kind, title, body, entity_type, entity_id, read_at, created_at")
       .eq("recipient_id", employeeId)
       .order("created_at", { ascending: false })
       .limit(10);
@@ -190,14 +246,20 @@ function NotificationsDropdown({
           Nothing here yet.
         </div>
       )}
-      {(notes ?? []).map((n, i) => (
-        <div
-          key={i}
+      {(notes ?? []).map((n, i) => {
+        const open = hasTarget(n);
+        return (
+        <NoteRow
+          key={n.id}
+          n={n}
+          onOpen={onClose}
           className="flex gap-2.5 items-start"
           style={{
             padding: "12px 16px",
             borderBottom: i < (notes ?? []).length - 1 ? "1px solid var(--color-zinc-100)" : "none",
             background: n.read_at ? "transparent" : "var(--color-zinc-50)",
+            cursor: open ? "pointer" : "default",
+            textDecoration: "none",
           }}
         >
           <span
@@ -214,10 +276,14 @@ function NotificationsDropdown({
               <strong>{n.title}</strong>
               {n.body ? <> — {n.body}</> : null}
             </div>
-            <div className="text-[11px] text-zinc-400 mt-1">{ago(n.created_at)}</div>
+            <div className="text-[11px] text-zinc-400 mt-1">
+              {ago(n.created_at)}
+              {open ? <span style={{ marginLeft: 6 }}>· open</span> : null}
+            </div>
           </div>
-        </div>
-      ))}
+        </NoteRow>
+        );
+      })}
       <div
         className="text-center border-t"
         style={{ padding: "10px 16px", borderColor: "var(--color-zinc-200)" }}
