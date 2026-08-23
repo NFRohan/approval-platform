@@ -165,6 +165,7 @@ function ApprovalsInbox() {
   >(null);
   const [comment, setComment] = useState("");
   const [personId, setPersonId] = useState("");
+  const [people, setPeople] = useState<{ employee_id: string; name: string; designation: string | null }[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -396,6 +397,17 @@ function ApprovalsInbox() {
     load();
   }, [load]);
 
+  // Everyone who could be forwarded to or added as a reviewer.
+  useEffect(() => {
+    (async () => {
+      const { data } = await db
+        .from("employees")
+        .select("employee_id, name, designation")
+        .order("name");
+      setPeople((data ?? []) as { employee_id: string; name: string; designation: string | null }[]);
+    })();
+  }, []);
+
   const toggleExpand = async (row: Row) => {
     if (expanded === row.id) {
       setExpanded(null);
@@ -508,9 +520,12 @@ function ApprovalsInbox() {
     if (!modal) return;
     const to = personId.trim();
     if (!to) {
-      toast.error("Enter an employee ID");
+      toast.error("Choose somebody first");
       return;
     }
+    // The trail and the confirmation should name the person, not the id
+    // the dropdown happens to carry.
+    const toName = people.find((e) => e.employee_id === to)?.name ?? to;
     setSubmitting(true);
     const { error } = modal.kind === "forward"
       ? await db.rpc("reassign_approval", {
@@ -530,14 +545,14 @@ function ApprovalsInbox() {
       action: modal.kind === "forward" ? "reassigned" : "reviewer_added",
       entity_type: modal.row.subject_type ?? "form_submission",
       entity_id: modal.row.subject_id,
-      detail: (modal.kind === "forward" ? "Forwarded to " : "Added " + to + " as a reviewer on ")
-        + (modal.kind === "forward" ? to + " — " + (modal.row.subjectLabel ?? "a request")
+      detail: (modal.kind === "forward" ? "Forwarded to " : "Added " + toName + " as a reviewer on ")
+        + (modal.kind === "forward" ? toName + " — " + (modal.row.subjectLabel ?? "a request")
                                     : (modal.row.subjectLabel ?? "a request")),
     });
 
     toast.success(modal.kind === "forward"
-      ? "Forwarded — it is with " + to + " now"
-      : to + " will be asked after you");
+      ? "Forwarded — it is with " + toName + " now"
+      : toName + " will be asked after you");
     // Forwarding hands the step away, so it leaves this queue. Adding a
     // reviewer does not: the step is still ours to answer.
     if (modal.kind === "forward") fadeAndRemove(modal.row.id);
@@ -888,14 +903,26 @@ function ApprovalsInbox() {
           </DialogHeader>
           {(modal?.kind === "forward" || modal?.kind === "reviewer") && (
             <label className="flex flex-col gap-1">
-              <span style={{ fontSize: 11.5, color: "#71717A" }}>Employee ID</span>
-              <input
+              <span style={{ fontSize: 11.5, color: "#71717A" }}>
+                {modal?.kind === "forward" ? "Forward to" : "Reviewer"}
+              </span>
+              <select
                 value={personId}
                 onChange={(e) => setPersonId(e.target.value)}
-                placeholder="EMP-0312"
-                className="rounded-md"
+                className="rounded-md bg-white"
                 style={{ padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}
-              />
+              >
+                <option value="">Choose somebody…</option>
+                {people
+                  // Sending it to whoever already holds it does nothing.
+                  .filter((e) => e.employee_id !== modal?.row.approver_user_id)
+                  .map((e) => (
+                    <option key={e.employee_id} value={e.employee_id}>
+                      {e.name}
+                      {e.designation ? ` — ${e.designation}` : ""}
+                    </option>
+                  ))}
+              </select>
               <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>
                 {modal?.kind === "forward"
                   ? "The step keeps its place in the chain; only who answers it changes."
