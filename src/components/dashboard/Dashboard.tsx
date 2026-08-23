@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { labelSubjects } from "@/lib/chain";
+import { toast } from "sonner";
+import { actOnStep, labelSubjects, type ChainAction } from "@/lib/chain";
 import {
   ArrowLeftRight,
   Building2,
@@ -14,7 +15,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Avatar } from "@/components/shell/Avatar";
 import { db } from "@/lib/db";
@@ -207,10 +208,9 @@ type PendingItem = { id: string; who: string; initials: string; what: string; du
 function usePendingForMe(employeeId: string) {
   const [rows, setRows] = useState<PendingItem[] | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!employeeId) return;
-    let cancel = false;
-    (async () => {
+    {
       const { data: steps } = await db
         .from("approval_requests")
         .select("id, subject_id, subject_type, submission_id, deadline_at")
@@ -230,7 +230,6 @@ function usePendingForMe(employeeId: string) {
         (emps ?? []).forEach((e) => { people[e.employee_id] = e.name; });
       }
 
-      if (cancel) return;
       const today = new Date().toDateString();
       setRows(list.map((r) => {
         const info = r.subject_id ? subjects[r.subject_id] : undefined;
@@ -247,11 +246,12 @@ function usePendingForMe(employeeId: string) {
           overdue: when ? when.getTime() < Date.now() : false,
         };
       }));
-    })();
-    return () => { cancel = true; };
+    }
   }, [employeeId]);
 
-  return rows;
+  useEffect(() => { void load(); }, [load]);
+
+  return { rows, reload: load };
 }
 
 function RecentTable({ rows }: { rows: Recent[] | null }) {
@@ -341,16 +341,57 @@ const QUICK_PAL: Record<QuickPalette, { bg: string; fg: string; bd: string }> = 
   pink: { bg: "#FDE8F2", fg: "#C40F5E", bd: "#FBC5DF" },
 };
 
-const QUICK: { label: string; Icon: LucideIcon; color: QuickPalette }[] = [
-  { label: "Gate Pass", Icon: DoorOpen, color: "blue" },
-  { label: "Weekend Office Access", Icon: Building2, color: "purple" },
-  { label: "Maintenance Request", Icon: Wrench, color: "orange" },
-  { label: "Business Card", Icon: CreditCard, color: "green" },
-  { label: "Movement Order", Icon: ArrowLeftRight, color: "zinc" },
-  { label: "Event Venue Booking", Icon: Calendar, color: "pink" },
+// Every tile now goes somewhere that exists. Two of the originals did
+// not: "Weekend Office Access" is not a form anybody seeded, and "Event
+// Venue Booking" belongs to event coordination — a module the plan
+// deliberately excludes. Advertising them was the same class of thing as
+// the invented names this codebase already swept out once.
+type QuickTile =
+  | { label: string; Icon: LucideIcon; color: QuickPalette; kind: "form"; formName: string }
+  | {
+      label: string;
+      Icon: LucideIcon;
+      color: QuickPalette;
+      kind: "route";
+      to: "/maintenance" | "/stationery" | "/movement-orders";
+    };
+
+const QUICK: QuickTile[] = [
+  { label: "Gate Pass", Icon: DoorOpen, color: "blue", kind: "form", formName: "Gate Pass" },
+  { label: "Leave Application", Icon: Calendar, color: "purple", kind: "form", formName: "Leave Application" },
+  { label: "Maintenance Request", Icon: Wrench, color: "orange", kind: "route", to: "/maintenance" },
+  { label: "Business Card", Icon: CreditCard, color: "green", kind: "route", to: "/stationery" },
+  { label: "Movement Order", Icon: ArrowLeftRight, color: "zinc", kind: "route", to: "/movement-orders" },
+  {
+    label: "Travel & Expense",
+    Icon: Building2,
+    color: "pink",
+    kind: "form",
+    formName: "Travel & Expense Reimbursement",
+  },
 ];
 
+const TILE_CLASS =
+  "cursor-pointer rounded-[10px] bg-white flex flex-col gap-2.5 transition-all hover:shadow-md";
+const TILE_STYLE: React.CSSProperties = { padding: 14, border: "1px solid var(--color-zinc-200)" };
+
 function QuickSubmit() {
+  // Template ids are remapped when a tenant is cloned, so the id has to
+  // be looked up by name rather than written down.
+  const [formIds, setFormIds] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await db
+        .from("form_templates")
+        .select("id, name")
+        .eq("status", "published");
+      const map: Record<string, string> = {};
+      (data ?? []).forEach((f: { id: string; name: string }) => { map[f.name] = f.id; });
+      setFormIds(map);
+    })();
+  }, []);
+
   return (
     <div
       className="bg-white rounded-xl"
@@ -363,12 +404,8 @@ function QuickSubmit() {
       <div className="grid grid-cols-3 gap-2.5">
         {QUICK.map((q) => {
           const p = QUICK_PAL[q.color];
-          return (
-            <button
-              key={q.label}
-              className="cursor-pointer rounded-[10px] bg-white flex flex-col gap-2.5 transition-all hover:shadow-md"
-              style={{ padding: 14, border: "1px solid var(--color-zinc-200)" }}
-            >
+          const face = (
+            <>
               <span
                 className="inline-flex items-center justify-center rounded-full"
                 style={{ width: 32, height: 32, background: p.bg, color: p.fg, border: `1px solid ${p.bd}` }}
@@ -376,8 +413,42 @@ function QuickSubmit() {
                 <q.Icon size={15} />
               </span>
               <div className="text-[13px] font-medium text-zinc-900 text-left">{q.label}</div>
+            </>
+          );
+
+          if (q.kind === "route") {
+            return (
+              <Link key={q.label} to={q.to} className={TILE_CLASS} style={TILE_STYLE}>
+                {face}
+                <div className="text-[11px] text-zinc-400 text-left">Open →</div>
+              </Link>
+            );
+          }
+
+          const id = formIds[q.formName];
+          if (!id) {
+            return (
+              <div
+                key={q.label}
+                className="rounded-[10px] bg-white flex flex-col gap-2.5"
+                style={{ ...TILE_STYLE, opacity: 0.55 }}
+              >
+                {face}
+                <div className="text-[11px] text-zinc-400 text-left">Not published</div>
+              </div>
+            );
+          }
+          return (
+            <Link
+              key={q.label}
+              to="/forms/$formId"
+              params={{ formId: id }}
+              className={TILE_CLASS}
+              style={TILE_STYLE}
+            >
+              {face}
               <div className="text-[11px] text-zinc-400 text-left">Submit →</div>
-            </button>
+            </Link>
           );
         })}
       </div>
@@ -386,7 +457,105 @@ function QuickSubmit() {
 }
 
 
-function PendingApprovals({ pendingCount, rows }: { pendingCount: number; rows: PendingItem[] | null }) {
+function PendingRow({ p, onDone }: { p: PendingItem; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  // Reject and clarify both need a reason, so the row opens an input in
+  // place rather than acting blind — the same inline-confirm shape the
+  // forms list already uses for delete.
+  const [mode, setMode] = useState<null | "reject" | "clarification">(null);
+  const [reason, setReason] = useState("");
+
+  async function act(action: ChainAction, comment?: string) {
+    setBusy(true);
+    const { error } = await actOnStep(p.id, action, comment);
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(
+      action === "approve" ? "Approved" : action === "reject" ? "Rejected" : "Clarification requested",
+    );
+    setMode(null);
+    setReason("");
+    onDone();
+  }
+
+  const btn: React.CSSProperties = { padding: "4px 10px", fontSize: 11.5 };
+
+  if (mode) {
+    return (
+      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+        <input
+          autoFocus
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder={mode === "reject" ? "Reason for rejection" : "What do you need?"}
+          className="rounded-md border"
+          style={{ ...btn, width: 180, borderColor: "#E4E4E7" }}
+        />
+        <button
+          onClick={() => void act(mode, reason)}
+          disabled={busy || !reason.trim()}
+          className="cursor-pointer rounded-md font-medium text-white"
+          style={{
+            ...btn,
+            background: mode === "reject" ? "#B91C1C" : "#52525B",
+            opacity: busy || !reason.trim() ? 0.5 : 1,
+          }}
+        >
+          {busy ? "…" : "Confirm"}
+        </button>
+        <button
+          onClick={() => { setMode(null); setReason(""); }}
+          className="cursor-pointer rounded-md font-medium bg-white"
+          style={{ ...btn, color: "#52525B", border: "1px solid #E4E4E7" }}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-1.5 shrink-0">
+      <button
+        onClick={() => void act("approve")}
+        disabled={busy}
+        className="cursor-pointer rounded-md font-medium bg-white"
+        style={{ ...btn, color: "#C40F5E", border: "1px solid #FBC5DF", opacity: busy ? 0.5 : 1 }}
+      >
+        {busy ? "…" : "Approve"}
+      </button>
+      <button
+        onClick={() => setMode("reject")}
+        disabled={busy}
+        className="cursor-pointer rounded-md font-medium bg-white"
+        style={{ ...btn, color: "#B91C1C", border: "1px solid #FECACA", opacity: busy ? 0.5 : 1 }}
+      >
+        Reject
+      </button>
+      <button
+        onClick={() => setMode("clarification")}
+        disabled={busy}
+        className="cursor-pointer rounded-md font-medium bg-white"
+        style={{ ...btn, color: "#52525B", border: "1px solid #E4E4E7", opacity: busy ? 0.5 : 1 }}
+      >
+        Clarify
+      </button>
+    </div>
+  );
+}
+
+function PendingApprovals({
+  pendingCount,
+  rows,
+  onRefresh,
+}: {
+  pendingCount: number;
+  rows: PendingItem[] | null;
+  onRefresh: () => void;
+}) {
   return (
     <div
       className="bg-white rounded-xl overflow-hidden"
@@ -438,26 +607,7 @@ function PendingApprovals({ pendingCount, rows }: { pendingCount: number; rows: 
           >
             {p.overdue ? "Overdue: " : "Due: "}{p.due}
           </div>
-          <div className="flex gap-1.5 shrink-0">
-            <button
-              className="cursor-pointer rounded-md font-medium bg-white"
-              style={{ padding: "4px 10px", fontSize: 11.5, color: "#C40F5E", border: "1px solid #FBC5DF" }}
-            >
-              Approve
-            </button>
-            <button
-              className="cursor-pointer rounded-md font-medium bg-white"
-              style={{ padding: "4px 10px", fontSize: 11.5, color: "#B91C1C", border: "1px solid #FECACA" }}
-            >
-              Reject
-            </button>
-            <button
-              className="cursor-pointer rounded-md font-medium bg-white"
-              style={{ padding: "4px 10px", fontSize: 11.5, color: "#52525B", border: "1px solid #E4E4E7" }}
-            >
-              Clarify
-            </button>
-          </div>
+          <PendingRow p={p} onDone={onRefresh} />
         </div>
       ))}
     </div>
@@ -469,7 +619,7 @@ export function Dashboard() {
   const firstName = currentUser.name.split(" ")[0];
   const liveStats = useLiveStats(currentUser.employee_id);
   const recents = useRecentSubmissions(currentUser.employee_id);
-  const pendingForMe = usePendingForMe(currentUser.employee_id);
+  const { rows: pendingForMe, reload: reloadPending } = usePendingForMe(currentUser.employee_id);
   const loading = liveStats === null;
 
   const stats: Stat[] = [
@@ -508,7 +658,11 @@ export function Dashboard() {
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.2fr)" }}>
         <QuickSubmit />
-        <PendingApprovals pendingCount={liveStats?.pending ?? 0} rows={pendingForMe} />
+        <PendingApprovals
+          pendingCount={liveStats?.pending ?? 0}
+          rows={pendingForMe}
+          onRefresh={reloadPending}
+        />
       </div>
     </div>
   );

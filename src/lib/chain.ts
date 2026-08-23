@@ -103,6 +103,25 @@ export async function actOnSubject(
   });
 }
 
+/**
+ * Act on a step whose id is already known.
+ *
+ * The queues — the approvals screen, the dashboard panel — list steps,
+ * not subjects, so they hold the id already and looking it back up
+ * through the subject would be a round-trip for nothing.
+ */
+export async function actOnStep(
+  requestId: string,
+  action: ChainAction,
+  comment?: string,
+): Promise<{ error: { message: string } | null }> {
+  return db.rpc('act_on_approval', {
+    p_request_id: requestId,
+    p_action: action,
+    p_comment: comment?.trim() || null,
+  });
+}
+
 // ---------------------------------------------------------------------
 // What is this step attached to?
 //

@@ -17,14 +17,27 @@ type FormRow = {
   name: string;
   status: string | null;
   category: string | null;
+  created_by: string | null;
   created_at: string | null;
 };
+
+type Creator = { name: string; designation: string | null };
+
+function fmtDate(iso: string | null) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 const TABS = ["Finance", "HR", "Admin"] as const;
 type Tab = (typeof TABS)[number];
 
 function FormsPage() {
   const [forms, setForms] = useState<FormRow[]>([]);
+  const [creators, setCreators] = useState<Record<string, Creator>>({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("HR");
   const { currentUser } = useCurrentUser();
@@ -35,10 +48,28 @@ function FormsPage() {
     (async () => {
       const { data } = await db
         .from("form_templates")
-        .select("id, name, status, category, created_at")
+        .select("id, name, status, category, created_by, created_at")
         .eq("status", "published")
         .order("created_at", { ascending: false });
-      setForms((data ?? []) as FormRow[]);
+      const rows = (data ?? []) as FormRow[];
+      setForms(rows);
+
+      // The card used to name a person who was typed into the markup and
+      // did not exist in the employee table. Resolve the real one.
+      const ids = Array.from(
+        new Set(rows.map((r) => r.created_by).filter(Boolean) as string[]),
+      );
+      if (ids.length > 0) {
+        const { data: emps } = await db
+          .from("employees")
+          .select("employee_id, name, designation")
+          .in("employee_id", ids);
+        const map: Record<string, Creator> = {};
+        (emps ?? []).forEach((e: { employee_id: string; name: string; designation: string | null }) => {
+          map[e.employee_id] = { name: e.name, designation: e.designation };
+        });
+        setCreators(map);
+      }
       setLoading(false);
     })();
   }, []);
@@ -98,6 +129,7 @@ function FormsPage() {
           <FormCard
             key={f.id}
             form={f}
+            creator={f.created_by ? creators[f.created_by] : undefined}
             isAdmin={isAdmin}
             onEdit={() => navigate({ to: "/builder", search: { templateId: f.id } })}
             onDeleted={() => handleDeleted(f.id)}
@@ -115,11 +147,13 @@ function FormsPage() {
 
 function FormCard({
   form,
+  creator,
   isAdmin,
   onEdit,
   onDeleted,
 }: {
   form: FormRow;
+  creator?: Creator;
   isAdmin: boolean;
   onEdit: () => void;
   onDeleted: () => void;
@@ -142,20 +176,31 @@ function FormCard({
         </h3>
         <span
           className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0"
-          style={{ background: "#DCFCE7", color: "#166534" }}
+          style={
+            form.status === "published"
+              ? { background: "#DCFCE7", color: "#166534" }
+              : { background: "#F4F4F5", color: "#52525B" }
+          }
         >
-          Published
+          {form.status === "published" ? "Published" : "Draft"}
         </span>
       </div>
       <p className="text-[13px] mb-4" style={{ color: "#71717A" }}>
-        For employees clearing due diligence before departure
+        {form.category ? `${form.category} form` : "Uncategorised"}
+        {form.created_at ? ` · added ${fmtDate(form.created_at)}` : ""}
       </p>
       <div className="text-[12px] mb-4" style={{ color: "#52525B" }}>
-        Created by{" "}
-        <span className="font-medium" style={{ color: "#18181B" }}>
-          Nadia Hossain
-        </span>
-        , HR Business Partner
+        {creator ? (
+          <>
+            Created by{" "}
+            <span className="font-medium" style={{ color: "#18181B" }}>
+              {creator.name}
+            </span>
+            {creator.designation ? `, ${creator.designation}` : ""}
+          </>
+        ) : (
+          "Creator not recorded"
+        )}
       </div>
 
       <div className="mt-auto flex items-center gap-2">
