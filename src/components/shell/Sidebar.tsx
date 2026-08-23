@@ -49,29 +49,91 @@ type Section = { section: string; items: Item[] };
 
 const DASHBOARD: Item = { id: "dash", label: "Dashboard", Icon: LayoutDashboard, to: "/" };
 
-/**
- * The navigation for a persona, with a way home guaranteed.
- *
- * Only two of the five branches below listed the dashboard, so most
- * personas could leave it and had no route back short of editing the
- * address bar. Rather than adding the same line in four places and
- * hoping the fifth branch remembers, it is put back here for anybody
- * whose navigation does not already offer it.
- */
-function buildNav(
-  user: CurrentUser,
-  ctx: { activeSubmissionId: string | null; pendingCount: number },
-): Section[] {
-  const sections = buildNavFor(user, ctx);
-  if (sections.some((s) => s.items.some((i) => i.to === "/"))) return sections;
-  const [first, ...rest] = sections;
-  return [{ ...first, items: [DASHBOARD, ...first.items] }, ...rest];
+type NavCtx = {
+  activeSubmissionId: string | null;
+  pendingCount: number;
+  isApprover: boolean;
+};
+
+/** The approvals section, for anybody the chain actually asks. */
+function approvalItems(ctx: NavCtx): Item[] {
+  return [
+    {
+      id: "pending",
+      label: "Pending Approvals",
+      Icon: Clock,
+      to: "/approvals",
+      liveBadgeKey: "pendingApprovals",
+      badge: ctx.pendingCount > 0 ? String(ctx.pendingCount) : undefined,
+    },
+    { id: "history", label: "Approval History", Icon: CheckCircle2, to: "/approvals/history" },
+    { id: "delegate", label: "Delegation", Icon: UserCog, to: "/approvals/delegate" },
+  ];
 }
 
-function buildNavFor(
-  user: CurrentUser,
-  ctx: { activeSubmissionId: string | null; pendingCount: number },
-): Section[] {
+/** Raising something of your own. Approving is a job; it is not the only one. */
+function ownRequestItems(ctx: NavCtx): Item[] {
+  const items: Item[] = [
+    { id: "available", label: "Available Forms", Icon: FileText, to: "/forms" },
+    { id: "subs", label: "My Submissions", Icon: Layers, to: "/submissions" },
+  ];
+  if (ctx.activeSubmissionId) {
+    items.push({
+      id: "tracker",
+      label: "Status Tracker",
+      Icon: Activity,
+      to: "/status/$submissionId",
+      toParams: { submissionId: ctx.activeSubmissionId },
+    });
+  }
+  return items;
+}
+
+const has = (sections: Section[], to: string) =>
+  sections.some((s) => s.items.some((i) => i.to === to));
+
+/**
+ * The navigation for a persona, with three things guaranteed.
+ *
+ * The branches below were written per person, and being written per
+ * person they were wrong for anybody they had not anticipated. Three
+ * separate faults came out of that:
+ *
+ *   - only two branches listed the dashboard, so most personas could
+ *     leave it with no route back short of the address bar;
+ *   - the approvals section was gated on a hardcoded list of five ids,
+ *     while the chain asks eight people. The Facilities Coordinator has
+ *     a maintenance step waiting on him and the HR Business Partner
+ *     approves leave and stationery — neither had the screen that shows
+ *     them, so those requests looked to everybody like they had vanished;
+ *   - approvers had no way to raise anything of their own. Approving is
+ *     a job, not a whole identity, and everybody takes leave.
+ *
+ * So the per-person branches decide the extras, and these three put back
+ * whatever they left out. A sixth branch cannot reintroduce any of it.
+ */
+function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
+  let sections = buildNavFor(user, ctx);
+
+  // Whoever the chain actually asks gets the screen that shows it.
+  if (ctx.isApprover && !has(sections, "/approvals")) {
+    sections = [{ section: "Approvals", items: approvalItems(ctx) }, ...sections];
+  }
+
+  // Anybody can raise a request of their own.
+  if (!has(sections, "/submissions")) {
+    sections = [...sections, { section: "My Requests", items: ownRequestItems(ctx) }];
+  }
+
+  if (!has(sections, "/")) {
+    const [first, ...rest] = sections;
+    sections = [{ ...first, items: [DASHBOARD, ...first.items] }, ...rest];
+  }
+
+  return sections;
+}
+
+function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
   // HR Business Partner — Nadia
   if (user.employee_id === "EMP-0201") {
     return [
@@ -165,7 +227,9 @@ function buildNavFor(
     ];
   }
 
-  // Approvers — Sara, Rafiqul, and tier-2 approvers
+  // Approvers whose whole job is the chain. Anybody else the chain asks
+  // gets the same section added back above; this branch only decides that
+  // it comes first for them.
   if (["EMP-1134", "EMP-0312", "EMP-0600", "EMP-0700"].includes(user.employee_id)) {
     return [
       {
@@ -229,17 +293,33 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const [pendingCount, setPendingCount] = useState(0);
+  const [isApprover, setIsApprover] = useState(false);
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
 
-  // Live pending approval count for approvers
+  // Whether somebody approves anything is a question about the data, not
+  // a list of ids kept in the interface. That list named five people; the
+  // rules name eight, so three of them could not see their own queue.
   useEffect(() => {
-    const isApprover = ["EMP-1134", "EMP-0312", "EMP-0445", "EMP-0600", "EMP-0700"].includes(
-      currentUser.employee_id,
-    );
-    if (!isApprover) {
-      setPendingCount(0);
-      return;
-    }
+    let alive = true;
+    (async () => {
+      const [{ count: steps }, { data: ruled }, { data: slabbed }] = await Promise.all([
+        db.from("approval_requests").select("id", { count: "exact", head: true })
+          .eq("approver_user_id", currentUser.employee_id),
+        db.from("approval_rules").select("id")
+          .eq("approver_user_id", currentUser.employee_id).limit(1),
+        db.from("approval_slabs").select("id")
+          .eq("approver_user_id", currentUser.employee_id).limit(1),
+      ]);
+      if (!alive) return;
+      // Named in a rule counts even before anything has reached them —
+      // otherwise a new approver's queue is hidden until it is too late.
+      setIsApprover((steps ?? 0) > 0 || (ruled ?? []).length > 0 || (slabbed ?? []).length > 0);
+    })();
+    return () => { alive = false; };
+  }, [currentUser.employee_id]);
+
+  // Live pending approval count.
+  useEffect(() => {
     let active = true;
     const fetchCount = async () => {
       const { count } = await db
@@ -273,12 +353,9 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
     };
   }, [currentUser.employee_id]);
 
-  // Active submission for departing employee → most recent non-completed
+  // The most recent request of your own that has not finished. Everybody
+  // can raise one now, so this is no longer one persona's shortcut.
   useEffect(() => {
-    if (currentUser.employee_id !== "EMP-2847") {
-      setActiveSubmissionId(null);
-      return;
-    }
     let active = true;
     (async () => {
       const { data } = await db
@@ -295,7 +372,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
     };
   }, [currentUser.employee_id]);
 
-  const nav = buildNav(currentUser, { activeSubmissionId, pendingCount });
+  const nav = buildNav(currentUser, { activeSubmissionId, pendingCount, isApprover });
 
   const isActive = (to?: string) => {
     if (!to) return false;
