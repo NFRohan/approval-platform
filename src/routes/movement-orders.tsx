@@ -100,11 +100,11 @@ function AdminBar({ onNavigate }: { onNavigate: (v: View) => void }) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap mb-5 rounded-lg"
-      style={{ padding: "8px 12px", background: "#FFF0F6", border: "1px solid #FBCFE8" }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: "#9D174D", marginRight: 4 }}>Inventory</span>
+      style={{ padding: "8px 12px", background: "#EEF2FF", border: "1px solid #C7D2FE" }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: "#3730A3", marginRight: 4 }}>Inventory</span>
       {navItems.map(({ label, view }) => (
         <button key={view} onClick={() => onNavigate(view)}
-          style={{ padding: "3px 10px", fontSize: 12, borderRadius: 4, border: "1px solid #FBCFE8", background: "#fff", color: "#BE185D", cursor: "pointer" }}>
+          style={{ padding: "3px 10px", fontSize: 12, borderRadius: 4, border: "1px solid #C7D2FE", background: "#fff", color: "#4F46E5", cursor: "pointer" }}>
           {label}
         </button>
       ))}

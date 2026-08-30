@@ -92,7 +92,7 @@ export function FieldRenderer({
       className="placed-field"
       style={{
         background: "#fff",
-        border: `1px solid ${accent ? "#FBC5DF" : "#E4E4E7"}`,
+        border: `1px solid ${accent ? "#C7D2FE" : "#E4E4E7"}`,
         borderRadius: 10,
         padding: "14px 16px",
       }}
@@ -104,8 +104,8 @@ export function FieldRenderer({
             style={{
               width: 22,
               height: 22,
-              background: accent ? "#FDE8F2" : "#F4F4F5",
-              color: accent ? "#C40F5E" : "#52525B",
+              background: accent ? "#EEF2FF" : "#F4F4F5",
+              color: accent ? "#4338CA" : "#52525B",
             }}
           >
             <Icon size={12} />
@@ -118,7 +118,7 @@ export function FieldRenderer({
         {smart && (
           <span
             className="inline-flex items-center gap-1 rounded-full font-medium"
-            style={{ padding: "2px 8px", fontSize: 11, background: "#FDE8F2", color: "#C40F5E", border: "1px solid #F79BC4" }}
+            style={{ padding: "2px 8px", fontSize: 11, background: "#EEF2FF", color: "#4338CA", border: "1px solid #A5B4FC" }}
           >
             <Zap size={11} /> Smart field
           </span>
@@ -126,7 +126,7 @@ export function FieldRenderer({
         {linked && (
           <span
             className="inline-flex items-center gap-1 rounded-full font-medium"
-            style={{ padding: "2px 8px", fontSize: 11, background: "#FDE8F2", color: "#C40F5E", border: "1px solid #F79BC4" }}
+            style={{ padding: "2px 8px", fontSize: 11, background: "#EEF2FF", color: "#4338CA", border: "1px solid #A5B4FC" }}
           >
             <Link2 size={11} /> Embedded
           </span>
@@ -448,7 +448,7 @@ function FieldInput({
     return (
       <div
         className="rounded-lg"
-        style={{ padding: "12px 14px", border: "1px dashed #FBC5DF", background: "#FFF6FA" }}
+        style={{ padding: "12px 14px", border: "1px dashed #C7D2FE", background: "#F5F7FF" }}
       >
         <label className="flex items-start gap-2" style={{ fontSize: 12.5, color: "#3F3F46" }}>
           <input
@@ -525,7 +525,7 @@ function EmployeeInput({
         >
           <span
             className="inline-flex items-center justify-center rounded-full font-semibold"
-            style={{ width: 28, height: 28, background: "#FDE8F2", color: "#C40F5E", fontSize: 11 }}
+            style={{ width: 28, height: 28, background: "#EEF2FF", color: "#4338CA", fontSize: 11 }}
           >
             <User size={13} />
           </span>

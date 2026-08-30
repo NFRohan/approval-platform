@@ -41,7 +41,7 @@ function StatusPill({ status }: { status: string }) {
 
 function BusinessCardPreview({ name, designation, department, email, contactNumber }: { name: string; designation: string; department: string; email: string; contactNumber: string }) {
   return (
-    <div style={{ width: 320, height: 180, borderRadius: 12, background: "linear-gradient(135deg, #4F46E5, #9D174D)", color: "#fff", padding: 20, boxShadow: "0 8px 24px rgba(226,19,110,0.25)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+    <div style={{ width: 320, height: 180, borderRadius: 12, background: "linear-gradient(135deg, #4F46E5, #3730A3)", color: "#fff", padding: 20, boxShadow: "0 8px 24px rgba(79,70,229,0.25)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
       <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em" }}>ASP</div>
       <div>
         <div style={{ fontSize: 17, fontWeight: 700 }}>{name || "Your Name"}</div>
@@ -57,7 +57,7 @@ function BusinessCardPreview({ name, designation, department, email, contactNumb
 
 function StampSealPreview() {
   return (
-    <div style={{ width: 180, height: 180, borderRadius: "50%", border: "3px solid #9D174D", color: "#9D174D", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontSize: 11, fontWeight: 600, padding: 16 }}>
+    <div style={{ width: 180, height: 180, borderRadius: "50%", border: "3px solid #3730A3", color: "#3730A3", display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontSize: 11, fontWeight: 600, padding: 16 }}>
       SAMPLE — the organisation · Official Seal
     </div>
   );
@@ -189,10 +189,10 @@ function StationeryPage() {
       <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: "0 0 20px" }}>Stationery Requests</h1>
 
       <div className="flex gap-2 mb-5">
-        <button onClick={() => setKind("business_card")} className="inline-flex items-center gap-1.5 rounded-lg" style={{ padding: "8px 14px", fontSize: 13, border: `1px solid ${kind === "business_card" ? "#4F46E5" : "#E4E4E7"}`, background: kind === "business_card" ? "#FDE8F2" : "#fff", color: kind === "business_card" ? "#C40F5E" : "#3F3F46", cursor: "pointer" }}>
+        <button onClick={() => setKind("business_card")} className="inline-flex items-center gap-1.5 rounded-lg" style={{ padding: "8px 14px", fontSize: 13, border: `1px solid ${kind === "business_card" ? "#4F46E5" : "#E4E4E7"}`, background: kind === "business_card" ? "#EEF2FF" : "#fff", color: kind === "business_card" ? "#4338CA" : "#3F3F46", cursor: "pointer" }}>
           <CreditCard size={14} /> Business Card
         </button>
-        <button onClick={() => setKind("stamp_seal")} className="inline-flex items-center gap-1.5 rounded-lg" style={{ padding: "8px 14px", fontSize: 13, border: `1px solid ${kind === "stamp_seal" ? "#4F46E5" : "#E4E4E7"}`, background: kind === "stamp_seal" ? "#FDE8F2" : "#fff", color: kind === "stamp_seal" ? "#C40F5E" : "#3F3F46", cursor: "pointer" }}>
+        <button onClick={() => setKind("stamp_seal")} className="inline-flex items-center gap-1.5 rounded-lg" style={{ padding: "8px 14px", fontSize: 13, border: `1px solid ${kind === "stamp_seal" ? "#4F46E5" : "#E4E4E7"}`, background: kind === "stamp_seal" ? "#EEF2FF" : "#fff", color: kind === "stamp_seal" ? "#4338CA" : "#3F3F46", cursor: "pointer" }}>
           <Stamp size={14} /> Stamp Seal
         </button>
       </div>

@@ -26,9 +26,9 @@ export function StepProgress({ current }: { current: Step }) {
                   background: isCurrent
                     ? "var(--color-brand-500)"
                     : isDone
-                      ? "#FDE8F2"
+                      ? "#EEF2FF"
                       : "#fff",
-                  color: isCurrent ? "#fff" : isDone ? "#C40F5E" : "#71717A",
+                  color: isCurrent ? "#fff" : isDone ? "#4338CA" : "#71717A",
                   border: `1.5px solid ${isCurrent || isDone ? "var(--color-brand-500)" : "#D4D4D8"}`,
                 }}
               >

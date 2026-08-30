@@ -202,7 +202,7 @@ function CertificatePage() {
           </div>
 
           {/* Employee card */}
-          <div style={{ margin: "28px 40px 0", padding: "20px 24px", background: "#FFF5FA", border: "1px solid #FBC5DF", borderRadius: 12 }}>
+          <div style={{ margin: "28px 40px 0", padding: "20px 24px", background: "#F5F7FF", border: "1px solid #C7D2FE", borderRadius: 12 }}>
             <div className="flex items-center gap-4">
               <div
                 className="flex items-center justify-center rounded-full font-bold text-white"

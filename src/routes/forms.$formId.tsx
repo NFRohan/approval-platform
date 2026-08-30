@@ -518,9 +518,9 @@ function FillFormPage() {
 
 function GenFieldDisplay({ field, value }: { field: PlacedField; value: string }) {
   return (
-    <div className="rounded-[10px]" style={{ background: "#fff", border: "1px solid #FBC5DF", padding: "14px 16px" }}>
+    <div className="rounded-[10px]" style={{ background: "#fff", border: "1px solid #C7D2FE", padding: "14px 16px" }}>
       <div className="flex items-center gap-2 mb-2">
-        <span className="inline-flex items-center justify-center rounded-md" style={{ width: 22, height: 22, background: "#FDE8F2", color: "#C40F5E" }}>
+        <span className="inline-flex items-center justify-center rounded-md" style={{ width: 22, height: 22, background: "#EEF2FF", color: "#4338CA" }}>
           <Sparkles size={12} />
         </span>
         <span className="font-medium text-[13px]" style={{ color: "#18181B" }}>{field.label}</span>
@@ -630,7 +630,7 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
             {resolvedApprovalRules.map((r, i) => (
               <div key={i} className="flex items-center justify-between gap-3" style={{ padding: "10px 16px", borderBottom: i < resolvedApprovalRules.length - 1 ? "1px solid #F4F4F5" : "none" }}>
                 <div className="flex items-center gap-2.5">
-                  <span className="inline-flex items-center justify-center rounded-full font-semibold" style={{ width: 28, height: 28, background: "#FDE8F2", color: "#C40F5E", fontSize: 11 }}>
+                  <span className="inline-flex items-center justify-center rounded-full font-semibold" style={{ width: 28, height: 28, background: "#EEF2FF", color: "#4338CA", fontSize: 11 }}>
                     <User size={12} />
                   </span>
                   <div>

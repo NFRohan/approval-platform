@@ -128,7 +128,7 @@ function NoticeDetailPage() {
       <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: 22 }}>
         <div className="flex items-center gap-2 mb-2">
           {notice.category && (
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#C40F5E", background: "#FDE8F2", border: "1px solid #FBC5DF", borderRadius: 9999, padding: "2px 9px" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#4338CA", background: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 9999, padding: "2px 9px" }}>
               {notice.category}
             </span>
           )}

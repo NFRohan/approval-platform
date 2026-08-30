@@ -257,7 +257,7 @@ function FieldTab({ field, allFields, onChange, onDelete }: { field: PlacedField
                     fontWeight: active ? 600 : 400,
                     borderRadius: 6,
                     border: `1px solid ${active ? "var(--color-brand-500)" : "#E4E4E7"}`,
-                    background: active ? "#FDE8F2" : "#fff",
+                    background: active ? "#EEF2FF" : "#fff",
                     color: active ? "var(--color-brand-500)" : "#52525B",
                     cursor: "pointer",
                   }}

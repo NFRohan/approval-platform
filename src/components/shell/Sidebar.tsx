@@ -547,7 +547,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
           justifyContent: collapsed ? "center" : "flex-start",
         }}
       >
-        <Avatar initials={currentUser.initials} size={32} pink />
+        <Avatar initials={currentUser.initials} size={32} brand />
         {!collapsed && (
           <>
             <div className="min-w-0 flex-1">

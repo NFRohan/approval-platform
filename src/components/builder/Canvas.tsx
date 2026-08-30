@@ -40,15 +40,15 @@ function isAccent(kind: FieldKind) {
 
 function Chip({
   children,
-  color = "pink",
+  color = "brand",
   icon: Icon,
 }: {
   children: React.ReactNode;
-  color?: "pink" | "blue" | "amber" | "zinc";
+  color?: "brand" | "blue" | "amber" | "zinc";
   icon?: React.ComponentType<{ size?: number }>;
 }) {
   const palettes: Record<string, { bg: string; fg: string; bd: string }> = {
-    pink: { bg: "#FDE8F2", fg: "#C40F5E", bd: "#F79BC4" },
+    brand: { bg: "#EEF2FF", fg: "#4338CA", bd: "#A5B4FC" },
     blue: { bg: "#EFF6FF", fg: "#1D4ED8", bd: "#BFDBFE" },
     amber: { bg: "#FFFBEB", fg: "#B45309", bd: "#FDE68A" },
     zinc: { bg: "#F4F4F5", fg: "#52525B", bd: "#E4E4E7" },
@@ -114,8 +114,8 @@ function SectionHeaderCard({
         style={{
           padding: "10px 14px",
           border: `1px solid ${selected ? "var(--color-brand-500)" : "#E4E4E7"}`,
-          background: selected ? "#FFF6FA" : "#FAFAFA",
-          boxShadow: selected ? "0 0 0 3px rgba(226,19,110,0.08)" : undefined,
+          background: selected ? "#F5F7FF" : "#FAFAFA",
+          boxShadow: selected ? "0 0 0 3px rgba(79,70,229,0.08)" : undefined,
         }}
       >
         <div style={{ flex: 1, height: 1, background: "#D4D4D8" }} />
@@ -184,10 +184,10 @@ function PlacedCard({
     transition,
     opacity: isDragging ? 0.5 : 1,
     background: "#fff",
-    border: `1px solid ${selected ? "var(--color-brand-500)" : accent ? "#FBC5DF" : "#E4E4E7"}`,
+    border: `1px solid ${selected ? "var(--color-brand-500)" : accent ? "#C7D2FE" : "#E4E4E7"}`,
     borderRadius: 10,
     padding: "14px 16px",
-    boxShadow: selected ? "0 0 0 3px rgba(226,19,110,0.10)" : undefined,
+    boxShadow: selected ? "0 0 0 3px rgba(79,70,229,0.10)" : undefined,
     cursor: "pointer",
     position: "relative",
   };
@@ -211,8 +211,8 @@ function PlacedCard({
             style={{
               width: 22,
               height: 22,
-              background: accent ? "#FDE8F2" : "#F4F4F5",
-              color: accent ? "#C40F5E" : "#52525B",
+              background: accent ? "#EEF2FF" : "#F4F4F5",
+              color: accent ? "#4338CA" : "#52525B",
             }}
           >
             <Icon size={12} />
@@ -222,8 +222,8 @@ function PlacedCard({
           {field.label}
         </span>
         {field.required && <span style={{ color: "#DC2626", fontSize: 12 }}>*</span>}
-        {smart && <Chip color="pink" icon={Zap}>Smart</Chip>}
-        {linked && <Chip color="pink" icon={Link2}>Embedded</Chip>}
+        {smart && <Chip color="brand" icon={Zap}>Smart</Chip>}
+        {linked && <Chip color="brand" icon={Link2}>Embedded</Chip>}
 
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -350,9 +350,9 @@ function renderPreview(field: PlacedField) {
                   fontSize: 11,
                   padding: "2px 8px",
                   borderRadius: 9999,
-                  background: i === 0 ? "#FDE8F2" : "#F4F4F5",
-                  color: i === 0 ? "#C40F5E" : "#71717A",
-                  border: `1px solid ${i === 0 ? "#FBC5DF" : "#E4E4E7"}`,
+                  background: i === 0 ? "#EEF2FF" : "#F4F4F5",
+                  color: i === 0 ? "#4338CA" : "#71717A",
+                  border: `1px solid ${i === 0 ? "#C7D2FE" : "#E4E4E7"}`,
                 }}
               >
                 {o}
@@ -433,7 +433,7 @@ function renderPreview(field: PlacedField) {
       >
         <span
           className="inline-flex items-center justify-center rounded-full"
-          style={{ width: 28, height: 28, background: "#FDE8F2", color: "#C40F5E" }}
+          style={{ width: 28, height: 28, background: "#EEF2FF", color: "#4338CA" }}
         >
           <User size={13} />
         </span>
@@ -473,11 +473,11 @@ function renderPreview(field: PlacedField) {
       linked_asset_return: "Asset Return Form",
     };
     return (
-      <div className="rounded-lg" style={{ padding: "12px 14px", border: "1px dashed #FBC5DF", background: "#FFF6FA" }}>
+      <div className="rounded-lg" style={{ padding: "12px 14px", border: "1px dashed #C7D2FE", background: "#F5F7FF" }}>
         <div className="flex items-center gap-2.5">
           <span
             className="inline-flex items-center justify-center rounded-md"
-            style={{ width: 28, height: 28, background: "#fff", border: "1px solid #FBC5DF", color: "#C40F5E" }}
+            style={{ width: 28, height: 28, background: "#fff", border: "1px solid #C7D2FE", color: "#4338CA" }}
           >
             <Link2 size={13} />
           </span>
@@ -539,12 +539,12 @@ export function Canvas({
                 </span>
               )}
               {smartCount > 0 && (
-                <span style={{ fontSize: 10.5, padding: "1px 7px", borderRadius: 9999, background: "#FDE8F2", color: "#C40F5E", border: "1px solid #F79BC4" }}>
+                <span style={{ fontSize: 10.5, padding: "1px 7px", borderRadius: 9999, background: "#EEF2FF", color: "#4338CA", border: "1px solid #A5B4FC" }}>
                   Smart: {smartCount}
                 </span>
               )}
               {embeddedCount > 0 && (
-                <span style={{ fontSize: 10.5, padding: "1px 7px", borderRadius: 9999, background: "#FFF6FA", color: "#BE185D", border: "1px solid #FBC5DF" }}>
+                <span style={{ fontSize: 10.5, padding: "1px 7px", borderRadius: 9999, background: "#F5F7FF", color: "#4F46E5", border: "1px solid #C7D2FE" }}>
                   Embedded: {embeddedCount}
                 </span>
               )}
@@ -577,8 +577,8 @@ export function Canvas({
               marginTop: 6,
               padding: "20px 14px",
               border: `1.5px dashed ${isOver ? "var(--color-brand-500)" : "#D4D4D8"}`,
-              background: isOver ? "#FFF6FA" : "rgba(255,255,255,0.6)",
-              color: isOver ? "#C40F5E" : "#A1A1AA",
+              background: isOver ? "#F5F7FF" : "rgba(255,255,255,0.6)",
+              color: isOver ? "#4338CA" : "#A1A1AA",
               fontSize: 13,
               transition: "all 120ms",
             }}

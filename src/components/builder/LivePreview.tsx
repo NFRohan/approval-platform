@@ -197,7 +197,7 @@ export function LivePreview({ fields, formName }: { fields: PlacedField[]; formN
         className="w-full rounded-2xl overflow-hidden"
         style={{ maxWidth: 600, margin: "0 auto", background: "#fff", boxShadow: "0 2px 20px rgba(0,0,0,0.08)" }}
       >
-        {/* Pink header bar */}
+        {/* Brand header bar */}
         <div style={{ background: "var(--color-brand-500)", padding: "20px 28px 18px" }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", marginBottom: 4 }}>{formName}</div>
           <div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)" }}>HR Department · Admin Services</div>

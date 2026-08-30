@@ -8,7 +8,7 @@ function SlabChip() {
   return (
     <span
       className="inline-flex items-center rounded-full font-medium"
-      style={{ padding: "1px 7px", fontSize: 10, background: "var(--color-brand-50, #FDE8F2)", color: "#C40F5E", border: "1px solid #FBC5DF", lineHeight: 1.3 }}
+      style={{ padding: "1px 7px", fontSize: 10, background: "var(--color-brand-50, #EEF2FF)", color: "#4338CA", border: "1px solid #C7D2FE", lineHeight: 1.3 }}
     >
       Slab
     </span>
@@ -31,8 +31,8 @@ function DraggablePaletteItem({ item, accent }: { item: PaletteItem; accent?: bo
       className="field-card flex items-center gap-2.5 rounded-lg cursor-grab relative"
       style={{
         padding: "8px 10px",
-        border: `1px solid ${isLinked ? "#FBC5DF" : "#E4E4E7"}`,
-        background: isLinked ? "#FFF6FA" : "#fff",
+        border: `1px solid ${isLinked ? "#C7D2FE" : "#E4E4E7"}`,
+        background: isLinked ? "#F5F7FF" : "#fff",
         opacity: isDragging ? 0.4 : 1,
         touchAction: "none",
       }}
@@ -45,8 +45,8 @@ function DraggablePaletteItem({ item, accent }: { item: PaletteItem; accent?: bo
         style={{
           width: 24,
           height: 24,
-          background: isLinked ? "#FDE8F2" : accent ? "#FDE8F2" : "#F4F4F5",
-          color: isLinked ? "#C40F5E" : accent ? "#C40F5E" : "#52525B",
+          background: isLinked ? "#EEF2FF" : accent ? "#EEF2FF" : "#F4F4F5",
+          color: isLinked ? "#4338CA" : accent ? "#4338CA" : "#52525B",
         }}
       >
         {isLinked ? <Link2 size={13} /> : <Icon size={13} />}
@@ -79,7 +79,7 @@ function Section({ section, openByDefault }: { section: PaletteSection; openByDe
         <span className="inline-flex items-center justify-center" style={{ width: 18, height: 18, color: section.accent ? "var(--color-brand-500)" : "#52525B" }}>
           <Icon size={14} />
         </span>
-        <span className="uppercase font-semibold" style={{ fontSize: 11, letterSpacing: "0.08em", color: section.accent ? "#C40F5E" : "#52525B" }}>
+        <span className="uppercase font-semibold" style={{ fontSize: 11, letterSpacing: "0.08em", color: section.accent ? "#4338CA" : "#52525B" }}>
           {section.title}
         </span>
         <span className="ml-auto inline-flex" style={{ color: "#A1A1AA", transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 120ms" }}>

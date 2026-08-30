@@ -123,7 +123,7 @@ export function PeopleStep({
                     <div className="flex items-center gap-2 mt-1.5">
                       <span
                         className="inline-flex items-center rounded-full font-semibold"
-                        style={{ padding: "2px 8px", fontSize: 10.5, background: "#FDE8F2", color: "#C40F5E", letterSpacing: "0.02em" }}
+                        style={{ padding: "2px 8px", fontSize: 10.5, background: "#EEF2FF", color: "#4338CA", letterSpacing: "0.02em" }}
                       >
                         AUTO
                       </span>

@@ -96,9 +96,9 @@ const STATUS: Record<StatusKey, StatusConfig> = {
   },
   awaiting_action: {
     label: "Awaiting Your Action",
-    bg: "#FDE8F2",
-    text: "#C40F5E",
-    border: "#F79BC4",
+    bg: "#EEF2FF",
+    text: "#4338CA",
+    border: "#A5B4FC",
     dot: "#4F46E5",
     Icon: Bell,
   },

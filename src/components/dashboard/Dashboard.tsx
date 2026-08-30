@@ -50,12 +50,12 @@ function StatusBadge({ status }: { status: StatusKey }) {
   );
 }
 
-type Palette = "amber" | "blue" | "green" | "pink";
+type Palette = "amber" | "blue" | "green" | "teal";
 const PALETTES: Record<Palette, { bg: string; fg: string; bd: string }> = {
   amber: { bg: "#FFFBEB", fg: "#B45309", bd: "#FDE68A" },
   blue: { bg: "#EFF6FF", fg: "#1D4ED8", bd: "#BFDBFE" },
   green: { bg: "#F0FDF4", fg: "#15803D", bd: "#BBF7D0" },
-  pink: { bg: "#FDE8F2", fg: "#C40F5E", bd: "#FBC5DF" },
+  teal: { bg: "#F0FDFA", fg: "#0F766E", bd: "#99F6E4" },
 };
 
 type LiveStats = { pending: number; active: number; completedMonth: number; availableForms: number; overdue: number; onHold: number };
@@ -340,14 +340,14 @@ function RecentTable({ rows }: { rows: Recent[] | null }) {
   );
 }
 
-type QuickPalette = "blue" | "purple" | "orange" | "green" | "zinc" | "pink";
+type QuickPalette = "blue" | "purple" | "orange" | "green" | "zinc" | "teal";
 const QUICK_PAL: Record<QuickPalette, { bg: string; fg: string; bd: string }> = {
   blue: { bg: "#EFF6FF", fg: "#1D4ED8", bd: "#BFDBFE" },
   purple: { bg: "#FAF5FF", fg: "#6D28D9", bd: "#E9D5FF" },
   orange: { bg: "#FFF7ED", fg: "#C2410C", bd: "#FED7AA" },
   green: { bg: "#F0FDF4", fg: "#15803D", bd: "#BBF7D0" },
   zinc: { bg: "#F4F4F5", fg: "#52525B", bd: "#E4E4E7" },
-  pink: { bg: "#FDE8F2", fg: "#C40F5E", bd: "#FBC5DF" },
+  teal: { bg: "#F0FDFA", fg: "#0F766E", bd: "#99F6E4" },
 };
 
 // Every tile now goes somewhere that exists. Two of the originals did
@@ -374,7 +374,7 @@ const QUICK: QuickTile[] = [
   {
     label: "Travel & Expense",
     Icon: Building2,
-    color: "pink",
+    color: "teal",
     kind: "form",
     formName: "Travel & Expense Reimbursement",
   },
@@ -532,7 +532,7 @@ function PendingRow({ p, onDone }: { p: PendingItem; onDone: () => void }) {
         onClick={() => void act("approve")}
         disabled={busy}
         className="cursor-pointer rounded-md font-medium bg-white"
-        style={{ ...btn, color: "#C40F5E", border: "1px solid #FBC5DF", opacity: busy ? 0.5 : 1 }}
+        style={{ ...btn, color: "#4338CA", border: "1px solid #C7D2FE", opacity: busy ? 0.5 : 1 }}
       >
         {busy ? "…" : "Approve"}
       </button>
@@ -635,7 +635,7 @@ export function Dashboard() {
     { label: "Pending Approvals", value: liveStats?.pending ?? 0, sub: liveStats?.overdue ? `${liveStats.overdue} overdue` : "Up to date", color: "amber", Icon: Clock },
     { label: "My Active Submissions", value: liveStats?.active ?? 0, sub: liveStats?.onHold ? `${liveStats.onHold} on hold` : "All in progress", color: "blue", Icon: FileText },
     { label: "Completed This Month", value: liveStats?.completedMonth ?? 0, sub: "This month", color: "green", Icon: CheckCircle2, trend: true },
-    { label: "Forms I Can Submit", value: liveStats?.availableForms ?? 0, sub: "Published forms", color: "pink", Icon: Layers },
+    { label: "Forms I Can Submit", value: liveStats?.availableForms ?? 0, sub: "Published forms", color: "teal", Icon: Layers },
   ];
 
   return (
