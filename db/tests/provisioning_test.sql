@@ -174,10 +174,13 @@ update public.tenants set expires_at = now() - interval '1 hour' where id = curr
 select pg_temp.check('a lapsed evaluation reports expired',
   app.tenant_status(current_setting('t.a')::uuid), 'expired'::text);
 
+-- Scoped to this suite's own fixture. Unscoped, these sweep every
+-- expired evaluation in the database, so the count depended on whoever
+-- else happened to have lapsed and a passing run destroyed their data.
 select pg_temp.check('nothing is purged inside the grace period',
-  app.purge_expired(interval '7 days', null), 0);
+  app.purge_expired(interval '7 days', null, current_setting('t.a')::uuid), 0);
 select pg_temp.check('and it is purged once past it',
-  app.purge_expired(interval '0 days', null), 1);
+  app.purge_expired(interval '0 days', null, current_setting('t.a')::uuid), 1);
 select pg_temp.check('purging took its data with it',
   (select count(*)::int from public.form_submissions where tenant_id = current_setting('t.a')::uuid), 0);
 

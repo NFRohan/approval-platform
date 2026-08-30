@@ -387,9 +387,17 @@ end $$;
 -- =====================================================================
 -- purge_expired — hard delete, past the grace period. Irreversible, so
 -- it is never implicit: staff ask for it.
+--
+-- p_only narrows it to a single evaluation. Sweeping every expired demo
+-- is the point when staff run it by hand, but it is the wrong default
+-- for anything automated — the test suite used to call this unscoped
+-- and assert it returned exactly 1, which both broke whenever a real
+-- lapsed evaluation existed and, on the runs where it passed, deleted
+-- that evaluation for good.
 -- =====================================================================
 create or replace function app.purge_expired(p_grace interval default interval '7 days',
-                                             p_actor uuid default null)
+                                             p_actor uuid default null,
+                                             p_only uuid default null)
 returns int
 language plpgsql security definer set search_path = public, app, pg_temp as $$
 declare r record; n int := 0;
@@ -399,6 +407,7 @@ begin
   for r in
     select id, slug from public.tenants
      where kind = 'demo'
+       and (p_only is null or id = p_only)
        and (   (expires_at is not null and expires_at < now() - p_grace)
             or (revoked_at is not null and revoked_at < now() - p_grace))
   loop
