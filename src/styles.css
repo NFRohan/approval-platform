@@ -230,3 +230,9 @@
   70% { box-shadow: 0 0 0 7px rgba(217, 119, 6, 0); }
 }
 .approval-pulse-amber { animation: approval-pulse-amber 1.6s ease-out infinite; }
+
+/* The navigation progress bar — src/components/shell/PendingBar.tsx. */
+@keyframes page-nav-bar {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}

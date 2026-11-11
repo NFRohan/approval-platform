@@ -14,6 +14,7 @@ import { CurrentUserProvider, USERS, useCurrentUser } from "@/contexts/CurrentUs
 import { currentSession } from "@/lib/auth-fn";
 import { AppShell } from "@/components/shell/AppShell";
 import { Toaster } from "@/components/ui/sonner";
+import { PendingBar } from "@/components/shell/PendingBar";
 
 function UserSyncFromUrl({ as }: { as: string | undefined }) {
   const { setCurrentUser } = useCurrentUser();
@@ -108,6 +109,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        <PendingBar />
         {children}
         <Scripts />
       </body>

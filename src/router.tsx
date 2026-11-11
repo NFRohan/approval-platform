@@ -54,32 +54,6 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
   );
 }
 
-function PendingBar() {
-  return (
-    <div
-      aria-hidden
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        zIndex: 9999,
-        background: "linear-gradient(90deg, transparent, var(--color-brand-500, #4F46E5), transparent)",
-        backgroundSize: "200% 100%",
-        animation: "page-nav-bar 1s linear infinite",
-      }}
-    />
-  );
-}
-
-if (typeof document !== "undefined" && !document.getElementById("page-nav-bar-style")) {
-  const style = document.createElement("style");
-  style.id = "page-nav-bar-style";
-  style.textContent = `@keyframes page-nav-bar { 0% { background-position: 100% 0 } 100% { background-position: -100% 0 } }`;
-  document.head.appendChild(style);
-}
-
 export const getRouter = () => {
   const router = createRouter({
     routeTree,
@@ -87,9 +61,9 @@ export const getRouter = () => {
     scrollRestoration: true,
     defaultPreload: "intent",
     defaultPreloadStaleTime: 0,
-    defaultPendingMs: 0,
-    defaultPendingMinMs: 0,
-    defaultPendingComponent: PendingBar,
+    // No defaultPendingComponent, deliberately: without one the router
+    // keeps the current screen up until the next one is ready. The
+    // progress bar is rendered by the root component instead.
     defaultErrorComponent: DefaultErrorComponent,
   });
 
