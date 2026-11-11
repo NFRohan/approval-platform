@@ -9,61 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SubmissionsRouteImport } from './routes/submissions'
-import { Route as StationeryRouteImport } from './routes/stationery'
-import { Route as StaffRouteImport } from './routes/staff'
-import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
-import { Route as MaintenanceRouteImport } from './routes/maintenance'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ApprovalsRouteImport } from './routes/approvals'
-import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as NoticesIndexRouteImport } from './routes/notices.index'
-import { Route as FormsIndexRouteImport } from './routes/forms.index'
-import { Route as BuilderIndexRouteImport } from './routes/builder.index'
-import { Route as StatusSubmissionIdRouteImport } from './routes/status.$submissionId'
-import { Route as NoticesNewRouteImport } from './routes/notices.new'
-import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
-import { Route as FormsFormIdRouteImport } from './routes/forms.$formId'
-import { Route as CertificateSubmissionIdRouteImport } from './routes/certificate.$submissionId'
-import { Route as BuilderNotificationsRouteImport } from './routes/builder.notifications'
-import { Route as BuilderApproversRouteImport } from './routes/builder.approvers'
-import { Route as ApprovalsHistoryRouteImport } from './routes/approvals.history'
+import { Route as ActivityRouteImport } from './routes/activity'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MaintenanceRouteImport } from './routes/maintenance'
+import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
+import { Route as StaffRouteImport } from './routes/staff'
+import { Route as StationeryRouteImport } from './routes/stationery'
+import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as ApprovalsDelegateRouteImport } from './routes/approvals.delegate'
+import { Route as ApprovalsHistoryRouteImport } from './routes/approvals.history'
+import { Route as BuilderIndexRouteImport } from './routes/builder.index'
+import { Route as BuilderApproversRouteImport } from './routes/builder.approvers'
+import { Route as BuilderNotificationsRouteImport } from './routes/builder.notifications'
+import { Route as CertificateSubmissionIdRouteImport } from './routes/certificate.$submissionId'
+import { Route as FormsIndexRouteImport } from './routes/forms.index'
+import { Route as FormsFormIdRouteImport } from './routes/forms.$formId'
+import { Route as NoticesIndexRouteImport } from './routes/notices.index'
+import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
+import { Route as NoticesNewRouteImport } from './routes/notices.new'
+import { Route as StatusSubmissionIdRouteImport } from './routes/status.$submissionId'
 
-const SubmissionsRoute = SubmissionsRouteImport.update({
-  id: '/submissions',
-  path: '/submissions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StationeryRoute = StationeryRouteImport.update({
-  id: '/stationery',
-  path: '/stationery',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StaffRoute = StaffRouteImport.update({
-  id: '/staff',
-  path: '/staff',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MovementOrdersRoute = MovementOrdersRouteImport.update({
-  id: '/movement-orders',
-  path: '/movement-orders',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MaintenanceRoute = MaintenanceRouteImport.update({
-  id: '/maintenance',
-  path: '/maintenance',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApprovalsRoute = ApprovalsRouteImport.update({
-  id: '/approvals',
-  path: '/approvals',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ActivityRoute = ActivityRouteImport.update({
@@ -71,54 +41,54 @@ const ActivityRoute = ActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NoticesIndexRoute = NoticesIndexRouteImport.update({
-  id: '/notices/',
-  path: '/notices/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const FormsIndexRoute = FormsIndexRouteImport.update({
-  id: '/forms/',
-  path: '/forms/',
+const MaintenanceRoute = MaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
   getParentRoute: () => rootRouteImport,
+} as any)
+const MovementOrdersRoute = MovementOrdersRouteImport.update({
+  id: '/movement-orders',
+  path: '/movement-orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StaffRoute = StaffRouteImport.update({
+  id: '/staff',
+  path: '/staff',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StationeryRoute = StationeryRouteImport.update({
+  id: '/stationery',
+  path: '/stationery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubmissionsRoute = SubmissionsRouteImport.update({
+  id: '/submissions',
+  path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApprovalsDelegateRoute = ApprovalsDelegateRouteImport.update({
+  id: '/delegate',
+  path: '/delegate',
+  getParentRoute: () => ApprovalsRoute,
+} as any)
+const ApprovalsHistoryRoute = ApprovalsHistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => ApprovalsRoute,
 } as any)
 const BuilderIndexRoute = BuilderIndexRouteImport.update({
   id: '/builder/',
   path: '/builder/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StatusSubmissionIdRoute = StatusSubmissionIdRouteImport.update({
-  id: '/status/$submissionId',
-  path: '/status/$submissionId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NoticesNewRoute = NoticesNewRouteImport.update({
-  id: '/notices/new',
-  path: '/notices/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
-  id: '/notices/$noticeId',
-  path: '/notices/$noticeId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FormsFormIdRoute = FormsFormIdRouteImport.update({
-  id: '/forms/$formId',
-  path: '/forms/$formId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CertificateSubmissionIdRoute = CertificateSubmissionIdRouteImport.update({
-  id: '/certificate/$submissionId',
-  path: '/certificate/$submissionId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BuilderNotificationsRoute = BuilderNotificationsRouteImport.update({
-  id: '/builder/notifications',
-  path: '/builder/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BuilderApproversRoute = BuilderApproversRouteImport.update({
@@ -126,15 +96,45 @@ const BuilderApproversRoute = BuilderApproversRouteImport.update({
   path: '/builder/approvers',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApprovalsHistoryRoute = ApprovalsHistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => ApprovalsRoute,
+const BuilderNotificationsRoute = BuilderNotificationsRouteImport.update({
+  id: '/builder/notifications',
+  path: '/builder/notifications',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ApprovalsDelegateRoute = ApprovalsDelegateRouteImport.update({
-  id: '/delegate',
-  path: '/delegate',
-  getParentRoute: () => ApprovalsRoute,
+const CertificateSubmissionIdRoute = CertificateSubmissionIdRouteImport.update({
+  id: '/certificate/$submissionId',
+  path: '/certificate/$submissionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormsIndexRoute = FormsIndexRouteImport.update({
+  id: '/forms/',
+  path: '/forms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormsFormIdRoute = FormsFormIdRouteImport.update({
+  id: '/forms/$formId',
+  path: '/forms/$formId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoticesIndexRoute = NoticesIndexRouteImport.update({
+  id: '/notices/',
+  path: '/notices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
+  id: '/notices/$noticeId',
+  path: '/notices/$noticeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoticesNewRoute = NoticesNewRouteImport.update({
+  id: '/notices/new',
+  path: '/notices/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusSubmissionIdRoute = StatusSubmissionIdRouteImport.update({
+  id: '/status/$submissionId',
+  path: '/status/$submissionId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -303,53 +303,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/submissions': {
-      id: '/submissions'
-      path: '/submissions'
-      fullPath: '/submissions'
-      preLoaderRoute: typeof SubmissionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/stationery': {
-      id: '/stationery'
-      path: '/stationery'
-      fullPath: '/stationery'
-      preLoaderRoute: typeof StationeryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/staff': {
-      id: '/staff'
-      path: '/staff'
-      fullPath: '/staff'
-      preLoaderRoute: typeof StaffRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/movement-orders': {
-      id: '/movement-orders'
-      path: '/movement-orders'
-      fullPath: '/movement-orders'
-      preLoaderRoute: typeof MovementOrdersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/maintenance': {
-      id: '/maintenance'
-      path: '/maintenance'
-      fullPath: '/maintenance'
-      preLoaderRoute: typeof MaintenanceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/approvals': {
-      id: '/approvals'
-      path: '/approvals'
-      fullPath: '/approvals'
-      preLoaderRoute: typeof ApprovalsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/activity': {
@@ -359,74 +317,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/notices/': {
-      id: '/notices/'
-      path: '/notices'
-      fullPath: '/notices/'
-      preLoaderRoute: typeof NoticesIndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/forms/': {
-      id: '/forms/'
-      path: '/forms'
-      fullPath: '/forms/'
-      preLoaderRoute: typeof FormsIndexRouteImport
+    '/maintenance': {
+      id: '/maintenance'
+      path: '/maintenance'
+      fullPath: '/maintenance'
+      preLoaderRoute: typeof MaintenanceRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/movement-orders': {
+      id: '/movement-orders'
+      path: '/movement-orders'
+      fullPath: '/movement-orders'
+      preLoaderRoute: typeof MovementOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/staff': {
+      id: '/staff'
+      path: '/staff'
+      fullPath: '/staff'
+      preLoaderRoute: typeof StaffRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stationery': {
+      id: '/stationery'
+      path: '/stationery'
+      fullPath: '/stationery'
+      preLoaderRoute: typeof StationeryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/submissions': {
+      id: '/submissions'
+      path: '/submissions'
+      fullPath: '/submissions'
+      preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approvals/delegate': {
+      id: '/approvals/delegate'
+      path: '/delegate'
+      fullPath: '/approvals/delegate'
+      preLoaderRoute: typeof ApprovalsDelegateRouteImport
+      parentRoute: typeof ApprovalsRoute
+    }
+    '/approvals/history': {
+      id: '/approvals/history'
+      path: '/history'
+      fullPath: '/approvals/history'
+      preLoaderRoute: typeof ApprovalsHistoryRouteImport
+      parentRoute: typeof ApprovalsRoute
     }
     '/builder/': {
       id: '/builder/'
       path: '/builder'
       fullPath: '/builder/'
       preLoaderRoute: typeof BuilderIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/status/$submissionId': {
-      id: '/status/$submissionId'
-      path: '/status/$submissionId'
-      fullPath: '/status/$submissionId'
-      preLoaderRoute: typeof StatusSubmissionIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notices/new': {
-      id: '/notices/new'
-      path: '/notices/new'
-      fullPath: '/notices/new'
-      preLoaderRoute: typeof NoticesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notices/$noticeId': {
-      id: '/notices/$noticeId'
-      path: '/notices/$noticeId'
-      fullPath: '/notices/$noticeId'
-      preLoaderRoute: typeof NoticesNoticeIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forms/$formId': {
-      id: '/forms/$formId'
-      path: '/forms/$formId'
-      fullPath: '/forms/$formId'
-      preLoaderRoute: typeof FormsFormIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/certificate/$submissionId': {
-      id: '/certificate/$submissionId'
-      path: '/certificate/$submissionId'
-      fullPath: '/certificate/$submissionId'
-      preLoaderRoute: typeof CertificateSubmissionIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/builder/notifications': {
-      id: '/builder/notifications'
-      path: '/builder/notifications'
-      fullPath: '/builder/notifications'
-      preLoaderRoute: typeof BuilderNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/builder/approvers': {
@@ -436,19 +394,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuilderApproversRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/approvals/history': {
-      id: '/approvals/history'
-      path: '/history'
-      fullPath: '/approvals/history'
-      preLoaderRoute: typeof ApprovalsHistoryRouteImport
-      parentRoute: typeof ApprovalsRoute
+    '/builder/notifications': {
+      id: '/builder/notifications'
+      path: '/builder/notifications'
+      fullPath: '/builder/notifications'
+      preLoaderRoute: typeof BuilderNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/approvals/delegate': {
-      id: '/approvals/delegate'
-      path: '/delegate'
-      fullPath: '/approvals/delegate'
-      preLoaderRoute: typeof ApprovalsDelegateRouteImport
-      parentRoute: typeof ApprovalsRoute
+    '/certificate/$submissionId': {
+      id: '/certificate/$submissionId'
+      path: '/certificate/$submissionId'
+      fullPath: '/certificate/$submissionId'
+      preLoaderRoute: typeof CertificateSubmissionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forms/': {
+      id: '/forms/'
+      path: '/forms'
+      fullPath: '/forms/'
+      preLoaderRoute: typeof FormsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forms/$formId': {
+      id: '/forms/$formId'
+      path: '/forms/$formId'
+      fullPath: '/forms/$formId'
+      preLoaderRoute: typeof FormsFormIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notices/': {
+      id: '/notices/'
+      path: '/notices'
+      fullPath: '/notices/'
+      preLoaderRoute: typeof NoticesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notices/$noticeId': {
+      id: '/notices/$noticeId'
+      path: '/notices/$noticeId'
+      fullPath: '/notices/$noticeId'
+      preLoaderRoute: typeof NoticesNoticeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notices/new': {
+      id: '/notices/new'
+      path: '/notices/new'
+      fullPath: '/notices/new'
+      preLoaderRoute: typeof NoticesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/status/$submissionId': {
+      id: '/status/$submissionId'
+      path: '/status/$submissionId'
+      fullPath: '/status/$submissionId'
+      preLoaderRoute: typeof StatusSubmissionIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
