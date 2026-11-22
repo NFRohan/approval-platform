@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
-import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/builder/PeopleStep";
+import { PeopleStep, type AutoEntry } from "@/components/builder/PeopleStep";
+import { StageEditor } from "@/components/builder/StageEditor";
+import { newApprover, newId, type Stage } from "@/components/builder/stages";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Trash2, Plus } from "lucide-react";
@@ -69,6 +71,9 @@ const ALL_AUTO_APPROVERS: AutoApprover[] = [
 
 type SavedRule = { label: string; user_id: string | null; deadlineDays: number };
 
+// The organisational roles a rule can name; see app.resolve_role.
+const ROLE_LABELS = new Set(["line_manager", "skip_level", "department_head", "hrbp", "cxo"]);
+
 type SlabRow = { id?: string; min_amount: string; max_amount: string; approver_user_id: string };
 type EmployeeOption = { employee_id: string; name: string; designation: string | null };
 
@@ -77,7 +82,12 @@ function ApproversStep() {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
   const [formName, setFormName] = useState("Employee Departure Due Diligence Form");
-  const [manual, setManual] = useState<ManualEntry[]>([]);
+  // The approvals added by hand, as stages: see StageEditor.
+  const [stages, setStages] = useState<Stage[]>([]);
+  const [fieldLabels, setFieldLabels] = useState<string[]>([]);
+  // The template whose draft is started when this form is approved.
+  const [followup, setFollowup] = useState<string>("");
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
   const [savedAgo, setSavedAgo] = useState("just now");
   const [fieldTypes, setFieldTypes] = useState<Set<string>>(new Set());
   const [slabs, setSlabs] = useState<SlabRow[]>([]);
@@ -91,35 +101,74 @@ function ApproversStep() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }] = await Promise.all([
-        db.from("form_templates").select("name").eq("id", templateId).maybeSingle(),
-        db.from("form_fields").select("field_type").eq("form_template_id", templateId),
+      const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }, { data: tpls }] = await Promise.all([
+        db.from("form_templates").select("name, followup_template_id").eq("id", templateId).maybeSingle(),
+        db.from("form_fields").select("field_type, field_name, order_index").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
         db.from("approval_rules")
-          .select("approver_user_id, deadline_days, is_auto_added, label, step_index")
+          .select("approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position")
           .eq("form_template_id", templateId)
-          .order("step_index"),
+          .order("step_index")
+          .order("position"),
+        db.from("form_templates").select("id, name").order("name"),
       ]);
       if (tpl?.name) setFormName(tpl.name);
+      setFollowup((tpl as { followup_template_id?: string | null } | null)?.followup_template_id ?? "");
+      setTemplates(((tpls ?? []) as { id: string; name: string }[]).filter((t) => t.id !== templateId));
+      setFieldLabels(
+        (fields ?? [])
+          .filter((f) => f.field_name && !["section_header", "file", "signature"].includes(f.field_type ?? ""))
+          .map((f) => f.field_name as string),
+      );
       setFieldTypes(new Set((fields ?? []).map((f) => f.field_type ?? "").filter(Boolean)));
       setEmployees((emps ?? []) as EmployeeOption[]);
       const byId: Record<string, { name: string; designation: string | null }> = {};
       (emps ?? []).forEach((e) => { byId[e.employee_id] = { name: e.name, designation: e.designation }; });
       setNames(byId);
-      // The approvers added by hand last time. This step used to start
-      // from an empty list and then replace every rule on save, so
-      // opening a form's approvers and pressing Next deleted the ones
-      // added before.
-      setManual(
-        (rules ?? [])
-          .filter((r) => !r.is_auto_added && r.approver_user_id)
-          .map((r, i) => ({
-            id: `saved-${i}`,
-            user_id: r.approver_user_id as string,
-            name: byId[r.approver_user_id as string]?.name ?? (r.approver_user_id as string),
-            designation: byId[r.approver_user_id as string]?.designation ?? "",
-            deadlineDays: r.deadline_days ?? 7,
+      // The approvers added by hand last time, as the stages they were
+      // saved in. This step used to start from an empty list and then
+      // replace every rule on save, so opening a form's approvers and
+      // pressing Next deleted the ones added before.
+      type SavedManual = {
+        approver_user_id: string | null; deadline_days: number | null; label: string | null;
+        step_index: number | null; quorum: number | null; stage_label: string | null; lane: string | null;
+        condition: { field?: string; op?: string; value?: string } | null;
+      };
+      const byStage = new Map<number, SavedManual[]>();
+      for (const r of (rules ?? []) as (SavedManual & { is_auto_added: boolean | null })[]) {
+        if (r.is_auto_added) continue;
+        const role = ruleRole(r.label);
+        const isRole = ROLE_LABELS.has(role ?? "");
+        if (!r.approver_user_id && !isRole) continue;
+        const k = r.step_index ?? 0;
+        if (!byStage.has(k)) byStage.set(k, []);
+        byStage.get(k)!.push(r);
+      }
+      setStages(
+        [...byStage.entries()]
+          .sort(([a], [b]) => a - b)
+          .map(([, rs]) => ({
+            id: newId("st"),
+            label: rs.find((r) => r.stage_label)?.stage_label ?? "",
+            quorum: rs.find((r) => r.quorum)?.quorum ?? null,
+            approvers: rs.map((r) => {
+              // A role stays a role even when it names a fallback person:
+              // loading it as that person would turn "the requester's line
+              // manager" into "always Sam" the next time it is saved.
+              const role = ruleRole(r.label);
+              const isRole = ROLE_LABELS.has(role ?? "");
+              return {
+                ...newApprover(isRole ? `role:${role}` : (r.approver_user_id as string)),
+                fallback: isRole ? r.approver_user_id : null,
+                label: isRole ? null : r.label,
+                deadlineDays: r.deadline_days ?? 7,
+                track: r.lane ?? "",
+                condition: r.condition?.field
+                  ? { field: r.condition.field, op: r.condition.op ?? "eq", value: r.condition.value ?? "" }
+                  : null,
+              };
+            }),
           })),
       );
       setSavedAuto(
@@ -216,18 +265,47 @@ function ApproversStep() {
         is_auto_added: true,
         label: a.label,
       })),
-      ...manual.map((m) => ({
-        form_template_id: templateId,
-        approver_user_id: m.user_id,
-        deadline_days: m.deadlineDays,
-        is_auto_added: false,
-        label: "Manually added",
-      })),
-    ].map((r, i) => ({ ...r, step_index: i }));
+    ].map((r, i) => ({ ...r, step_index: i, position: 0 }));
 
-    const { error } = await db.from("approval_rules").insert(rows);
+    // Then the stages, one phase each. Inside a stage, position is the
+    // order people were listed in, a named track is a lane, and the
+    // stage's quorum and name go on every rule in it.
+    const base = rows.length;
+    const stageRows = stages
+      .map((st) => ({ ...st, approvers: st.approvers.filter((a) => a.who) }))
+      .filter((st) => st.approvers.length > 0)
+      .flatMap((st, si) =>
+        st.approvers.map((a, pi) => {
+          const role = a.who.startsWith("role:") ? a.who.slice(5) : null;
+          return {
+            form_template_id: templateId,
+            approver_user_id: role ? (a.fallback ?? null) : a.who,
+            deadline_days: a.deadlineDays,
+            is_auto_added: false,
+            label: role ?? (a.label || "Manually added"),
+            step_index: base + si,
+            position: pi,
+            lane: a.track.trim() || null,
+            quorum: st.quorum,
+            stage_label: st.label.trim() || null,
+            condition: a.condition && a.condition.field ? a.condition : null,
+          };
+        }),
+      );
+    const allRows = [...rows.map((r) => ({ ...r, lane: null, quorum: null, stage_label: null, condition: null })), ...stageRows];
+
+    const { error } = await db.from("approval_rules").insert(allRows);
     if (error) {
       toast.error("Failed to save approvers: " + error.message);
+      return;
+    }
+
+    const { error: fuErr } = await db
+      .from("form_templates")
+      .update({ followup_template_id: followup || null })
+      .eq("id", templateId);
+    if (fuErr) {
+      toast.error("Failed to save the follow-up: " + fuErr.message);
       return;
     }
 
@@ -289,11 +367,33 @@ function ApproversStep() {
       <PeopleStep
         formTemplateId={templateId}
         title="Who needs to approve this form?"
-        subtitle="Approvers act in order. Auto-added rules come from the field configuration and cannot be removed."
+        subtitle="Automatic approvers come first, from the form's fields; then the stages below, one after another."
         autoEntries={autoApprovers}
         showDeadline
-        manual={manual}
-        onManualChange={setManual}
+        manual={[]}
+        onManualChange={() => {}}
+        manualSlot={
+          <>
+            <StageEditor stages={stages} onChange={setStages} employees={employees} fieldLabels={fieldLabels} />
+            <section className="rounded-xl bg-white mt-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>When it is approved</div>
+              <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
+                Start a follow-up for the same requester, with every answer both forms ask already
+                filled in. It waits as a draft for them to check and submit.
+              </div>
+              <select
+                value={followup}
+                onChange={(e) => setFollowup(e.target.value)}
+                aria-label="Follow-up form"
+                className="rounded-md bg-white"
+                style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", minWidth: 280 }}
+              >
+                <option value="">Nothing follows</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>Start: {t.name}</option>)}
+              </select>
+            </section>
+          </>
+        }
       />
       )}
       {fieldTypes.has("money") && (

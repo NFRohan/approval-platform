@@ -28,6 +28,15 @@ export const USERS: CurrentUser[] = [
   { employee_id: "EMP-0650", name: "Priya Raman",    designation: "Head of People",           initials: "PR" },
   { employee_id: "EMP-0445", name: "Farah Haddad",   designation: "Admin Officer",            initials: "FH" },
   { employee_id: "EMP-9001", name: "Ivan Petrov",    designation: "Facilities Coordinator",   initials: "IP" },
+  // The clearance, compliance and campaign flows: the operations CXO, the
+  // head of technology who clears IT for leavers, and the three
+  // compliance officers any two of whom clear a gift declaration.
+  { employee_id: "EMP-3120", name: "Mei Sun",        designation: "Procurement Specialist",   initials: "MS" },
+  { employee_id: "EMP-0800", name: "Hana Kim",       designation: "Chief Operating Officer",  initials: "HK" },
+  { employee_id: "EMP-0520", name: "Omar Reyes",     designation: "Head of Technology",       initials: "OR" },
+  { employee_id: "EMP-0830", name: "Lena Ortiz",     designation: "Compliance Officer",       initials: "LO" },
+  { employee_id: "EMP-0831", name: "Kofi Mensah",    designation: "Compliance Officer",       initials: "KM" },
+  { employee_id: "EMP-0832", name: "Ravi Shah",      designation: "Compliance Officer",       initials: "RS" },
 ];
 
 type Ctx = {

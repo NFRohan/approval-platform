@@ -59,6 +59,30 @@ insert into public.employees (employee_id, name, designation, department, line_m
   ('EMP-2847', 'Tom Bexley',       'Operations Analyst',      'Operations', 'EMP-1134', 'CARD-2847'),
   ('EMP-3120', 'Mei Sun',          'Procurement Specialist',  'Operations', 'EMP-1134', 'CARD-3120');
 
+-- The rest of the organisation the scope of work's flows need: an
+-- operations CXO, the head of technology who clears IT for leavers, and
+-- the compliance officers who review gift and hospitality declarations.
+insert into public.employees (employee_id, name, designation, department, line_manager_id, gate_pass_card_number) values
+  ('EMP-0800', 'Hana Kim',         'Chief Operating Officer', 'Operations', null,       'CARD-0800');
+
+insert into public.employees (employee_id, name, designation, department, line_manager_id, gate_pass_card_number) values
+  ('EMP-0520', 'Omar Reyes',       'Head of Technology',      'Product & Technology', 'EMP-0800', 'CARD-0520'),
+  ('EMP-0830', 'Lena Ortiz',       'Compliance Officer',      'Compliance', 'EMP-0700', 'CARD-0830'),
+  ('EMP-0831', 'Kofi Mensah',      'Compliance Officer',      'Compliance', 'EMP-0700', 'CARD-0831'),
+  ('EMP-0832', 'Ravi Shah',        'Compliance Officer',      'Compliance', 'EMP-0700', 'CARD-0832');
+
+-- Who heads each department, its HR business partner and its CXO — the
+-- roles a rule can name besides the line manager. Operations is headed
+-- by the line manager most of its people report to, which is the case
+-- the clearance flow means by "layers may be the same person".
+insert into public.departments (name, head_employee_id, hrbp_employee_id, cxo_employee_id) values
+  ('Operations',           'EMP-1134', 'EMP-0201', 'EMP-0800'),
+  ('Finance',              'EMP-0600', 'EMP-0201', 'EMP-0700'),
+  ('HR',                   'EMP-0650', 'EMP-0201', 'EMP-0650'),
+  ('Admin',                'EMP-0445', 'EMP-0201', 'EMP-0800'),
+  ('Product & Technology', 'EMP-0520', 'EMP-0201', 'EMP-0800'),
+  ('Compliance',           'EMP-0700', 'EMP-0201', 'EMP-0700');
+
 -- =====================================================================
 -- 2. Form templates
 -- =====================================================================
@@ -145,6 +169,107 @@ insert into public.notification_rules (form_template_id, notifyee_user_id, is_au
 insert into public.delegation_rules (delegator_id, delegate_id, start_date, end_date, reason, form_template_ids) values
   ('EMP-0600', 'EMP-0312', current_date - 2, current_date + 5, 'Annual leave',
    array['11111111-0000-4000-8000-000000000001'::uuid]);
+
+-- =====================================================================
+-- 3a. The flows from the scope of work
+--
+-- Exit clearance: the leaver's own division signs off in order — line
+-- manager, head of department, HR business partner, CXO — while Finance,
+-- Supply Chain, Administration and Technology clear them at the same
+-- time; HR settles only once all five have.
+--
+-- Gift & hospitality declaration: the line manager, then any two of the
+-- three compliance officers, then finance by value.
+--
+-- Campaign request: the CXO first only on the exceptional route; then
+-- business finance and the head of department. Approval starts the
+-- campaign NFA for the same requester, preloaded.
+-- =====================================================================
+insert into public.form_templates (id, name, category, created_by, status) values
+  ('11111111-0000-4000-8000-000000000007', 'Employee Exit Clearance',        'HR',         'EMP-0201', 'published'),
+  ('11111111-0000-4000-8000-000000000008', 'Gift & Hospitality Declaration', 'Compliance', 'EMP-0830', 'published'),
+  ('11111111-0000-4000-8000-000000000010', 'Campaign NFA',                   'Commercial', 'EMP-0312', 'published');
+insert into public.form_templates (id, name, category, created_by, status, followup_template_id) values
+  ('11111111-0000-4000-8000-000000000009', 'Campaign Request',               'Commercial', 'EMP-0312', 'published',
+   '11111111-0000-4000-8000-000000000010');
+
+insert into public.form_fields (form_template_id, field_type, field_name, order_index, is_required, field_config) values
+  ('11111111-0000-4000-8000-000000000007', 'gen_employee_name', 'Employee name',        0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'select',     'Reason for leaving',          1, true,  '{"options":["Resignation","Retirement","End of contract","Termination"]}'),
+  ('11111111-0000-4000-8000-000000000007', 'date',       'Resignation date',            2, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'date',       'Last working day',            3, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'section_header', 'Final settlement bank account', 4, false, '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'text',       'Bank name',                   5, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'text',       'Branch',                      6, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'text',       'Account name',                7, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'text',       'Account number',              8, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'file',       'Handover note',               9, false, '{}'),
+  ('11111111-0000-4000-8000-000000000007', 'checkbox',   'I confirm all company assets will be returned and the account above may receive my final settlement', 10, true, '{}'),
+
+  ('11111111-0000-4000-8000-000000000008', 'gen_employee_name', 'Employee name',        0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000008', 'select',     'Declaration type',            1, true,  '{"options":["Gift received","Gift given","Hospitality","Entertainment","Political donation","Charitable donation"]}'),
+  ('11111111-0000-4000-8000-000000000008', 'text',       'Counterparty',                2, true,  '{"placeholder":"Vendor, person or organisation"}'),
+  ('11111111-0000-4000-8000-000000000008', 'date',       'Event date',                  3, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000008', 'money',      'Value',                       4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000008', 'text',       'Reference number',            5, false, '{}'),
+  ('11111111-0000-4000-8000-000000000008', 'file',       'Supporting document',         6, false, '{}'),
+
+  ('11111111-0000-4000-8000-000000000009', 'gen_employee_name', 'Employee name',        0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000009', 'text',       'Campaign name',               1, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000009', 'select',     'Audience',                    2, true,  '{"options":["Customer","Agent","Merchant","Distributor","Field force","Internal"]}'),
+  ('11111111-0000-4000-8000-000000000009', 'select',     'Approval route',              3, true,  '{"options":["Regular","Exceptional"]}'),
+  ('11111111-0000-4000-8000-000000000009', 'number',     'Budget',                      4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000009', 'textarea',   'Business case',               5, true,  '{}'),
+
+  ('11111111-0000-4000-8000-000000000010', 'gen_employee_name', 'Employee name',        0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'Campaign name',               1, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'select',     'Audience',                    2, true,  '{"options":["Customer","Agent","Merchant","Distributor","Field force","Internal"]}'),
+  ('11111111-0000-4000-8000-000000000010', 'number',     'Beneficiary count',           3, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'number',     'Transaction count',           4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'money',      'Total cost',                  5, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'Cost center',                 6, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'GL code',                     7, true,  '{}');
+
+insert into public.approval_rules
+  (form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, lane, quorum, stage_label, condition) values
+  -- Exit clearance: five lanes at once, then HR.
+  ('11111111-0000-4000-8000-000000000007', 'EMP-1134', 2, false, 'line_manager',    0, 0, 'Own division',         null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', null,       2, false, 'department_head', 0, 1, 'Own division',         null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', null,       2, false, 'hrbp',            0, 2, 'Own division',         null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', null,       2, false, 'cxo',             0, 3, 'Own division',         null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', 'EMP-0312', 3, false, 'finance',         0, 4, 'Finance & Accounts',   null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', 'EMP-3120', 3, false, 'scm',             0, 5, 'Supply Chain',         null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', 'EMP-0445', 3, false, 'admin',           0, 6, 'Administration',       null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', 'EMP-0520', 3, false, 'technology',      0, 7, 'Product & Technology', null, 'Departmental clearance', null),
+  ('11111111-0000-4000-8000-000000000007', 'EMP-0650', 3, false, 'hr_final',        1, 0, null,                   null, 'Final settlement',       null),
+
+  -- Gift & hospitality: line manager, any two of three officers, then finance by value.
+  ('11111111-0000-4000-8000-000000000008', 'EMP-1134', 2, true,  'line_manager',    0, 0, null, null, null, null),
+  ('11111111-0000-4000-8000-000000000008', 'EMP-0830', 3, false, 'compliance',      1, 0, null, 2,    'Compliance review', null),
+  ('11111111-0000-4000-8000-000000000008', 'EMP-0831', 3, false, 'compliance',      1, 1, null, 2,    'Compliance review', null),
+  ('11111111-0000-4000-8000-000000000008', 'EMP-0832', 3, false, 'compliance',      1, 2, null, 2,    'Compliance review', null),
+  ('11111111-0000-4000-8000-000000000008', null,       3, true,  'slab_finance',    2, 0, null, null, null, null),
+
+  -- Campaign request: CXO first only when it is exceptional.
+  ('11111111-0000-4000-8000-000000000009', 'EMP-0800', 2, false, 'cxo_exception',   0, 0, null, null, 'Exceptional approval',
+   '{"field": "Approval route", "op": "eq", "value": "Exceptional"}'),
+  ('11111111-0000-4000-8000-000000000009', 'EMP-0312', 2, false, 'business_finance', 1, 0, null, null, 'Business finance review', null),
+  ('11111111-0000-4000-8000-000000000009', null,       2, false, 'department_head',  2, 0, null, null, null, null),
+
+  -- Campaign NFA: line manager, then finance by total cost.
+  ('11111111-0000-4000-8000-000000000010', 'EMP-1134', 2, true,  'line_manager',    0, 0, null, null, null, null),
+  ('11111111-0000-4000-8000-000000000010', null,       3, true,  'slab_finance',    1, 0, null, null, null, null);
+
+insert into public.approval_slabs (form_template_id, min_amount, max_amount, approver_user_id, order_index) values
+  ('11111111-0000-4000-8000-000000000008', 0,         null, 'EMP-0312', 0),
+  ('11111111-0000-4000-8000-000000000008', 50000.01,  null, 'EMP-0600', 1),
+  ('11111111-0000-4000-8000-000000000010', 0,         null, 'EMP-0312', 0),
+  ('11111111-0000-4000-8000-000000000010', 1000000.01, null, 'EMP-0600', 1),
+  ('11111111-0000-4000-8000-000000000010', 5000000.01, null, 'EMP-0700', 2);
+
+insert into public.notification_rules (form_template_id, notifyee_user_id, is_auto_added, label) values
+  ('11111111-0000-4000-8000-000000000007', 'EMP-0201', true, 'hr_watch'),
+  ('11111111-0000-4000-8000-000000000008', null,       true, 'submitter');
 
 -- =====================================================================
 -- 4. Submissions, at different stages of the chain
@@ -295,6 +420,7 @@ do $chains$
 declare
   v_id   uuid;
   v_step uuid;
+  v_who  text;
 begin
   -- A notice with the line manager, and one already published.
   perform public.build_approval_chain('notice', '55555555-0000-4000-8000-000000000002');
@@ -329,6 +455,47 @@ begin
   select id into v_step from public.approval_requests
    where maintenance_request_id = '77777777-0000-4000-8000-000000000001' and status = 'pending';
   perform public.act_on_approval(v_step, 'approve', 'Confirmed the unit is out of service', (select approver_user_id from public.approval_requests where id = v_step));
+  -- An exit clearance under way: Tom's own division has started, and two
+  -- of the four departments have already cleared him.
+  insert into public.form_submissions (id, form_template_id, submitted_by, status, submitted_at) values
+    ('22222222-0000-4000-8000-000000000007', '11111111-0000-4000-8000-000000000007', 'EMP-2847', 'submitted', now() - interval '3 days');
+  insert into public.submission_values (submission_id, field_name, value) values
+    ('22222222-0000-4000-8000-000000000007', 'Employee name',      'Tom Bexley'),
+    ('22222222-0000-4000-8000-000000000007', 'Reason for leaving', 'Resignation'),
+    ('22222222-0000-4000-8000-000000000007', 'Resignation date',   to_char(current_date - 20, 'YYYY-MM-DD')),
+    ('22222222-0000-4000-8000-000000000007', 'Last working day',   to_char(current_date + 10, 'YYYY-MM-DD')),
+    ('22222222-0000-4000-8000-000000000007', 'Bank name',          'City Savings Bank'),
+    ('22222222-0000-4000-8000-000000000007', 'Branch',             'Riverside'),
+    ('22222222-0000-4000-8000-000000000007', 'Account name',       'Tom Bexley'),
+    ('22222222-0000-4000-8000-000000000007', 'Account number',     '0042-118-3391');
+  perform public.build_approval_chain('form_submission', '22222222-0000-4000-8000-000000000007',
+                                      '11111111-0000-4000-8000-000000000007');
+  for v_who in select unnest(array['EMP-0312', 'EMP-0445']) loop
+    select id into v_step from public.approval_requests
+     where submission_id = '22222222-0000-4000-8000-000000000007'
+       and approver_user_id = v_who and status = 'pending';
+    perform public.act_on_approval(v_step, 'approve', 'No outstanding items', v_who);
+  end loop;
+
+  -- A gift declaration with one of the two compliance clearances it needs.
+  insert into public.form_submissions (id, form_template_id, submitted_by, status, submitted_at) values
+    ('22222222-0000-4000-8000-000000000008', '11111111-0000-4000-8000-000000000008', 'EMP-3120', 'submitted', now() - interval '2 days');
+  insert into public.submission_values (submission_id, field_name, value) values
+    ('22222222-0000-4000-8000-000000000008', 'Employee name',     'Mei Sun'),
+    ('22222222-0000-4000-8000-000000000008', 'Declaration type',  'Hospitality'),
+    ('22222222-0000-4000-8000-000000000008', 'Counterparty',      'Northgate Logistics'),
+    ('22222222-0000-4000-8000-000000000008', 'Event date',        to_char(current_date - 5, 'YYYY-MM-DD')),
+    ('22222222-0000-4000-8000-000000000008', 'Value',             '18500'),
+    ('22222222-0000-4000-8000-000000000008', 'Reference number',  'GH-2026-114');
+  perform public.build_approval_chain('form_submission', '22222222-0000-4000-8000-000000000008',
+                                      '11111111-0000-4000-8000-000000000008');
+  select id into v_step from public.approval_requests
+   where submission_id = '22222222-0000-4000-8000-000000000008' and status = 'pending';
+  perform public.act_on_approval(v_step, 'approve', 'Within policy for a supplier dinner', 'EMP-1134');
+  select id into v_step from public.approval_requests
+   where submission_id = '22222222-0000-4000-8000-000000000008'
+     and approver_user_id = 'EMP-0830' and status = 'pending';
+  perform public.act_on_approval(v_step, 'approve', 'Value is under the reporting threshold', 'EMP-0830');
 end $chains$;
 
 commit;

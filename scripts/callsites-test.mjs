@@ -251,8 +251,12 @@ function bodyOf(table, steps, callNode) {
       }
 
       case 'order': {
+        // Every key is checked, not only the last: order() accumulates.
         const col = literal(args[0]);
-        if (col) body.order = { col, asc: true };
+        if (col) {
+          const key = { col, asc: true };
+          body.order = body.order ? [...(Array.isArray(body.order) ? body.order : [body.order]), key] : key;
+        }
         break;
       }
 

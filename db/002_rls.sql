@@ -124,7 +124,7 @@ create policy staff_audit_insert on public.staff_audit
 -- =====================================================================
 -- Everything else — the demo's own data.
 --
--- Generated in a loop, as before, because 23 tables genuinely share one
+-- Generated in a loop, as before, because 26 tables genuinely share one
 -- rule. The difference is the rule.
 -- =====================================================================
 do $$
@@ -135,7 +135,8 @@ declare
     'notification_rules','delegation_rules','form_submissions','submission_values',
     'attachments','approval_requests','items','venues','item_stock','movement_orders',
     'notices','notice_comments','stationery_requests','maintenance_items',
-    'maintenance_requests','maintenance_request_items','activity_log','notifications'
+    'maintenance_requests','maintenance_request_items','activity_log','notifications',
+    'departments','approval_events','approval_queries'
   ];
 begin
   foreach t in array data_tables loop
@@ -152,7 +153,7 @@ begin
     -- trail the audited party can rewrite is not a trail. It gets an
     -- insert policy below instead of the general write policy, which is
     -- why it is skipped rather than granted and then overridden.
-    if t <> 'activity_log' then
+    if t not in ('activity_log', 'approval_events') then
       execute format($f$
         create policy %1$s_member_write on public.%1$I
           for all to app_api
@@ -165,6 +166,13 @@ end $$;
 
 drop policy if exists activity_log_member_insert on public.activity_log;
 create policy activity_log_member_insert on public.activity_log
+  for insert to app_api
+  with check (tenant_id = app.current_tenant() and app.is_member());
+
+-- The chain's own history, for the same reason: what happened to a
+-- request is added to and read, never rewritten.
+drop policy if exists approval_events_member_insert on public.approval_events;
+create policy approval_events_member_insert on public.approval_events
   for insert to app_api
   with check (tenant_id = app.current_tenant() and app.is_member());
 

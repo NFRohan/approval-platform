@@ -27,10 +27,26 @@ manager has looked.
 of 620,000 is not "a CFO claim": it climbs the Finance Controller, then the
 Head of Finance, then the CFO, each in turn.
 
+**Parallel, by role, and on conditions.** A chain is phases run in order; a
+phase can run several tracks at once, each its own sequence, and clears when
+all of them do or when any N do. An exit clearance runs the leaver's division
+(line manager → head of department → HR business partner → CXO) beside
+Finance, Supply Chain, Administration and Technology, and HR settles only after
+all five; a gift declaration needs any two of three compliance officers.
+Approvers can be roles resolved from the org chart for each requester, and a
+step can apply only when an answer says so — the CXO first on the exceptional
+route. Nobody approves their own request, and the same person twice in a row
+is one step. The review screen shows the requester the plan the chain will be
+built from, by the same code.
+
 **Chains that survive contact with reality.** A rejection stops the chain and
 records who was never asked. A clarification request pauses it and resumes in
 place. An approver can forward their step to somebody else — the trail keeps
-who it was originally asked of — or insert a reviewer to be asked after them.
+who it was originally asked of — ask a reviewer to look before they decide,
+return the request to anyone who already approved it, or ask another approver
+on it a question. The requester can take a request back to edit, or cancel
+it, until anybody has approved. An approved request can start its follow-up as
+a preloaded draft. Everything that happens is kept in an append-only trail.
 
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
@@ -111,7 +127,7 @@ npm test          # all six, cheapest first
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 86 checks: tenant isolation, the security policies, provisioning, and the approval chain |
+| `db:test` | 116 checks: tenant isolation, the security policies, provisioning, the approval chain, and the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
 

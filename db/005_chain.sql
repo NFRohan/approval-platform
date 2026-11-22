@@ -26,6 +26,10 @@ begin;
 drop function if exists public.act_on_approval(uuid, text, text);
 drop function if exists public.reassign_approval(uuid, text, text);
 drop function if exists public.add_reviewer(uuid, text, int);
+-- Conditions are now judged against a set of answers rather than a
+-- stored submission, so the same planner serves a preview.
+drop function if exists app.condition_holds(uuid, jsonb);
+drop function if exists app.answer_of(uuid, text);
 
 -- ---------------------------------------------------------------------
 -- Targets land on working days.
@@ -80,38 +84,6 @@ as $$
     from public.employees e
    where e.employee_id = p_employee
      and e.tenant_id = app.current_tenant()
-$$;
-
--- ---------------------------------------------------------------------
--- How much is this submission for?
---
--- Read from the submission's own money answer rather than taken from the
--- caller. The amount decides how far a claim climbs, and when it was a
--- parameter a claim could display 620,000 to everybody who opened it
--- while being routed as 50 — the CFO and the Head of Finance never asked.
---
--- The first money field on the form, by position, is the one that
--- routes. Answers are stored as text and may carry separators or a
--- currency mark, so only the leading number survives.
--- ---------------------------------------------------------------------
-create or replace function app.submission_amount(p_submission uuid)
-returns numeric
-language sql
-stable
-security invoker
-set search_path = public, pg_temp
-as $$
-  select coalesce((
-    select nullif(substring(regexp_replace(v.value, '[^0-9.]', '', 'g')
-                            from '^[0-9]*(?:\.[0-9]+)?'), '')::numeric
-      from public.form_submissions s
-      join public.form_fields f
-        on f.form_template_id = s.form_template_id and f.field_type = 'money'
-      join public.submission_values v
-        on v.submission_id = s.id and v.field_name = f.field_name
-     where s.id = p_submission
-     order by f.order_index nulls last, f.id
-     limit 1), 0)
 $$;
 
 -- ---------------------------------------------------------------------
@@ -388,30 +360,429 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- The shape of a chain.
+--
+-- A chain is phases, run one after another (step_index). A phase runs
+-- one or more lanes at the same time (lane), and a lane is steps in
+-- order (lane_step). Inside a phase, the live step of every lane is
+-- `pending` at once; a lane moves on when its live step is approved; the
+-- phase is done when all of its lanes are — or, when the phase has a
+-- quorum, when that many of them are. Then the next phase opens.
+--
+-- Everything built before lanes existed is one lane per phase, which is
+-- the plain sequence it always was. The HR exit clearance is the shape
+-- that needs all of it: the requester's division signs off LM → HoD →
+-- HRBP → CXO in one lane while Finance, Supply Chain, Administration and
+-- IT clear it in four others, and HR closes it only after all five.
+-- ---------------------------------------------------------------------
+
+-- The leading number in an answer stored as text: "BDT 620,000.50" is
+-- 620000.50, "" is nothing.
+create or replace function app.leading_number(p_text text)
+returns numeric
+language sql
+immutable
+as $$
+  select nullif(substring(regexp_replace(coalesce(p_text, ''), '[^0-9.]', '', 'g')
+                          from '^[0-9]*(?:\.[0-9]+)?'), '')::numeric
+$$;
+
+-- A submission's answers as {"<question label>": "<answer>"}: the shape
+-- the planner reads, whether the answers are stored or still on screen.
+create or replace function app.answers_of(p_submission uuid)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select coalesce(jsonb_object_agg(v.field_name, v.value), '{}'::jsonb)
+    from (select distinct on (field_name) field_name, value
+            from public.submission_values
+           where submission_id = p_submission and field_name is not null
+           order by field_name, id) v
+$$;
+
+-- ---------------------------------------------------------------------
+-- How much is it for?
+--
+-- Read from the answers rather than taken from a caller. The amount
+-- decides how far a claim climbs, and when it was a parameter a claim
+-- could display 620,000 to everybody who opened it while being routed as
+-- 50 — the CFO and the Head of Finance never asked. The first money
+-- question on the form, by position, is the one that routes.
+-- ---------------------------------------------------------------------
+create or replace function app.amount_in(p_form_template_id uuid, p_answers jsonb)
+returns numeric
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select coalesce((
+    select app.leading_number(p_answers ->> f.field_name)
+      from public.form_fields f
+     where f.form_template_id = p_form_template_id and f.field_type = 'money'
+     order by f.order_index nulls last, f.id
+     limit 1), 0)
+$$;
+
+create or replace function app.submission_amount(p_submission uuid)
+returns numeric
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select app.amount_in(s.form_template_id, app.answers_of(s.id))
+    from public.form_submissions s where s.id = p_submission
+$$;
+
+-- ---------------------------------------------------------------------
+-- Does a rule's condition hold for these answers?
+--
+-- {"field": "<question label>", "op": "<op>", "value": "<value>"}.
+-- eq, neq and contains compare text, ignoring case and outer spaces;
+-- gt, gte, lt and lte compare the leading numbers; empty and not_empty
+-- ask whether it was answered at all. No condition always holds. A
+-- condition on a subject with no answers — a notice, a maintenance
+-- request — never does, because there is nothing for it to be about.
+-- ---------------------------------------------------------------------
+create or replace function app.condition_holds(p_answers jsonb, p_cond jsonb)
+returns boolean
+language plpgsql
+stable
+as $$
+declare
+  v_op   text;
+  v_have text;
+  v_want text;
+  v_hn   numeric;
+  v_wn   numeric;
+begin
+  if p_cond is null or jsonb_typeof(p_cond) = 'null' or p_cond = '{}'::jsonb then
+    return true;
+  end if;
+  if p_answers is null then
+    return false;
+  end if;
+
+  v_op   := coalesce(p_cond->>'op', 'eq');
+  v_have := p_answers ->> (p_cond->>'field');
+  v_want := p_cond->>'value';
+
+  if v_op = 'empty'     then return coalesce(trim(v_have), '') = '';  end if;
+  if v_op = 'not_empty' then return coalesce(trim(v_have), '') <> ''; end if;
+  if v_have is null then
+    return false;
+  end if;
+
+  if v_op in ('gt', 'gte', 'lt', 'lte') then
+    v_hn := app.leading_number(v_have);
+    v_wn := app.leading_number(v_want);
+    if v_hn is null or v_wn is null then
+      return false;
+    end if;
+    return case v_op when 'gt' then v_hn > v_wn  when 'gte' then v_hn >= v_wn
+                     when 'lt' then v_hn < v_wn  else v_hn <= v_wn end;
+  end if;
+
+  if v_op = 'eq'       then return lower(trim(v_have)) =  lower(trim(coalesce(v_want, ''))); end if;
+  if v_op = 'neq'      then return lower(trim(v_have)) <> lower(trim(coalesce(v_want, ''))); end if;
+  if v_op = 'contains' then return position(lower(coalesce(v_want, '')) in lower(v_have)) > 0; end if;
+
+  raise exception 'unknown condition operator: %', v_op;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Who holds an organisational role for this requester?
+--
+-- line_manager    their own manager
+-- skip_level      their manager's manager
+-- department_head the head of their department
+-- hrbp            their department's HR business partner
+-- cxo             their department's CXO
+--
+-- Null when the org chart does not say; the rule's own approver is the
+-- fallback then.
+-- ---------------------------------------------------------------------
+create or replace function app.resolve_role(p_role text, p_requester text)
+returns text
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select case p_role
+    when 'line_manager' then app.line_manager_of(p_requester)
+    when 'skip_level'   then app.line_manager_of(app.line_manager_of(p_requester))
+    when 'department_head' then (
+      select d.head_employee_id from public.departments d
+        join public.employees e on e.department = d.name and e.tenant_id = d.tenant_id
+       where e.employee_id = p_requester and e.tenant_id = app.current_tenant())
+    when 'hrbp' then (
+      select d.hrbp_employee_id from public.departments d
+        join public.employees e on e.department = d.name and e.tenant_id = d.tenant_id
+       where e.employee_id = p_requester and e.tenant_id = app.current_tenant())
+    when 'cxo' then (
+      select d.cxo_employee_id from public.departments d
+        join public.employees e on e.department = d.name and e.tenant_id = d.tenant_id
+       where e.employee_id = p_requester and e.tenant_id = app.current_tenant())
+  end
+$$;
+
+create or replace function app.is_org_role(p_role text)
+returns boolean
+language sql
+immutable
+as $$
+  select p_role in ('line_manager', 'skip_level', 'department_head', 'hrbp', 'cxo')
+$$;
+
+-- Record what happened. The engine's own trail; see approval_events.
+create or replace function app.log_event(
+  p_request uuid, p_type text, p_subject uuid, p_actor text,
+  p_action text, p_comment text default null, p_target text default null
+) returns void
+language sql
+security invoker
+set search_path = public, pg_temp
+as $$
+  insert into public.approval_events
+    (request_id, subject_type, subject_id, actor_id, action, comment, target_id)
+  values (p_request, p_type, p_subject, p_actor, p_action, nullif(trim(p_comment), ''), p_target)
+$$;
+
+-- ---------------------------------------------------------------------
+-- Plan the chain.
+--
+-- Who would be asked, and how: phases, lanes and steps, worked out from
+-- the rules, the requester and a set of answers. Building a chain
+-- inserts this plan; previewing one shows it, so the form's review step
+-- and the chain that follows are the same thing by construction rather
+-- than two pieces of code kept in step.
+--
+-- Rules are read in order. A rule labelled slab_finance expands into one
+-- phase per threshold the amount has crossed, which is where escalation
+-- happens. A rule naming an org role (line_manager, department_head, …)
+-- means whoever holds it for this requester, with the person on the rule
+-- as the fallback. A rule whose condition does not hold is left out.
+--
+-- Then three things shape it, two of them from the HR clearance flow
+-- ("layers may be the same person"):
+--   * nobody approves their own request;
+--   * the same person twice in a row in a lane is one step — and across
+--     two single-lane phases, which is how a sequence is laid out;
+--   * a phase or lane left with nobody in it disappears.
+-- ---------------------------------------------------------------------
+create or replace function app.plan_chain(
+  p_subject_type     text,
+  p_form_template_id uuid,
+  p_requester        text,
+  p_answers          jsonb
+) returns table (
+  step_index  int,
+  lane        int,
+  lane_step   int,
+  approver    text,
+  days        int,
+  quorum      int,
+  stage_label text,
+  lane_label  text
+)
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+#variable_conflict use_column
+declare
+  r           record;
+  v_amount    numeric := 0;
+  v_phase     int := 0;
+  v_prev_idx  int;
+  v_lanes     text[] := '{}';
+  v_lane      int;
+  v_approver  text;
+  v_role      text;
+  -- one entry per candidate step
+  c_phase int[]  := '{}';
+  c_lane  int[]  := '{}';
+  c_appr  text[] := '{}';
+  c_days  int[]  := '{}';
+  c_quo   int[]  := '{}';
+  c_slbl  text[] := '{}';
+  c_llbl  text[] := '{}';
+begin
+  if p_subject_type = 'form_submission' then
+    v_amount := app.amount_in(p_form_template_id, p_answers);
+  end if;
+
+  for r in
+    select ar.approver_user_id, ar.deadline_days, ar.label, ar.step_index,
+           ar.quorum, ar.condition, ar.stage_label, ar.lane
+      from public.approval_rules ar
+     where ar.subject_type = p_subject_type
+       and (p_subject_type <> 'form_submission'
+            or ar.form_template_id = p_form_template_id)
+     -- position is the reading order across the whole phase; the lane
+     -- name and then the id only break ties, so the layout never rests on
+     -- random ids the way rule order once did.
+     order by ar.step_index, ar.position, ar.lane nulls last, ar.id
+  loop
+    continue when not app.condition_holds(p_answers, r.condition);
+
+    if r.label = 'slab_finance' and p_subject_type = 'form_submission' then
+      -- Every threshold crossed, in order, each its own phase.
+      for v_approver in
+        select sa.approver_user_id from app.slab_approvers(p_form_template_id, v_amount) sa
+      loop
+        v_phase := v_phase + 1;
+        c_phase := array_append(c_phase, v_phase);
+        c_lane  := array_append(c_lane, 0);
+        c_appr  := array_append(c_appr, v_approver);
+        c_days  := array_append(c_days, coalesce(r.deadline_days, 7));
+        c_quo   := array_append(c_quo, null::int);
+        c_slbl  := array_append(c_slbl, coalesce(r.stage_label, 'Finance'));
+        c_llbl  := array_append(c_llbl, null::text);
+      end loop;
+      v_prev_idx := null;
+      continue;
+    end if;
+
+    if v_prev_idx is distinct from r.step_index then
+      v_phase    := v_phase + 1;
+      v_prev_idx := r.step_index;
+      v_lanes    := '{}';
+    end if;
+
+    -- Rules naming the same lane share it; a rule naming none has its
+    -- own. Lanes are numbered in the order they first appear.
+    if r.lane is not null and r.lane = any (v_lanes) then
+      v_lane := array_position(v_lanes, r.lane) - 1;
+    else
+      v_lanes := array_append(v_lanes, coalesce(r.lane, '#' || (cardinality(v_lanes))::text || '#'));
+      v_lane  := cardinality(v_lanes) - 1;
+    end if;
+
+    v_role := app.rule_role(r.label);
+    v_approver := case when app.is_org_role(v_role)
+                       then coalesce(app.resolve_role(v_role, p_requester), r.approver_user_id)
+                       else r.approver_user_id end;
+
+    c_phase := array_append(c_phase, v_phase);
+    c_lane  := array_append(c_lane, v_lane);
+    c_appr  := array_append(c_appr, v_approver);
+    c_days  := array_append(c_days, coalesce(r.deadline_days, 7));
+    c_quo   := array_append(c_quo, r.quorum);
+    c_slbl  := array_append(c_slbl, r.stage_label);
+    c_llbl  := array_append(c_llbl, r.lane);
+  end loop;
+
+  return query
+  with c as (
+    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl)
+             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, ord)
+  ),
+  -- A rule with no approver is configuration never finished; skipping it
+  -- is better than a step nobody can act on. Nobody approves their own.
+  f0 as (
+    select * from c where appr is not null and appr is distinct from p_requester
+  ),
+  -- The same person twice in a row in a lane is one step.
+  f1 as (
+    select f0.*, lag(appr) over (partition by phase, ln order by ord) as prev from f0
+  ),
+  f as (
+    select * from f1 where prev is distinct from appr
+  ),
+  lanes as (
+    select phase, ln, min(ord) as first_ord,
+           (array_agg(appr order by ord))[1]      as first_appr,
+           (array_agg(appr order by ord desc))[1] as last_appr
+      from f group by phase, ln
+  ),
+  ph as (
+    select phase, count(*) as nlanes, min(first_ord) as first_ord,
+           (array_agg(first_appr order by first_ord))[1] as first_appr,
+           (array_agg(last_appr  order by first_ord))[1] as last_appr
+      from lanes group by phase
+  ),
+  ph2 as (
+    select ph.*, lag(nlanes)    over (order by first_ord) as prev_n,
+                 lag(last_appr) over (order by first_ord) as prev_last
+      from ph
+  ),
+  -- ...and across two single-lane phases, which is how a plain sequence
+  -- is laid out: a line manager who is also the first finance level is
+  -- asked once.
+  dropped as (
+    select ph2.first_ord as ord from ph2
+     where ph2.nlanes = 1 and ph2.prev_n = 1 and ph2.prev_last = ph2.first_appr
+  ),
+  g as (
+    select f.* from f where f.ord not in (select ord from dropped)
+  ),
+  num as (
+    select phase, row_number() over (order by min(ord)) - 1 as idx
+      from g group by phase
+  ),
+  lnum as (
+    select phase, ln, row_number() over (partition by phase order by min(ord)) - 1 as lidx
+      from g group by phase, ln
+  ),
+  pq as (
+    select phase, min(quo) as quo, count(distinct ln) as nl,
+           (array_agg(slbl order by ord) filter (where slbl is not null))[1] as slbl
+      from g group by phase
+  )
+  select num.idx::int, lnum.lidx::int,
+         (row_number() over (partition by g.phase, g.ln order by g.ord) - 1)::int,
+         g.appr, g.dd,
+         case when pq.quo is not null and pq.quo < pq.nl then pq.quo end,
+         pq.slbl, g.llbl
+    from g
+    join num  on num.phase = g.phase
+    join lnum on lnum.phase = g.phase and lnum.ln = g.ln
+    join pq   on pq.phase = g.phase
+   order by 1, 2, 3;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- What a form would ask, before it is submitted.
+--
+-- The review step shows the requester the ladder before they commit to
+-- it. It is the planner itself, given the answers on screen — so what is
+-- shown is what will happen: roles resolved for this requester, the
+-- conditions their answers meet, the finance levels their amount
+-- reaches, lanes at the same time. Read only; nothing is written.
+-- ---------------------------------------------------------------------
+create or replace function public.preview_approval_chain(
+  p_form_template_id uuid,
+  p_requester        text,
+  p_answers          jsonb
+) returns jsonb
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'step_index', p.step_index, 'lane', p.lane, 'lane_step', p.lane_step,
+           'approver', p.approver, 'days', p.days, 'quorum', p.quorum,
+           'stage_label', p.stage_label, 'lane_label', p.lane_label)
+           order by p.step_index, p.lane, p.lane_step), '[]'::jsonb)
+    from app.plan_chain('form_submission', p_form_template_id, p_requester,
+                        coalesce(p_answers, '{}'::jsonb)) p
+$$;
+
+-- ---------------------------------------------------------------------
 -- Build the chain.
 --
--- Steps are created for every level at once, but only the first is
--- `pending`. The rest are `waiting`, which is what makes the queue
--- honest: an approver sees a request when it is their turn and not
--- before.
---
--- A rule labelled slab_finance is not one step. It expands into one step
--- per threshold the amount has crossed, which is where escalation
--- actually happens. The amount is the submission's own, read here; the
--- p_amount parameter is accepted and ignored, so that a client deployed
--- before this change still resolves the function.
---
--- A rule labelled line_manager means the requester's own line manager,
--- whoever raised it. The approver stored on the rule is only the
--- fallback for somebody with no manager on record. It used to be the
--- whole answer, so every request in the organisation went to one person.
---
--- Two rules then shape the ladder, both of which the HR clearance flow
--- in the scope of work asks for in as many words ("layers may be the
--- same person"):
---   * nobody approves their own request — a step that would land on the
---     requester is left out, and the chain goes on to the next level;
---   * the same person twice in a row is one step, not two.
+-- The plan, inserted. Every lane of the first phase is live at once; the
+-- rest wait. The amount and the conditions come from the submission's
+-- own stored answers — p_amount is accepted and ignored, so that an
+-- older client still resolves the function.
 -- ---------------------------------------------------------------------
 create or replace function public.build_approval_chain(
   p_subject_type text,
@@ -425,14 +796,11 @@ set search_path = public, pg_temp
 as $$
 declare
   r           record;
-  v_step      int := 0;
-  v_approver  text;
-  v_last      text;
   v_requester text;
-  v_amount    numeric := 0;
-  v_cands     text[] := '{}';
-  v_days      int[]  := '{}';
-  i           int;
+  v_answers   jsonb;
+  v_approver  text;
+  n           int;
+  v_phases    int;
 begin
   if p_subject_type not in ('form_submission', 'notice',
                             'stationery_request', 'maintenance_request') then
@@ -445,75 +813,53 @@ begin
 
   v_requester := app.subject_requester(p_subject_type, p_subject_id);
   if p_subject_type = 'form_submission' then
-    v_amount := app.submission_amount(p_subject_id);
+    v_answers := app.answers_of(p_subject_id);
   end if;
 
-  -- First, who would be asked, in order.
-  for r in
-    select ar.approver_user_id, ar.deadline_days, ar.label, ar.step_index
-      from public.approval_rules ar
-     where ar.subject_type = p_subject_type
-       and (p_subject_type <> 'form_submission'
-            or ar.form_template_id = p_form_template_id)
-     order by ar.step_index, ar.id
-  loop
-    if r.label = 'slab_finance' and p_subject_type = 'form_submission' then
-      -- Every threshold crossed, in order, each its own step.
-      for v_approver in
-        select sa.approver_user_id from app.slab_approvers(p_form_template_id, v_amount) sa
-      loop
-        v_cands := array_append(v_cands, v_approver);
-        v_days  := array_append(v_days, coalesce(r.deadline_days, 7));
-      end loop;
-    elsif app.rule_role(r.label) = 'line_manager' then
-      v_cands := array_append(v_cands,
-                   coalesce(app.line_manager_of(v_requester), r.approver_user_id));
-      v_days  := array_append(v_days, coalesce(r.deadline_days, 7));
-    else
-      v_cands := array_append(v_cands, r.approver_user_id);
-      v_days  := array_append(v_days, coalesce(r.deadline_days, 7));
-    end if;
-  end loop;
+  insert into public.approval_requests
+    (submission_id, notice_id, stationery_request_id, maintenance_request_id,
+     approver_user_id, step_index, lane, lane_step, status, deadline_at,
+     quorum, stage_label, lane_label)
+  select
+    case when p_subject_type = 'form_submission'     then p_subject_id end,
+    case when p_subject_type = 'notice'              then p_subject_id end,
+    case when p_subject_type = 'stationery_request'  then p_subject_id end,
+    case when p_subject_type = 'maintenance_request' then p_subject_id end,
+    p.approver, p.step_index, p.lane, p.lane_step,
+    case when p.step_index = 0 and p.lane_step = 0 then 'pending' else 'waiting' end,
+    app.add_working_days(now(), p.days),
+    p.quorum, p.stage_label, p.lane_label
+  from app.plan_chain(p_subject_type, p_form_template_id, v_requester, v_answers) p;
 
-  -- Then the steps.
-  for i in 1 .. coalesce(array_length(v_cands, 1), 0) loop
-    v_approver := v_cands[i];
-    -- A rule with no approver is configuration that was never finished.
-    -- Skipping it is better than creating a step nobody can act on,
-    -- which would stall the chain forever.
-    continue when v_approver is null;
-    continue when v_approver = v_requester;
-    continue when v_approver = v_last;
+  get diagnostics n = row_count;
 
-    insert into public.approval_requests
-      (submission_id, notice_id, stationery_request_id, maintenance_request_id,
-       approver_user_id, step_index, status, deadline_at)
-    values (
-      case when p_subject_type = 'form_submission'     then p_subject_id end,
-      case when p_subject_type = 'notice'              then p_subject_id end,
-      case when p_subject_type = 'stationery_request'  then p_subject_id end,
-      case when p_subject_type = 'maintenance_request' then p_subject_id end,
-      v_approver, v_step,
-      case when v_step = 0 then 'pending' else 'waiting' end,
-      app.add_working_days(now(), v_days[i]));
-    v_last := v_approver;
-    v_step := v_step + 1;
-  end loop;
+  if n > 0 then
+    select max(step_index) + 1 into v_phases
+      from public.approval_requests where subject_id = p_subject_id;
 
-  if v_step > 0 then
+    perform app.log_event(null, p_subject_type, p_subject_id, v_requester, 'submitted');
+
+    -- The notification that actually matters: it is your turn. Every
+    -- lane of the first phase is live at once, so each is told.
+    for r in
+      select approver_user_id from public.approval_requests
+       where subject_id = p_subject_id and status = 'pending'
+       order by lane
+    loop
+      perform app.notify(
+        r.approver_user_id, 'approval.turn',
+        'Your approval is needed',
+        app.subject_label(p_subject_type, p_subject_id)
+          || ' is waiting on you'
+          || case when v_phases > 1 then ', stage 1 of ' || v_phases else '' end || '.',
+        p_subject_type, p_subject_id);
+    end loop;
+
     select approver_user_id into v_approver
       from public.approval_requests
-     where subject_id = p_subject_id and step_index = 0;
-
+     where subject_id = p_subject_id and status = 'pending'
+     order by lane limit 1;
     perform app.set_subject_status(p_subject_type, p_subject_id, 'open', v_approver);
-
-    -- The notification that actually matters: it is your turn.
-    perform app.notify(
-      v_approver, 'approval.turn',
-      'Your approval is needed',
-      app.subject_label(p_subject_type, p_subject_id)
-        || ' is waiting on you, step 1 of ' || v_step || '.',
-      p_subject_type, p_subject_id);
 
     -- Watchers configured against the form want to know it was raised.
     -- Like approvers, some are roles rather than people: the requester's
@@ -522,22 +868,25 @@ begin
       for r in
         select distinct w.who
           from (
-            select case app.rule_role(nr.label)
-                     when 'line_manager' then coalesce(app.line_manager_of(v_requester),
-                                                       nr.notifyee_user_id)
-                     when 'submitter'    then v_requester
-                     when 'creator'      then coalesce(
-                                                (select ft.created_by
-                                                   from public.form_templates ft
-                                                  where ft.id = p_form_template_id),
-                                                nr.notifyee_user_id)
+            select case
+                     when app.rule_role(nr.label) = 'submitter' then v_requester
+                     when app.rule_role(nr.label) = 'creator' then coalesce(
+                            (select ft.created_by from public.form_templates ft
+                              where ft.id = p_form_template_id),
+                            nr.notifyee_user_id)
+                     when app.is_org_role(app.rule_role(nr.label))
+                       then coalesce(app.resolve_role(app.rule_role(nr.label), v_requester),
+                                     nr.notifyee_user_id)
                      else nr.notifyee_user_id
                    end as who
               from public.notification_rules nr
              where nr.form_template_id = p_form_template_id
           ) w
          where w.who is not null
-           and w.who <> coalesce(v_approver, '')
+           and not exists (select 1 from public.approval_requests ar
+                            where ar.subject_id = p_subject_id
+                              and ar.status = 'pending'
+                              and ar.approver_user_id = w.who)
       loop
         perform app.notify(
           r.who, 'submission.raised',
@@ -548,16 +897,108 @@ begin
     end if;
   end if;
 
-  return v_step;
+  return n;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Is a phase done?
+--
+-- A lane is done when every step in it is approved. A phase is done when
+-- its quorum of lanes is — all of them when it has no quorum.
+-- ---------------------------------------------------------------------
+create or replace function app.phase_done(p_subject uuid, p_phase int)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  with l as (
+    select lane, bool_and(status = 'approved') as done
+      from public.approval_requests
+     where subject_id = p_subject and step_index = p_phase
+     group by lane
+  )
+  select count(*) filter (where done) >=
+         coalesce((select min(quorum) from public.approval_requests
+                    where subject_id = p_subject and step_index = p_phase),
+                  count(*))
+    from l
+$$;
+
+-- ---------------------------------------------------------------------
+-- Open the next phase, or finish.
+--
+-- Called once a phase is done. The first waiting step of every lane in
+-- the next phase goes live and its approver is told; if there is no next
+-- phase the chain is complete, the requester is told, and a form whose
+-- template names a follow-up starts one.
+-- ---------------------------------------------------------------------
+create or replace function app.advance(p_type text, p_subject uuid, p_after int)
+returns text
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_next  int;
+  r       record;
+  v_first text;
+begin
+  select min(step_index) into v_next
+    from public.approval_requests
+   where subject_id = p_subject and step_index > p_after and status = 'waiting';
+
+  if v_next is null then
+    perform app.notify(
+      app.subject_requester(p_type, p_subject),
+      'request.completed',
+      'Fully approved',
+      app.subject_label(p_type, p_subject) || ' has cleared every approver.',
+      p_type, p_subject);
+    perform app.log_event(null, p_type, p_subject, null, 'completed');
+    if p_type = 'form_submission' then
+      perform app.spawn_followup(p_subject);
+    end if;
+    return app.set_subject_status(p_type, p_subject, 'done', null);
+  end if;
+
+  for r in
+    update public.approval_requests ar
+       set status = 'pending'
+     where ar.id in (
+       select distinct on (lane) id
+         from public.approval_requests
+        where subject_id = p_subject and step_index = v_next and status = 'waiting'
+        order by lane, lane_step)
+    returning ar.approver_user_id, ar.lane
+  loop
+    perform app.notify(
+      r.approver_user_id, 'approval.turn',
+      'Your approval is needed',
+      app.subject_label(p_type, p_subject)
+        || ' has cleared the previous approver and is now with you.',
+      p_type, p_subject);
+    if v_first is null then
+      v_first := r.approver_user_id;
+    end if;
+  end loop;
+
+  return app.set_subject_status(p_type, p_subject, 'open', v_first);
 end $$;
 
 -- ---------------------------------------------------------------------
 -- Act on a step.
 --
 -- The one rule that makes this a chain: only a `pending` step can be
--- acted on. Everything above the live step is `waiting`, so there is
--- nothing for a later approver to press — the order is enforced by the
--- data, not by hiding a button.
+-- acted on. Everything not yet live is `waiting`, so there is nothing for
+-- a later approver to press — the order is enforced by the data, not by
+-- hiding a button.
+--
+-- Approving moves the lane on, then the phase when its lanes are done.
+-- Rejecting by anybody ends the whole chain: a clearance one department
+-- refuses is refused. Clarification pauses this step only and goes back
+-- to the requester; other lanes carry on.
 -- ---------------------------------------------------------------------
 create or replace function public.act_on_approval(
   p_request_id uuid,
@@ -572,6 +1013,7 @@ as $$
 declare
   v_req    record;
   v_next   record;
+  v_open   text;
 begin
   select * into v_req from public.approval_requests where id = p_request_id for update;
   if not found then
@@ -588,6 +1030,8 @@ begin
     update public.approval_requests
        set status = 'pending', acted_at = null
      where id = p_request_id;
+    perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                          p_actor, 'resumed', p_comment);
     return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'open',
                                   v_req.approver_user_id);
   end if;
@@ -600,53 +1044,74 @@ begin
     update public.approval_requests
        set status = 'approved', acted_at = now(), comment = coalesce(p_comment, comment)
      where id = p_request_id;
+    perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                          p_actor, 'approved', p_comment);
 
+    -- The next step in this lane, if there is one.
     select * into v_next
       from public.approval_requests
      where subject_id = v_req.subject_id
-       and step_index > v_req.step_index
+       and step_index = v_req.step_index
+       and lane = v_req.lane
+       and lane_step > v_req.lane_step
        and status = 'waiting'
-     order by step_index
+     order by lane_step
      limit 1;
 
     if found then
       update public.approval_requests set status = 'pending' where id = v_next.id;
-
       perform app.notify(
         v_next.approver_user_id, 'approval.turn',
         'Your approval is needed',
         app.subject_label(v_req.subject_type, v_req.subject_id)
           || ' has cleared the previous approver and is now with you.',
         v_req.subject_type, v_req.subject_id);
-
       return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'open',
                                     v_next.approver_user_id);
     end if;
 
-    -- Nothing above it: the chain is finished.
-    perform app.notify(
-      app.subject_requester(v_req.subject_type, v_req.subject_id),
-      'request.completed',
-      'Fully approved',
-      app.subject_label(v_req.subject_type, v_req.subject_id)
-        || ' has cleared every approver.',
-      v_req.subject_type, v_req.subject_id);
+    -- The lane is finished. If the phase is not, the request waits on
+    -- the lanes still running.
+    if not app.phase_done(v_req.subject_id, v_req.step_index) then
+      select approver_user_id into v_open
+        from public.approval_requests
+       where subject_id = v_req.subject_id and step_index = v_req.step_index
+         and status in ('pending', 'clarification')
+       order by (status = 'clarification'), lane
+       limit 1;
+      return app.set_subject_status(
+        v_req.subject_type, v_req.subject_id,
+        case when exists (select 1 from public.approval_requests
+                           where subject_id = v_req.subject_id
+                             and status = 'clarification') then 'held' else 'open' end,
+        v_open);
+    end if;
 
-    return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'done', null);
+    -- The phase is done. Anybody in it still asked — lanes a quorum made
+    -- unnecessary — is no longer needed.
+    update public.approval_requests
+       set status = 'skipped'
+     where subject_id = v_req.subject_id
+       and step_index = v_req.step_index
+       and status in ('pending', 'waiting', 'clarification');
+
+    return app.advance(v_req.subject_type, v_req.subject_id, v_req.step_index);
 
   elsif p_action = 'reject' then
     update public.approval_requests
        set status = 'rejected', acted_at = now(), comment = p_comment
      where id = p_request_id;
+    perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                          p_actor, 'rejected', p_comment);
 
-    -- A rejection ends the chain. The steps above it are marked skipped
-    -- rather than deleted, so the trail still shows who would have been
-    -- asked next.
+    -- A rejection ends the chain. Everything else still open or waiting
+    -- is marked skipped rather than deleted, so the trail still shows who
+    -- would have been asked.
     update public.approval_requests
        set status = 'skipped'
      where subject_id = v_req.subject_id
-       and step_index > v_req.step_index
-       and status = 'waiting';
+       and id <> p_request_id
+       and status in ('waiting', 'pending', 'clarification');
 
     perform app.notify(
       app.subject_requester(v_req.subject_type, v_req.subject_id),
@@ -664,6 +1129,8 @@ begin
     update public.approval_requests
        set status = 'clarification', acted_at = now(), comment = p_comment
      where id = p_request_id;
+    perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                          p_actor, 'clarification', p_comment);
 
     perform app.notify(
       app.subject_requester(v_req.subject_type, v_req.subject_id),
@@ -678,6 +1145,101 @@ begin
   end if;
 
   raise exception 'unknown action: %', p_action;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Return a request to somebody who already approved it.
+--
+-- "Return to a specific approver" — the Finance pain point. The step it
+-- goes back to is live again; everything between it and the step doing
+-- the returning goes back to waiting, so it is approved again in order.
+-- Other lanes of the phase it returns to keep what they had: if Admin
+-- cleared and IT is asked to look again, Admin is not asked twice.
+-- The history of the first round stays in approval_events.
+-- ---------------------------------------------------------------------
+create or replace function public.return_to_approver(
+  p_request_id uuid,
+  p_target_id  uuid,
+  p_comment    text default null,
+  p_actor      text default null
+) returns text
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_req record;
+  v_tgt record;
+begin
+  select * into v_req from public.approval_requests where id = p_request_id for update;
+  if not found then
+    raise exception 'no such approval step';
+  end if;
+  perform app.assert_may_act(v_req.approver_user_id, v_req.subject_type,
+                             v_req.subject_id, p_actor);
+  if v_req.status not in ('pending', 'clarification') then
+    raise exception 'only an open step can return a request: this one is %', v_req.status;
+  end if;
+
+  select * into v_tgt from public.approval_requests
+   where id = p_target_id and subject_id = v_req.subject_id
+     for update;
+  if not found then
+    raise exception 'that step is not part of this request';
+  end if;
+  if v_tgt.status <> 'approved' then
+    raise exception 'a request can only be returned to somebody who has approved it';
+  end if;
+  if not (v_tgt.step_index < v_req.step_index
+          or (v_tgt.step_index = v_req.step_index and v_tgt.lane = v_req.lane
+              and v_tgt.lane_step < v_req.lane_step)) then
+    raise exception 'a request can only be returned to an earlier approver';
+  end if;
+
+  set constraints all deferred;
+
+  if v_tgt.step_index < v_req.step_index then
+    -- Every phase after the target's, up to and including this one, is
+    -- asked again from the start.
+    update public.approval_requests
+       set status = 'waiting', acted_at = null
+     where subject_id = v_req.subject_id
+       and step_index > v_tgt.step_index
+       and step_index <= v_req.step_index;
+    -- In the target's own phase, only its lane after it.
+    update public.approval_requests
+       set status = 'waiting', acted_at = null
+     where subject_id = v_req.subject_id
+       and step_index = v_tgt.step_index
+       and lane = v_tgt.lane
+       and lane_step > v_tgt.lane_step;
+  else
+    update public.approval_requests
+       set status = 'waiting', acted_at = null
+     where subject_id = v_req.subject_id
+       and step_index = v_req.step_index
+       and lane = v_req.lane
+       and lane_step > v_tgt.lane_step
+       and lane_step <= v_req.lane_step;
+  end if;
+
+  update public.approval_requests
+     set status = 'pending', acted_at = null
+   where id = v_tgt.id;
+
+  perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                        p_actor, 'returned', p_comment, v_tgt.approver_user_id);
+
+  perform app.notify(
+    v_tgt.approver_user_id, 'approval.returned',
+    'Returned to you',
+    app.subject_label(v_req.subject_type, v_req.subject_id)
+      || ' was returned to you by ' || coalesce(p_actor, 'a later approver')
+      || coalesce(': ' || nullif(trim(p_comment), ''), '.'),
+    v_req.subject_type, v_req.subject_id);
+
+  return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'open',
+                                v_tgt.approver_user_id);
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -725,6 +1287,9 @@ begin
          comment          = coalesce(p_comment, comment)
    where id = p_request_id;
 
+  perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                        p_actor, 'forwarded', p_comment, p_to);
+
   perform app.notify(
     p_to, 'approval.turn',
     'An approval was forwarded to you',
@@ -739,12 +1304,14 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
--- Add a reviewer to a chain already in flight.
+-- Ask a reviewer before approving.
 --
--- The new step goes immediately after the one it is added from, and
--- everything above shuffles up. That renumbering passes through states
--- where two rows share an index, which is why the step-order constraint
--- is deferrable.
+-- "An approver should be able to add reviewer to review the ticket
+-- before s/he gives approval." The reviewer's step goes in ahead of the
+-- approver's, in the same lane, and is live at once; the approver's own
+-- step waits behind it and comes back when the reviewer has passed it
+-- on, with the reviewer's remarks on the trail. It used to go in after
+-- the approver, which asked for a review of a decision already made.
 -- ---------------------------------------------------------------------
 create or replace function public.add_reviewer(
   p_request_id    uuid,
@@ -766,29 +1333,312 @@ begin
   end if;
   perform app.assert_may_act(v_req.approver_user_id, v_req.subject_type,
                              v_req.subject_id, p_actor);
-  if v_req.status not in ('pending', 'clarification') then
-    raise exception 'a reviewer can only be added to an open step';
+  if v_req.status <> 'pending' then
+    raise exception 'a reviewer can only be added to a step that is waiting on you';
   end if;
   if not exists (select 1 from public.employees where employee_id = p_employee) then
     raise exception 'no employee with id %', p_employee;
   end if;
+  if p_employee = v_req.approver_user_id then
+    raise exception 'you cannot add yourself as your own reviewer';
+  end if;
 
   set constraints all deferred;
 
+  -- Make room: this step and everything after it in the lane move down.
   update public.approval_requests
-     set step_index = step_index + 1
+     set lane_step = lane_step + 1
    where subject_id = v_req.subject_id
-     and step_index > v_req.step_index;
+     and step_index = v_req.step_index
+     and lane = v_req.lane
+     and lane_step >= v_req.lane_step;
+
+  update public.approval_requests set status = 'waiting' where id = p_request_id;
 
   insert into public.approval_requests
     (submission_id, notice_id, stationery_request_id, maintenance_request_id,
-     approver_user_id, step_index, status, deadline_at)
+     approver_user_id, step_index, lane, lane_step, status, deadline_at,
+     quorum, stage_label, lane_label)
   values (v_req.submission_id, v_req.notice_id, v_req.stationery_request_id,
           v_req.maintenance_request_id,
-          p_employee, v_req.step_index + 1, 'waiting',
-          app.add_working_days(now(), coalesce(p_deadline_days, 7)))
+          p_employee, v_req.step_index, v_req.lane, v_req.lane_step, 'pending',
+          app.add_working_days(now(), coalesce(p_deadline_days, 7)),
+          v_req.quorum, v_req.stage_label, v_req.lane_label)
   returning id into v_new;
 
+  perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
+                        p_actor, 'reviewer_added', null, p_employee);
+
+  perform app.notify(
+    p_employee, 'approval.review',
+    'Your review is requested',
+    coalesce(p_actor, 'An approver') || ' asked you to review '
+      || app.subject_label(v_req.subject_type, v_req.subject_id)
+      || ' before they decide on it.',
+    v_req.subject_type, v_req.subject_id);
+
+  perform app.set_subject_status(v_req.subject_type, v_req.subject_id, 'open', p_employee);
+  return v_new;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- The requester takes it back.
+--
+-- "The initiator can edit or cancel the request ... prior to acceptance
+-- by line manager ... once the ticket is approved, the initiator can't
+-- edit/reject it." So both are open to whoever raised the request, and
+-- only until anybody has approved any part of it.
+--
+-- Recalling returns it to a draft: the chain is removed (its history
+-- stays in approval_events) and the requester can edit and submit it
+-- again, which builds a fresh chain. Cancelling ends it where it stands.
+-- Form submissions only; notices and service requests have their own
+-- screens for that.
+-- ---------------------------------------------------------------------
+create or replace function app.assert_requester_may_withdraw(p_submission uuid, p_actor text)
+returns record
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub record;
+begin
+  select id, submitted_by, status into v_sub
+    from public.form_submissions where id = p_submission for update;
+  if not found then
+    raise exception 'no such submission';
+  end if;
+  if p_actor is null or v_sub.submitted_by is distinct from p_actor then
+    raise exception 'only the person who raised a request can take it back';
+  end if;
+  if v_sub.status not in ('submitted', 'in_progress', 'on_hold') then
+    raise exception 'a request that is % cannot be taken back', v_sub.status;
+  end if;
+  if exists (select 1 from public.approval_requests
+              where submission_id = p_submission and status = 'approved') then
+    raise exception 'somebody has already approved part of this request, so it can no longer be taken back';
+  end if;
+  return v_sub;
+end $$;
+
+create or replace function public.recall_submission(
+  p_submission_id uuid,
+  p_actor         text default null
+) returns text
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  r record;
+begin
+  perform app.assert_requester_may_withdraw(p_submission_id, p_actor);
+
+  for r in
+    select approver_user_id from public.approval_requests
+     where submission_id = p_submission_id and status in ('pending', 'clarification')
+  loop
+    perform app.notify(
+      r.approver_user_id, 'request.recalled',
+      'Taken back by the requester',
+      app.subject_label('form_submission', p_submission_id)
+        || ' was taken back to be edited. There is nothing for you to do.',
+      'form_submission', p_submission_id);
+  end loop;
+
+  perform app.log_event(null, 'form_submission', p_submission_id, p_actor, 'recalled');
+  delete from public.approval_queries where subject_id = p_submission_id;
+  delete from public.approval_requests where submission_id = p_submission_id;
+  update public.form_submissions set status = 'draft' where id = p_submission_id;
+  return 'draft';
+end $$;
+
+create or replace function public.cancel_submission(
+  p_submission_id uuid,
+  p_comment       text default null,
+  p_actor         text default null
+) returns text
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  r record;
+begin
+  perform app.assert_requester_may_withdraw(p_submission_id, p_actor);
+
+  for r in
+    select approver_user_id from public.approval_requests
+     where submission_id = p_submission_id and status in ('pending', 'clarification')
+  loop
+    perform app.notify(
+      r.approver_user_id, 'request.cancelled',
+      'Cancelled by the requester',
+      app.subject_label('form_submission', p_submission_id)
+        || ' was cancelled' || coalesce(': ' || nullif(trim(p_comment), ''), '.')
+        || ' There is nothing for you to do.',
+      'form_submission', p_submission_id);
+  end loop;
+
+  update public.approval_requests
+     set status = 'skipped'
+   where submission_id = p_submission_id
+     and status in ('waiting', 'pending', 'clarification');
+  perform app.log_event(null, 'form_submission', p_submission_id, p_actor, 'cancelled', p_comment);
+  update public.form_submissions set status = 'cancelled' where id = p_submission_id;
+  return 'cancelled';
+end $$;
+
+-- ---------------------------------------------------------------------
+-- One approver asks another.
+--
+-- "Approver will be able to ask specific questions or raise query at any
+-- level in the approval hierarchy. (An approver can ask question only to
+-- approvers in the NFA.)" Both people must be approvers on this request
+-- — the asker directly or by delegation. The chain does not pause: this
+-- is a conversation beside it. Asking the requester is clarification.
+-- ---------------------------------------------------------------------
+create or replace function public.ask_question(
+  p_subject_id uuid,
+  p_to         text,
+  p_question   text,
+  p_actor      text default null
+) returns uuid
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_type text;
+  v_id   uuid;
+begin
+  select subject_type into v_type
+    from public.approval_requests where subject_id = p_subject_id limit 1;
+  if v_type is null then
+    raise exception 'that request has no approvers to ask';
+  end if;
+  if p_question is null or trim(p_question) = '' then
+    raise exception 'a question needs asking';
+  end if;
+  if p_to is null or p_to = p_actor then
+    raise exception 'ask somebody other than yourself';
+  end if;
+  if not exists (select 1 from public.approval_requests
+                  where subject_id = p_subject_id
+                    and app.may_act(approver_user_id, subject_type, subject_id, p_actor)) then
+    raise exception 'only an approver on this request can ask its approvers a question';
+  end if;
+  if not exists (select 1 from public.approval_requests
+                  where subject_id = p_subject_id and approver_user_id = p_to) then
+    raise exception 'questions go to approvers on this request; ask the requester for clarification instead';
+  end if;
+
+  insert into public.approval_queries (subject_type, subject_id, asked_by, asked_to, question)
+  values (v_type, p_subject_id, p_actor, p_to, trim(p_question))
+  returning id into v_id;
+
+  perform app.log_event(null, v_type, p_subject_id, p_actor, 'question', p_question, p_to);
+  perform app.notify(
+    p_to, 'question.asked',
+    'A question for you',
+    p_actor || ' asked about ' || app.subject_label(v_type, p_subject_id) || ': ' || trim(p_question),
+    v_type, p_subject_id);
+  return v_id;
+end $$;
+
+create or replace function public.answer_question(
+  p_query_id uuid,
+  p_answer   text,
+  p_actor    text default null
+) returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_q record;
+begin
+  select * into v_q from public.approval_queries where id = p_query_id for update;
+  if not found then
+    raise exception 'no such question';
+  end if;
+  if v_q.answer is not null then
+    raise exception 'that question has already been answered';
+  end if;
+  if p_answer is null or trim(p_answer) = '' then
+    raise exception 'an answer needs saying';
+  end if;
+  if not app.may_act(v_q.asked_to, v_q.subject_type, v_q.subject_id, p_actor) then
+    raise exception 'the question was asked of %, not of %', v_q.asked_to, coalesce(p_actor, 'nobody');
+  end if;
+
+  update public.approval_queries
+     set answer = trim(p_answer), answered_at = now()
+   where id = p_query_id;
+
+  perform app.log_event(null, v_q.subject_type, v_q.subject_id, p_actor, 'answer', p_answer, v_q.asked_by);
+  perform app.notify(
+    v_q.asked_by, 'question.answered',
+    'Your question was answered',
+    p_actor || ' answered about ' || app.subject_label(v_q.subject_type, v_q.subject_id)
+      || ': ' || trim(p_answer),
+    v_q.subject_type, v_q.subject_id);
+end $$;
+
+-- ---------------------------------------------------------------------
+-- The ticket that follows.
+--
+-- "A secondary NFA ticket is automatically created upon approval of
+-- previous ticket ... preloaded in the ticket." When a submission
+-- finishes and its template names a follow-up, a draft of the follow-up
+-- is started for the same requester, linked back to it, with every
+-- answer whose question the follow-up asks too already filled in. It is
+-- a draft, not a submission: somebody still has to read it and send it.
+-- ---------------------------------------------------------------------
+create or replace function app.spawn_followup(p_submission uuid)
+returns uuid
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_parent record;
+  v_new    uuid;
+begin
+  select s.submitted_by, ft.followup_template_id,
+         (select f2.name from public.form_templates f2 where f2.id = ft.followup_template_id) as next_name
+    into v_parent
+    from public.form_submissions s
+    join public.form_templates ft on ft.id = s.form_template_id
+   where s.id = p_submission;
+
+  if v_parent.followup_template_id is null then
+    return null;
+  end if;
+
+  insert into public.form_submissions
+    (form_template_id, submitted_by, status, parent_submission_id)
+  values (v_parent.followup_template_id, v_parent.submitted_by, 'draft', p_submission)
+  returning id into v_new;
+
+  insert into public.submission_values (submission_id, field_name, value)
+  select distinct on (f.field_name) v_new, f.field_name, pv.value
+    from public.form_fields f
+    join public.submission_values pv
+      on pv.submission_id = p_submission and pv.field_name = f.field_name
+   where f.form_template_id = v_parent.followup_template_id
+     and coalesce(pv.value, '') <> ''
+   order by f.field_name, pv.id;
+
+  perform app.log_event(null, 'form_submission', p_submission, null, 'followup_created', null, v_new::text);
+  perform app.notify(
+    v_parent.submitted_by, 'request.followup',
+    'A follow-up is ready for you',
+    app.subject_label('form_submission', p_submission) || ' was approved, so '
+      || coalesce(v_parent.next_name, 'its follow-up')
+      || ' has been started with its details filled in. Check it and submit it.',
+    'form_submission', v_new);
   return v_new;
 end $$;
 
@@ -857,7 +1707,25 @@ grant execute on function
   app.submission_amount(uuid),
   app.may_act(text, text, uuid, text),
   app.assert_may_act(text, text, uuid, text),
-  app.rule_role(text)
+  app.rule_role(text),
+  app.leading_number(text),
+  app.answers_of(uuid),
+  app.amount_in(uuid, jsonb),
+  app.condition_holds(jsonb, jsonb),
+  app.plan_chain(text, uuid, text, jsonb),
+  public.preview_approval_chain(uuid, text, jsonb),
+  app.resolve_role(text, text),
+  app.is_org_role(text),
+  app.log_event(uuid, text, uuid, text, text, text, text),
+  app.phase_done(uuid, int),
+  app.advance(text, uuid, int),
+  app.spawn_followup(uuid),
+  app.assert_requester_may_withdraw(uuid, text),
+  public.return_to_approver(uuid, uuid, text, text),
+  public.recall_submission(uuid, text),
+  public.cancel_submission(uuid, text, text),
+  public.ask_question(uuid, text, text, text),
+  public.answer_question(uuid, text, text)
 to app_api;
 
 commit;

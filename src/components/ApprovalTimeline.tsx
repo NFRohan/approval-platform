@@ -143,6 +143,8 @@ export interface ParallelStep {
   kind: "parallel";
   title: string;
   state: StepState;
+  /** What it takes to clear: "All 5 must clear", "Any 2 of 3". */
+  rule?: string;
   progress: { done: number; hold: number; pending: number; total: number };
   approvers: Approver[];
 }
@@ -421,7 +423,7 @@ function ParallelBody({ step }: { step: ParallelStep }) {
         <div className="flex items-center gap-2">
           <Users size={14} stroke="#B45309" />
           <span style={{ fontSize: 12, fontWeight: 600, color: "#B45309", letterSpacing: "0.02em" }}>
-            Parallel approval — all must approve
+            At the same time — {step.rule ?? "all must approve"}
           </span>
         </div>
         <div className="flex items-center gap-3" style={{ fontSize: 11.5, color: "#92400E" }}>

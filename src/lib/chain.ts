@@ -46,33 +46,44 @@ export type Step = {
   id: string;
   approver_user_id: string | null;
   step_index: number | null;
+  lane?: number | null;
+  lane_step?: number | null;
   status: string | null;
 };
 
 /**
  * The step a subject is waiting on, or null when nothing is open.
  *
- * Only ever one: everything above the live step is `waiting`, which is
- * the invariant the whole chain rests on.
+ * A phase can run several lanes at once, so more than one step may be
+ * open. Given who is acting, theirs is the one; otherwise the first.
+ * The database still decides whether they may act on it.
  */
-export async function openStep(type: SubjectType, subjectId: string): Promise<Step | null> {
+export async function openStep(
+  type: SubjectType,
+  subjectId: string,
+  actor?: string,
+): Promise<Step | null> {
   const { data } = await db
     .from('approval_requests')
-    .select('id, approver_user_id, step_index, status')
+    .select('id, approver_user_id, step_index, lane, lane_step, status')
     .eq(COLUMN[type], subjectId)
     .in('status', [...OPEN_STATUSES])
     .order('step_index')
-    .maybeSingle();
-  return (data as Step) ?? null;
+    .order('lane')
+    .order('lane_step');
+  const open = (data ?? []) as Step[];
+  return open.find((s) => actor && s.approver_user_id === actor) ?? open[0] ?? null;
 }
 
 /** Every step of a subject's chain, in order — the timeline. */
 export async function chainOf(type: SubjectType, subjectId: string): Promise<Step[]> {
   const { data } = await db
     .from('approval_requests')
-    .select('id, approver_user_id, step_index, status, comment, acted_at, deadline_at, reassigned_from')
+    .select('id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, status, comment, acted_at, deadline_at, reassigned_from')
     .eq(COLUMN[type], subjectId)
-    .order('step_index');
+    .order('step_index')
+    .order('lane')
+    .order('lane_step');
   return (data ?? []) as Step[];
 }
 
@@ -113,7 +124,7 @@ export async function actOnSubject(
   actor: string,
   comment?: string,
 ): Promise<{ error: { message: string } | null }> {
-  const step = await openStep(type, subjectId);
+  const step = await openStep(type, subjectId, actor);
   if (!step) {
     return { error: { message: 'there is no approval step open on this' } };
   }
@@ -225,4 +236,46 @@ export async function labelSubjects(rows: SubjectRow[]): Promise<Record<string, 
   }
 
   return out;
+}
+
+// ---------------------------------------------------------------------
+// Stage 1 actions. Each names who is acting; the database checks it.
+// ---------------------------------------------------------------------
+
+/** Send a request back to somebody who already approved it. */
+export function returnToApprover(requestId: string, targetId: string, actor: string, comment?: string) {
+  return db.rpc('return_to_approver', {
+    p_request_id: requestId,
+    p_target_id: targetId,
+    p_comment: comment?.trim() || null,
+    p_actor: actor,
+  });
+}
+
+/** The requester takes a request back to edit, before anybody approves. */
+export function recallSubmission(submissionId: string, actor: string) {
+  return db.rpc('recall_submission', { p_submission_id: submissionId, p_actor: actor });
+}
+
+/** The requester cancels a request, before anybody approves. */
+export function cancelSubmission(submissionId: string, actor: string, comment?: string) {
+  return db.rpc('cancel_submission', {
+    p_submission_id: submissionId,
+    p_comment: comment?.trim() || null,
+    p_actor: actor,
+  });
+}
+
+/** Ask another approver on the same request a question. */
+export function askQuestion(subjectId: string, to: string, question: string, actor: string) {
+  return db.rpc('ask_question', {
+    p_subject_id: subjectId,
+    p_to: to,
+    p_question: question.trim(),
+    p_actor: actor,
+  });
+}
+
+export function answerQuestion(queryId: string, answer: string, actor: string) {
+  return db.rpc('answer_question', { p_query_id: queryId, p_answer: answer.trim(), p_actor: actor });
 }

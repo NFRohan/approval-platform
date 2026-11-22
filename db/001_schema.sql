@@ -408,6 +408,8 @@ create table if not exists public.approval_requests (
                      end) stored,
   approver_user_id text,
   step_index       integer not null default 0,
+  lane             integer not null default 0,
+  lane_step        integer not null default 0,
   status           text not null default 'waiting'
                      check (status in ('waiting','pending','approved','rejected','clarification','skipped')),
   comment          text,
@@ -418,10 +420,13 @@ create table if not exists public.approval_requests (
   reassigned_from  text,
   created_at       timestamptz not null default now(),
   unique (id, tenant_id),
-  -- Deferrable: inserting a reviewer renumbers the steps above it, and
-  -- that shuffle passes through states where two rows briefly share an
-  -- index.
-  unique (subject_id, step_index) deferrable initially immediate,
+  -- A step_index is a phase, and a phase may run several lanes at once,
+  -- each with its own steps in order (see the Stage 1 block at the end).
+  -- What is unique is a position: phase, lane, step within the lane.
+  -- Deferrable: inserting a reviewer renumbers the steps after it, and
+  -- that shuffle passes through states where two rows briefly share one.
+  constraint approval_requests_position_key
+    unique (subject_id, step_index, lane, lane_step) deferrable initially immediate,
   check (num_nonnulls(submission_id, notice_id,
                       stationery_request_id, maintenance_request_id) = 1),
   foreign key (submission_id, tenant_id)
@@ -758,19 +763,14 @@ begin
       drop constraint approval_requests_submission_id_step_index_key;
   end if;
 
-  -- Must be deferrable; drop and rebuild one that is not.
+  -- One step per index was the rule until phases could run lanes in
+  -- parallel. The position constraint that replaces it needs the lane
+  -- columns, so it is added in the Stage 1 block at the end of this
+  -- file; here the old one is only dropped wherever it still exists.
   if exists (select 1 from pg_constraint
-              where conname = 'approval_requests_subject_id_step_index_key'
-                and not condeferrable) then
+              where conname = 'approval_requests_subject_id_step_index_key') then
     alter table public.approval_requests
       drop constraint approval_requests_subject_id_step_index_key;
-  end if;
-
-  if not exists (select 1 from pg_constraint
-                  where conname = 'approval_requests_subject_id_step_index_key') then
-    alter table public.approval_requests
-      add constraint approval_requests_subject_id_step_index_key
-      unique (subject_id, step_index) deferrable initially immediate;
   end if;
 
   -- Exactly one subject. A step attached to nothing, or to two things,
@@ -841,5 +841,187 @@ begin
          for each row execute function app.set_updated_at()', t || '_updated', t);
   end loop;
 end $ua$;
+
+-- =====================================================================
+-- Stage 1 — the engine the scope of work asks for.
+--
+-- Additions to tables that already exist on deployed databases are
+-- written as ALTERs, guarded, so this file stays re-runnable against a
+-- database that has every table already.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- departments — who heads each one, its HR business partner, its CXO.
+--
+-- The org roles an approval rule can name besides "line manager": the
+-- HR clearance flow is Line Manager → Head of Department → HRBP → CXO,
+-- "accommodating instances where layers may be the same person". An
+-- employee's department is the text on their row, matched by name.
+-- ---------------------------------------------------------------------
+create table if not exists public.departments (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null default app.current_tenant()
+                     references public.tenants(id) on delete cascade,
+  name             text not null,
+  head_employee_id text,
+  hrbp_employee_id text,
+  cxo_employee_id  text,
+  created_at       timestamptz not null default now(),
+  unique (id, tenant_id),
+  unique (tenant_id, name),
+  foreign key (head_employee_id, tenant_id)
+    references public.employees(employee_id, tenant_id) on delete set null (head_employee_id),
+  foreign key (hrbp_employee_id, tenant_id)
+    references public.employees(employee_id, tenant_id) on delete set null (hrbp_employee_id),
+  foreign key (cxo_employee_id, tenant_id)
+    references public.employees(employee_id, tenant_id) on delete set null (cxo_employee_id)
+);
+
+-- ---------------------------------------------------------------------
+-- Phases, lanes, quorum, conditions.
+--
+-- A chain is phases run one after another (step_index). A phase runs one
+-- or more lanes at the same time, and a lane is steps in order. The HR
+-- clearance flow is the case that needs all three: the requester's own
+-- division signs off Line Manager → HoD → HRBP → CXO while Finance,
+-- Supply Chain, Administration and IT clear it alongside, and HR closes
+-- it only after every one of them has.
+--
+-- On rules: rules sharing a step_index are one phase. Rules in a phase
+-- that name the same lane are one lane, in `position` order; a rule
+-- naming no lane is a lane of its own. position orders the whole phase,
+-- so lanes are numbered in the order their first rule appears. quorum is how many lanes must
+-- finish for the phase to be done — null means all; "any two of three
+-- compliance accessors" is three single-person lanes with quorum 2.
+-- condition makes a rule apply only when an answer says so:
+-- {"field": "Approval route", "op": "eq", "value": "Exceptional"}.
+-- stage_label names the phase on the timeline, lane names the lane.
+--
+-- Every chain built before this is one lane per phase, which is exactly
+-- what it was: a sequence.
+-- ---------------------------------------------------------------------
+alter table public.approval_rules add column if not exists quorum      integer;
+alter table public.approval_rules add column if not exists condition   jsonb;
+alter table public.approval_rules add column if not exists stage_label text;
+alter table public.approval_rules add column if not exists lane        text;
+alter table public.approval_rules add column if not exists position    integer not null default 0;
+
+alter table public.approval_requests add column if not exists lane        integer not null default 0;
+alter table public.approval_requests add column if not exists lane_step   integer not null default 0;
+alter table public.approval_requests add column if not exists lane_label  text;
+alter table public.approval_requests add column if not exists quorum      integer;
+alter table public.approval_requests add column if not exists stage_label text;
+
+do $s1$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'approval_requests_position_key') then
+    alter table public.approval_requests
+      add constraint approval_requests_position_key
+      unique (subject_id, step_index, lane, lane_step) deferrable initially immediate;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'approval_rules_quorum_positive') then
+    alter table public.approval_rules
+      add constraint approval_rules_quorum_positive check (quorum is null or quorum > 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'approval_requests_quorum_positive') then
+    alter table public.approval_requests
+      add constraint approval_requests_quorum_positive check (quorum is null or quorum > 0);
+  end if;
+end $s1$;
+
+-- ---------------------------------------------------------------------
+-- Categories: the divisions in the scope of work. Compliance holds the
+-- ABC declarations, Commercial the campaign requests.
+-- ---------------------------------------------------------------------
+alter table public.form_templates drop constraint if exists form_templates_category_check;
+alter table public.form_templates
+  add constraint form_templates_category_check
+  check (category in ('Finance', 'HR', 'Admin', 'Compliance', 'Commercial', 'Legal'));
+
+-- ---------------------------------------------------------------------
+-- Follow-ups and linked submissions.
+--
+-- A template may name the template that follows it: the commercial flow
+-- in the scope of work raises a secondary NFA automatically when the
+-- first ticket is approved, preloaded with what the first one said.
+-- parent_submission_id records where a submission came from.
+-- ---------------------------------------------------------------------
+alter table public.form_templates   add column if not exists followup_template_id uuid;
+alter table public.form_submissions add column if not exists parent_submission_id uuid;
+
+do $s1$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'form_templates_followup_fk') then
+    alter table public.form_templates
+      add constraint form_templates_followup_fk
+      foreign key (followup_template_id, tenant_id)
+      references public.form_templates(id, tenant_id) on delete set null (followup_template_id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'form_submissions_parent_fk') then
+    alter table public.form_submissions
+      add constraint form_submissions_parent_fk
+      foreign key (parent_submission_id, tenant_id)
+      references public.form_submissions(id, tenant_id) on delete set null (parent_submission_id);
+  end if;
+end $s1$;
+
+-- ---------------------------------------------------------------------
+-- approval_events — everything that happened to a chain, in order.
+--
+-- A step row holds only its latest state: returning a request to an
+-- earlier approver puts their row back to pending, and a forward
+-- overwrites who it is with. The history lives here, append-only like
+-- activity_log, written by the engine functions and nothing else. It is
+-- what the timeline reads when it shows that a step was approved,
+-- returned and approved again.
+-- ---------------------------------------------------------------------
+create table if not exists public.approval_events (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null default app.current_tenant()
+                 references public.tenants(id) on delete cascade,
+  request_id   uuid,
+  subject_type text not null,
+  subject_id   uuid not null,
+  actor_id     text,
+  action       text not null,
+  comment      text,
+  target_id    text,
+  created_at   timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (request_id, tenant_id)
+    references public.approval_requests(id, tenant_id) on delete set null (request_id)
+);
+create index if not exists approval_events_subject_idx
+  on public.approval_events(tenant_id, subject_id, created_at);
+
+-- ---------------------------------------------------------------------
+-- approval_queries — one approver asking another a question.
+--
+-- "An approver can ask question only to approvers in the NFA." Asking
+-- does not pause the chain: it is a conversation beside it. Asking the
+-- requester is a different thing, clarification, which does pause.
+-- ---------------------------------------------------------------------
+create table if not exists public.approval_queries (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null default app.current_tenant()
+                 references public.tenants(id) on delete cascade,
+  subject_type text not null,
+  subject_id   uuid not null,
+  asked_by     text not null,
+  asked_to     text not null,
+  question     text not null check (length(trim(question)) > 0),
+  answer       text,
+  answered_at  timestamptz,
+  created_at   timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (asked_by, tenant_id)
+    references public.employees(employee_id, tenant_id) on delete cascade,
+  foreign key (asked_to, tenant_id)
+    references public.employees(employee_id, tenant_id) on delete cascade
+);
+create index if not exists approval_queries_subject_idx
+  on public.approval_queries(tenant_id, subject_id);
+create index if not exists approval_queries_to_idx
+  on public.approval_queries(tenant_id, asked_to) where answer is null;
 
 commit;

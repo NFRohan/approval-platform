@@ -37,6 +37,12 @@ type Props = {
   manual: ManualEntry[];
   onManualChange: (next: ManualEntry[]) => void;
   formTemplateId?: string | null;
+  /**
+   * Shown instead of the plain list of people added by hand. The
+   * approvers step puts its stage editor here: approvers there can be
+   * asked at the same time, by role, and on conditions.
+   */
+  manualSlot?: React.ReactNode;
 };
 
 
@@ -48,6 +54,7 @@ export function PeopleStep({
   manual,
   onManualChange,
   formTemplateId,
+  manualSlot,
 }: Props) {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
@@ -169,7 +176,8 @@ export function PeopleStep({
           )}
         </section>
 
-        {/* Manual section */}
+        {/* Manual section — or whatever the page puts in its place */}
+        {manualSlot ?? (
         <section className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", overflow: "hidden" }}>
           <div
             className="flex items-center justify-between"
@@ -240,6 +248,7 @@ export function PeopleStep({
             </div>
           )}
         </section>
+        )}
       </div>
     </div>
   );

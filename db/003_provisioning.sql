@@ -147,11 +147,28 @@ begin
     from public.employees e join _m m on m.old = e.id
    where e.tenant_id = v_tpl;
 
+  -- Who heads each department, its HRBP and CXO: the org roles rules
+  -- can name.
+  insert into _m select id, gen_random_uuid() from public.departments where tenant_id = v_tpl;
+  insert into public.departments (id, tenant_id, name, head_employee_id, hrbp_employee_id, cxo_employee_id, created_at)
+  select m.new, v_new, d.name, d.head_employee_id, d.hrbp_employee_id, d.cxo_employee_id, d.created_at
+    from public.departments d join _m m on m.old = d.id
+   where d.tenant_id = v_tpl;
+
   insert into _m select id, gen_random_uuid() from public.form_templates where tenant_id = v_tpl;
   insert into public.form_templates (id, tenant_id, name, category, created_by, status, created_at)
   select m.new, v_new, t.name, t.category, t.created_by, t.status, t.created_at
     from public.form_templates t join _m m on m.old = t.id
    where t.tenant_id = v_tpl;
+
+  -- A follow-up points at another template, so it is set once every
+  -- template has its new id.
+  update public.form_templates nt
+     set followup_template_id = mf.new
+    from public.form_templates t
+    join _m m  on m.old  = t.id
+    join _m mf on mf.old = t.followup_template_id
+   where t.tenant_id = v_tpl and nt.id = m.new;
 
   insert into _m select id, gen_random_uuid() from public.form_fields where tenant_id = v_tpl;
   insert into public.form_fields (id, tenant_id, form_template_id, field_type, field_name, field_config, order_index, is_required)
@@ -162,11 +179,15 @@ begin
    where f.tenant_id = v_tpl;
 
   insert into _m select id, gen_random_uuid() from public.approval_rules where tenant_id = v_tpl;
-  insert into public.approval_rules (id, tenant_id, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index)
-  select m.new, v_new, mt.new, r.approver_user_id, r.deadline_days, r.is_auto_added, r.label, r.step_index
+  -- Rules for notices and service requests have no template, so the
+  -- template join is a left one.
+  insert into public.approval_rules (id, tenant_id, subject_type, form_template_id, approver_user_id, deadline_days,
+                                     is_auto_added, label, step_index, quorum, condition, stage_label, lane, position)
+  select m.new, v_new, r.subject_type, mt.new, r.approver_user_id, r.deadline_days,
+         r.is_auto_added, r.label, r.step_index, r.quorum, r.condition, r.stage_label, r.lane, r.position
     from public.approval_rules r
     join _m m  on m.old  = r.id
-    join _m mt on mt.old = r.form_template_id
+    left join _m mt on mt.old = r.form_template_id
    where r.tenant_id = v_tpl;
 
   insert into _m select id, gen_random_uuid() from public.approval_slabs where tenant_id = v_tpl;
@@ -204,6 +225,13 @@ begin
     join _m m  on m.old  = s.id
     join _m mt on mt.old = s.form_template_id
    where s.tenant_id = v_tpl;
+
+  update public.form_submissions ns
+     set parent_submission_id = mp.new
+    from public.form_submissions s
+    join _m m  on m.old  = s.id
+    join _m mp on mp.old = s.parent_submission_id
+   where s.tenant_id = v_tpl and ns.id = m.new;
 
   insert into _m select id, gen_random_uuid() from public.submission_values where tenant_id = v_tpl;
   insert into public.submission_values (id, tenant_id, submission_id, field_name, value)
@@ -292,8 +320,8 @@ begin
   -- outward: exactly one is set on any given row, so the other three
   -- resolve to null and the arc is preserved on the far side.
   insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
-  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, status, comment, acted_at, deadline_at, reassigned_from, created_at)
-  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
+  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, status, comment, acted_at, deadline_at, reassigned_from, created_at)
+  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
     from public.approval_requests a
     join      _m m   on m.old   = a.id
     left join _m ms  on ms.old  = a.submission_id
@@ -455,6 +483,32 @@ begin
 
   return query select v_name, app.tenant_status(p_tenant);
 end $$;
+
+-- ---------------------------------------------------------------------
+-- Repair evaluations minted before the clone copied every rule.
+--
+-- The clone joined approval rules to templates and copied no subject
+-- type, so rules for notices, stationery and maintenance — which have no
+-- template — never arrived, and anything of those kinds raised in an
+-- evaluation was routed to nobody. Each such evaluation gets the
+-- template's rules for the kinds it has none of. Re-running finds
+-- nothing missing and adds nothing.
+-- ---------------------------------------------------------------------
+insert into public.approval_rules
+  (tenant_id, subject_type, form_template_id, approver_user_id, deadline_days,
+   is_auto_added, label, step_index, quorum, condition, stage_label, lane, position)
+select d.id, r.subject_type, null, r.approver_user_id, r.deadline_days,
+       r.is_auto_added, r.label, r.step_index, r.quorum, r.condition, r.stage_label, r.lane, r.position
+  from public.tenants d
+  join public.tenants tpl on tpl.kind = 'template'
+  join public.approval_rules r on r.tenant_id = tpl.id and r.subject_type <> 'form_submission'
+ where d.kind = 'demo'
+   and not exists (select 1 from public.approval_rules x
+                    where x.tenant_id = d.id and x.subject_type = r.subject_type)
+   -- every approver named must exist in the evaluation
+   and (r.approver_user_id is null
+        or exists (select 1 from public.employees e
+                    where e.tenant_id = d.id and e.employee_id = r.approver_user_id));
 
 grant execute on all functions in schema app to app_api;
 

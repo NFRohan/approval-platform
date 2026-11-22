@@ -32,7 +32,9 @@ function fmtDate(iso: string | null) {
   });
 }
 
-const TABS = ["Finance", "HR", "Admin"] as const;
+// The divisions the scope of work names. Compliance holds the ABC
+// declarations; Commercial the campaign requests and their NFAs.
+const TABS = ["Finance", "HR", "Admin", "Compliance", "Commercial"] as const;
 type Tab = (typeof TABS)[number];
 
 function FormsPage() {

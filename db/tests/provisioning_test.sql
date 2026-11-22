@@ -56,10 +56,10 @@ select pg_temp.check('two evaluations exist',
   (select count(*)::int from public.tenants where kind='demo' and name like 'Prov Test%'), 2);
 
 select pg_temp.check('the template still has its employees',
-  (select count(*)::int from public.employees where tenant_id = current_setting('t.tpl')::uuid), 10);
+  (select count(*)::int from public.employees where tenant_id = current_setting('t.tpl')::uuid), 15);
 
 select pg_temp.check('the clone has the same employees',
-  (select count(*)::int from public.employees where tenant_id = current_setting('t.a')::uuid), 10);
+  (select count(*)::int from public.employees where tenant_id = current_setting('t.a')::uuid), 15);
 
 select pg_temp.check('employee identifiers copy across unchanged',
   (select name from public.employees
@@ -111,6 +111,38 @@ select pg_temp.check('two evaluations share no rows',
   (select count(*)::int from public.form_submissions
     where id in (select id from public.form_submissions where tenant_id = current_setting('t.b')::uuid)
       and tenant_id = current_setting('t.a')::uuid), 0);
+
+-- Rules for notices, stationery and maintenance have no template. The
+-- clone used to join every rule to a template and copy no subject type,
+-- so evaluations arrived with none of them and a notice raised in one
+-- was routed to nobody.
+select pg_temp.check('the clone has every approval rule the template has, by kind',
+  (select string_agg(subject_type || ':' || n, ',' order by subject_type)
+     from (select subject_type, count(*) n from public.approval_rules
+            where tenant_id = current_setting('t.a')::uuid group by subject_type) x),
+  (select string_agg(subject_type || ':' || n, ',' order by subject_type)
+     from (select subject_type, count(*) n from public.approval_rules
+            where tenant_id = current_setting('t.tpl')::uuid group by subject_type) x));
+
+select pg_temp.check('no rule points at the template''s form',
+  (select count(*)::int from public.approval_rules r
+     join public.form_templates t on t.id = r.form_template_id
+    where r.tenant_id = current_setting('t.a')::uuid and t.tenant_id <> r.tenant_id), 0);
+
+select pg_temp.check('the clone has the template''s departments',
+  (select count(*)::int from public.departments where tenant_id = current_setting('t.a')::uuid),
+  (select count(*)::int from public.departments where tenant_id = current_setting('t.tpl')::uuid));
+
+select pg_temp.check('a follow-up points at the clone''s own template',
+  (select count(*)::int from public.form_templates t
+     join public.form_templates f on f.id = t.followup_template_id
+    where t.tenant_id = current_setting('t.a')::uuid and f.tenant_id <> t.tenant_id), 0);
+
+select pg_temp.check('...and none was lost on the way',
+  (select count(*)::int from public.form_templates
+    where tenant_id = current_setting('t.a')::uuid and followup_template_id is not null),
+  (select count(*)::int from public.form_templates
+    where tenant_id = current_setting('t.tpl')::uuid and followup_template_id is not null));
 
 -- =====================================================================
 -- 3. The chain arrives intact and still has exactly one live step
@@ -198,7 +230,7 @@ select pg_temp.check('and moves the password timestamp',
 -- 7. The template is untouched by all of it
 -- =====================================================================
 select pg_temp.check('the template still has its submissions',
-  (select count(*)::int from public.form_submissions where tenant_id = current_setting('t.tpl')::uuid), 4);
+  (select count(*)::int from public.form_submissions where tenant_id = current_setting('t.tpl')::uuid), 6);
 select pg_temp.check('the staff trail outlives the purged evaluation',
   (select count(*)::int from public.staff_audit
     where kind = 'tenant.purge' and tenant_ref = current_setting('s.a')), 1);

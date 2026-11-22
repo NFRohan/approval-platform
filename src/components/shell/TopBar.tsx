@@ -138,7 +138,12 @@ function NoteRow({
   // "Your approval is needed" used to open the requester's status page —
   // read-only, no way to act, and the only route on was the sidebar. It
   // belongs in the queue, on the request it named.
-  if (n.kind === "approval.turn" && n.entity_id) {
+  // A return or a review request also puts a step in your queue; a
+  // question about a notice or service request is answered from there.
+  const toQueue =
+    n.kind === "approval.turn" || n.kind === "approval.returned" || n.kind === "approval.review" ||
+    (n.kind === "question.asked" && n.entity_type !== "form_submission");
+  if (toQueue && n.entity_id) {
     return (
       <Link to="/approvals" search={{ focus: n.entity_id }} {...shared}>
         {children}
@@ -175,6 +180,14 @@ const DOT: Record<string, string> = {
   "submission.rejected": "var(--color-danger, #B91C1C)",
   "submission.approved": "var(--color-success)",
   "submission.completed": "var(--color-success)",
+  // The kinds the engine actually writes.
+  "request.rejected": "var(--color-danger, #B91C1C)",
+  "request.cancelled": "var(--color-danger, #B91C1C)",
+  "request.completed": "var(--color-success)",
+  "request.followup": "var(--color-success)",
+  "approval.returned": "#D97706",
+  "question.asked": "#6366F1",
+  "question.answered": "#6366F1",
 };
 
 function ago(iso: string): string {

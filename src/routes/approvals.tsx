@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Inbox, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
-import { OPEN_STATUSES } from "@/lib/chain";
+import { OPEN_STATUSES, answerQuestion, askQuestion, returnToApprover } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import {
   Dialog,
@@ -164,13 +164,23 @@ function ApprovalsInbox() {
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
   const [modal, setModal] = useState<
-    | { kind: "reject" | "clarify" | "forward" | "reviewer"; row: Row }
+    | { kind: "reject" | "clarify" | "forward" | "reviewer" | "return" | "ask"; row: Row }
     | null
   >(null);
   const [comment, setComment] = useState("");
   const [personId, setPersonId] = useState("");
   const [people, setPeople] = useState<{ employee_id: string; name: string; designation: string | null }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  // The rest of the chain the open dialog is about: who already approved
+  // (somebody to return it to) and who else is on it (somebody to ask).
+  const [chainRows, setChainRows] = useState<
+    { id: string; approver_user_id: string | null; status: string | null; step_index: number | null; lane: number | null; lane_step: number | null }[]
+  >([]);
+  // Questions other approvers have asked me, waiting for an answer.
+  const [myQuestions, setMyQuestions] = useState<
+    { id: string; subject_id: string; subject_type: string; asked_by: string; question: string; created_at: string }[]
+  >([]);
+  const [qAnswers, setQAnswers] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,6 +191,14 @@ function ApprovalsInbox() {
     // itself only writes one reminder per person per day, so calling it
     // on every visit is harmless.
     await db.rpc("remind_overdue", {});
+
+    const { data: qs } = await db
+      .from("approval_queries")
+      .select("id, subject_id, subject_type, asked_by, question, answer, created_at")
+      .eq("asked_to", currentUser.employee_id)
+      .is("answer", null)
+      .order("created_at");
+    setMyQuestions((qs ?? []) as typeof myQuestions);
 
     // Dhaka's date, not UTC's: the database judges delegation windows on
     // the same calendar, so the queue and the check agree.
@@ -565,19 +583,85 @@ function ApprovalsInbox() {
 
     toast.success(modal.kind === "forward"
       ? "Forwarded — it is with " + toName + " now"
-      : toName + " will be asked after you");
-    // Forwarding hands the step away, so it leaves this queue. Adding a
-    // reviewer does not: the step is still ours to answer.
-    if (modal.kind === "forward") fadeAndRemove(modal.row.id);
+      : toName + " will review it first; it comes back to you after");
+    // Both hand the step on for now: forwarding for good, a review until
+    // the reviewer has passed it back.
+    fadeAndRemove(modal.row.id);
     setModal(null);
     setComment("");
     setPersonId("");
     setSubmitting(false);
   };
 
+  // Return and Ask both choose from the request's own chain.
+  const openChainDialog = async (kind: "return" | "ask", row: Row) => {
+    setComment("");
+    setPersonId("");
+    setChainRows([]);
+    setModal({ kind, row });
+    const { data } = await db
+      .from("approval_requests")
+      .select("id, approver_user_id, status, step_index, lane, lane_step")
+      .eq("subject_id", row.subject_id ?? "")
+      .order("step_index")
+      .order("lane")
+      .order("lane_step");
+    setChainRows((data ?? []) as typeof chainRows);
+  };
+
+  const nameFor = (id: string | null | undefined) =>
+    (id && people.find((p) => p.employee_id === id)?.name) || id || "Somebody";
+
+  const submitChainDialog = async () => {
+    if (!modal) return;
+    if (!personId) {
+      toast.error(modal.kind === "return" ? "Choose who to return it to" : "Choose who to ask");
+      return;
+    }
+    if (!comment.trim()) {
+      toast.error(modal.kind === "return" ? "Say what needs another look" : "Write the question");
+      return;
+    }
+    setSubmitting(true);
+    const { error } = modal.kind === "return"
+      ? await returnToApprover(modal.row.id, personId, currentUser.employee_id, comment)
+      : await askQuestion(modal.row.subject_id ?? "", personId, comment, currentUser.employee_id);
+    setSubmitting(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (modal.kind === "return") {
+      const target = chainRows.find((c) => c.id === personId);
+      toast.success("Returned to " + nameFor(target?.approver_user_id) + " — it comes back to you after");
+      fadeAndRemove(modal.row.id);
+    } else {
+      toast.success("Asked " + nameFor(personId) + " — the answer will appear on the request");
+    }
+    setModal(null);
+    setComment("");
+    setPersonId("");
+  };
+
+  const answerMine = async (id: string) => {
+    const text = (qAnswers[id] ?? "").trim();
+    if (!text) {
+      toast.error("Write an answer first");
+      return;
+    }
+    const { error } = await answerQuestion(id, text, currentUser.employee_id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Answered");
+    setMyQuestions((qs) => qs.filter((q) => q.id !== id));
+  };
+
   const submitModal = async () => {
     if (!modal) return;
     if (modal.kind === "forward" || modal.kind === "reviewer") return submitPerson();
+    if (modal.kind === "return" || modal.kind === "ask") return submitChainDialog();
     if (!comment.trim()) {
       toast.error("Please provide a reason");
       return;
@@ -618,6 +702,47 @@ function ApprovalsInbox() {
           Pending requests assigned to you ({currentUser.name}).
         </p>
       </div>
+
+      {myQuestions.length > 0 && (
+        <div className="rounded-xl bg-white mb-5" style={{ border: "1px solid #C7D2FE", padding: "14px 16px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#3730A3", marginBottom: 10 }}>
+            Questions for you from other approvers
+          </div>
+          <div className="flex flex-col gap-3">
+            {myQuestions.map((q) => (
+              <div key={q.id} className="rounded-lg" style={{ padding: "10px 12px", background: "#F8FAFF", border: "1px solid #E0E7FF" }}>
+                <div style={{ fontSize: 12, color: "#6366F1" }}>
+                  {nameFor(q.asked_by)} asked about{" "}
+                  {q.subject_type === "form_submission" ? (
+                    <Link to="/status/$submissionId" params={{ submissionId: q.subject_id }} style={{ color: "#4338CA", textDecoration: "underline" }}>
+                      AMS-{q.subject_id.slice(0, 8).toUpperCase()}
+                    </Link>
+                  ) : (
+                    <span>AMS-{q.subject_id.slice(0, 8).toUpperCase()}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 13.5, color: "#18181B", margin: "4px 0 8px" }}>{q.question}</div>
+                <div className="flex gap-2">
+                  <input
+                    value={qAnswers[q.id] ?? ""}
+                    onChange={(e) => setQAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                    placeholder="Your answer"
+                    className="flex-1 rounded-md"
+                    style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", background: "#fff" }}
+                  />
+                  <button
+                    onClick={() => answerMine(q.id)}
+                    className="rounded-md text-white font-medium"
+                    style={{ padding: "7px 12px", fontSize: 13, background: "#4F46E5" }}
+                  >
+                    Answer
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-sm text-zinc-500">Loading…</div>
@@ -815,6 +940,30 @@ function ApprovalsInbox() {
                       >
                         Add reviewer
                       </button>
+                      <button
+                        onClick={() => openChainDialog("return", r)}
+                        className="rounded-md font-medium bg-white"
+                        style={{
+                          padding: "7px 12px",
+                          fontSize: 13,
+                          color: "#52525B",
+                          border: "1px solid #E4E4E7",
+                        }}
+                      >
+                        Return
+                      </button>
+                      <button
+                        onClick={() => openChainDialog("ask", r)}
+                        className="rounded-md font-medium bg-white"
+                        style={{
+                          padding: "7px 12px",
+                          fontSize: 13,
+                          color: "#52525B",
+                          border: "1px solid #E4E4E7",
+                        }}
+                      >
+                        Ask
+                      </button>
                       </>
                       )}
                       <span style={{ color: "#A1A1AA", marginLeft: 4 }}>
@@ -918,7 +1067,9 @@ function ApprovalsInbox() {
               {modal?.kind === "reject" ? "Reason for rejection"
                 : modal?.kind === "clarify" ? "What clarification is needed?"
                 : modal?.kind === "forward" ? "Forward this step to somebody else"
-                : "Add a reviewer after this step"}
+                : modal?.kind === "return" ? "Return it to an earlier approver"
+                : modal?.kind === "ask" ? "Ask another approver a question"
+                : "Ask somebody to review it before you decide"}
             </DialogTitle>
           </DialogHeader>
           {(modal?.kind === "forward" || modal?.kind === "reviewer") && (
@@ -946,7 +1097,51 @@ function ApprovalsInbox() {
               <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>
                 {modal?.kind === "forward"
                   ? "The step keeps its place in the chain; only who answers it changes."
-                  : "They are asked after you, before anyone above you."}
+                  : "They are asked first. It comes back to you once they have reviewed it."}
+              </span>
+            </label>
+          )}
+          {modal?.kind === "return" && (
+            <label className="flex flex-col gap-1">
+              <span style={{ fontSize: 11.5, color: "#71717A" }}>Return to</span>
+              <select
+                value={personId}
+                onChange={(e) => setPersonId(e.target.value)}
+                className="rounded-md bg-white"
+                style={{ padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}
+              >
+                <option value="">Choose somebody who already approved it…</option>
+                {chainRows
+                  .filter((c) => c.status === "approved")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{nameFor(c.approver_user_id)}</option>
+                  ))}
+              </select>
+              <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>
+                {chainRows.some((c) => c.status === "approved")
+                  ? "It goes back to them, and everyone after them approves it again in order — you included."
+                  : "Nobody has approved this yet, so there is nobody to return it to."}
+              </span>
+            </label>
+          )}
+          {modal?.kind === "ask" && (
+            <label className="flex flex-col gap-1">
+              <span style={{ fontSize: 11.5, color: "#71717A" }}>Ask</span>
+              <select
+                value={personId}
+                onChange={(e) => setPersonId(e.target.value)}
+                className="rounded-md bg-white"
+                style={{ padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}
+              >
+                <option value="">Choose an approver on this request…</option>
+                {Array.from(new Set(chainRows.map((c) => c.approver_user_id).filter(Boolean) as string[]))
+                  .filter((id) => id !== currentUser.employee_id)
+                  .map((id) => (
+                    <option key={id} value={id}>{nameFor(id)}</option>
+                  ))}
+              </select>
+              <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>
+                The request does not wait: it is a question beside it. To ask the requester, use Clarify.
               </span>
             </label>
           )}
@@ -958,6 +1153,8 @@ function ApprovalsInbox() {
               modal?.kind === "reject"
                 ? "Explain why this request is being rejected…"
                 : modal?.kind === "clarify" ? "Describe what needs to be clarified…"
+                : modal?.kind === "return" ? "What needs another look?"
+                : modal?.kind === "ask" ? "Your question"
                 : "Why are you forwarding this? (optional)"
             }
           />}

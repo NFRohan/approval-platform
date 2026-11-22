@@ -10,7 +10,7 @@ import { FieldRenderer } from "@/components/builder/FieldRenderer";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { DEFAULT_LABELS, isEmbedded, isPermission } from "@/components/builder/palette";
 import { type ApprovalSlab } from "@/lib/approvalSlabs";
-import { resolveLadder, resolveWatcher } from "@/lib/routing";
+import { resolveWatcher } from "@/lib/routing";
 import { addWorkingDays } from "@/lib/workdays";
 import { uploadAttachment } from "@/lib/attachment-fn";
 
@@ -44,6 +44,18 @@ type NotifRule = {
   label: string | null;
   is_auto_added: boolean | null;
   employee?: { name: string; designation: string | null };
+};
+
+// One step of the plan preview_approval_chain returns.
+type PlanStep = {
+  step_index: number;
+  lane: number;
+  lane_step: number;
+  approver: string;
+  days: number;
+  quorum: number | null;
+  stage_label: string | null;
+  lane_label: string | null;
 };
 
 type WizardStep = {
@@ -208,6 +220,46 @@ function FillFormPage() {
     })();
     return () => { cancelled = true; };
   }, [currentUser.employee_id]);
+
+  // Who will be asked, from the planner the chain is built from, given
+  // the answers on screen. Fetched when the review step is reached, so
+  // what it shows is what submitting will do.
+  const [plan, setPlan] = useState<PlanStep[] | null>(null);
+  const onReview = steps.length > 0 && stepIndex === steps.length - 1;
+  useEffect(() => {
+    if (!onReview || !currentUser.employee_id) return;
+    let cancelled = false;
+    setPlan(null);
+    (async () => {
+      const answers: Record<string, string> = {};
+      for (const r of answerRows("preview")) if (r.field_name) answers[r.field_name] = r.value;
+      const { data, error } = await db.rpc("preview_approval_chain", {
+        p_form_template_id: formId,
+        p_requester: currentUser.employee_id,
+        p_answers: answers,
+      });
+      if (cancelled) return;
+      if (error) {
+        setPlan([]);
+        return;
+      }
+      const steps = (data ?? []) as PlanStep[];
+      // Roles resolve to people this screen may not have named yet.
+      const missing = Array.from(new Set(steps.map((x) => x.approver))).filter((id) => !empMap[id]);
+      if (missing.length) {
+        const { data: emps } = await db.from("employees").select("employee_id, name, designation").in("employee_id", missing);
+        if (cancelled) return;
+        setEmpMap((prev) => {
+          const next = { ...prev };
+          (emps ?? []).forEach((e) => { next[e.employee_id] = { name: e.name, designation: e.designation }; });
+          return next;
+        });
+      }
+      setPlan(steps);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onReview, currentUser.employee_id, formId]);
 
   function setValue(id: string, v: unknown) {
     setValues((prev) => ({ ...prev, [id]: v }));
@@ -540,7 +592,7 @@ function FillFormPage() {
           </div>
 
           {isLastStep ? (
-            <SummaryStep fields={fields} values={values} genValue={genValue} approvalRules={approvalRules} notifRules={notifRules} employeeData={employeeData} slabs={slabs} empMap={empMap} requester={currentUser.employee_id} lineManager={lineManager} formCreator={formCreator} />
+            <SummaryStep fields={fields} values={values} genValue={genValue} plan={plan} notifRules={notifRules} employeeData={employeeData} empMap={empMap} requester={currentUser.employee_id} lineManager={lineManager} formCreator={formCreator} />
           ) : (
             <div className="flex flex-col gap-3.5">
               {current.fields.map((f) =>
@@ -626,14 +678,13 @@ function GenFieldDisplay({ field, value }: { field: PlacedField; value: string }
   );
 }
 
-function SummaryStep({ fields, values, genValue, approvalRules, notifRules, employeeData, slabs, empMap, requester, lineManager, formCreator }: {
+function SummaryStep({ fields, values, genValue, plan, notifRules, employeeData, empMap, requester, lineManager, formCreator }: {
   fields: PlacedField[];
   values: Record<string, unknown>;
   genValue: (kind: FieldKind) => string;
-  approvalRules: ApproverRule[];
+  plan: PlanStep[] | null;
   notifRules: NotifRule[];
   employeeData: EmployeeRow | null;
-  slabs: ApprovalSlab[];
   empMap: Record<string, { name: string; designation: string | null }>;
   requester: string | null;
   lineManager: string | null;
@@ -643,35 +694,51 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
   const hasLinked = fields.some((f) => isEmbedded(f.kind));
   const cardNumber = employeeData?.gate_pass_card_number;
 
-  // Resolve slab-based approver/notifier from current money field value
-  const moneyField = fields.find((f) => f.kind === "money");
-  const moneyAmount = moneyField
-    ? parseFloat(String(values[moneyField.id] ?? "0").replace(/[^0-9.]/g, "")) || 0
-    : 0;
-  // The ladder exactly as the database will build it: the requester's
-  // own line manager, every finance threshold the amount crosses, nobody
-  // approving their own request, and nobody asked twice in a row — so
-  // the person submitting sees the whole ladder before they commit to
-  // it rather than finding out afterwards.
-  const ladder = resolveLadder(approvalRules, { requester, lineManager, amount: moneyAmount, slabs });
-  const resolvedApprovalRules: ApproverRule[] = ladder.map((st) => ({
-    approver_user_id: st.approver,
-    deadline_days: st.deadlineDays,
-    label: st.rule.label,
-    is_auto_added: null,
-    employee: empMap[st.approver],
-  }));
+  // The plan, phase by phase. A phase with one track is a sequence; one
+  // with several runs them at the same time.
+  const phases: { idx: number; rows: PlanStep[]; lanes: number; quorum: number | null; label: string | null }[] = [];
+  for (const st of plan ?? []) {
+    let ph = phases.find((p) => p.idx === st.step_index);
+    if (!ph) {
+      ph = { idx: st.step_index, rows: [], lanes: 0, quorum: null, label: null };
+      phases.push(ph);
+    }
+    ph.rows.push(st);
+    ph.quorum = ph.quorum ?? st.quorum;
+    ph.label = ph.label ?? st.stage_label;
+  }
+  phases.forEach((ph) => { ph.lanes = new Set(ph.rows.map((r) => r.lane)).size; });
 
   // Watchers as the engine resolves them: roles become people, the first
-  // approver is told by their own notification instead, and nobody twice.
-  const firstApprover = ladder[0]?.approver ?? null;
+  // approvers are told by their own notification instead, and nobody twice.
+  const firstApprovers = new Set((plan ?? []).filter((x) => x.step_index === 0 && x.lane_step === 0).map((x) => x.approver));
   const seen = new Set<string>();
   const resolvedNotifRules: NotifRule[] = notifRules.flatMap((r) => {
     const who = resolveWatcher(r, { requester, lineManager, formCreator });
-    if (!who || who === firstApprover || seen.has(who)) return [];
+    if (!who || firstApprovers.has(who) || seen.has(who)) return [];
     seen.add(who);
     return [{ ...r, notifyee_user_id: who, employee: empMap[who] }];
   });
+
+  const personRow = (st: PlanStep, key: string, last: boolean, prefix?: string) => (
+    <div key={key} className="flex items-center justify-between gap-3" style={{ padding: "10px 16px", borderBottom: last ? "none" : "1px solid #F4F4F5" }}>
+      <div className="flex items-center gap-2.5">
+        <span className="inline-flex items-center justify-center rounded-full font-semibold" style={{ width: 28, height: 28, background: "#EEF2FF", color: "#4338CA", fontSize: 11 }}>
+          <User size={12} />
+        </span>
+        <div>
+          <div className="text-[13px] font-medium" style={{ color: "#18181B" }}>{empMap[st.approver]?.name ?? st.approver}</div>
+          <div className="text-[11px]" style={{ color: "#71717A" }}>
+            {[prefix, empMap[st.approver]?.designation].filter(Boolean).join(" — ")}
+          </div>
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-[11px]" style={{ color: "#71717A" }}>Due by</div>
+        <div className="text-[12px] font-medium" style={{ color: "#3F3F46" }}>{deadline(st.days)}</div>
+      </div>
+    </div>
+  );
 
   function displayValue(f: PlacedField): string {
     if (f.kind.startsWith("gen_")) return genValue(f.kind) || "—";
@@ -720,33 +787,46 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
         </div>
       )}
 
-      {/* Who approves */}
-      {resolvedApprovalRules.length > 0 && (
-        <div className="rounded-xl bg-white overflow-hidden" style={{ border: "1px solid #E4E4E7" }}>
-          <div style={{ padding: "12px 16px", borderBottom: "1px solid #F4F4F5", background: "#FAFAFA" }}>
-            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#52525B" }}>Who will approve</span>
-          </div>
-          <div>
-            {resolvedApprovalRules.map((r, i) => (
-              <div key={i} className="flex items-center justify-between gap-3" style={{ padding: "10px 16px", borderBottom: i < resolvedApprovalRules.length - 1 ? "1px solid #F4F4F5" : "none" }}>
-                <div className="flex items-center gap-2.5">
-                  <span className="inline-flex items-center justify-center rounded-full font-semibold" style={{ width: 28, height: 28, background: "#EEF2FF", color: "#4338CA", fontSize: 11 }}>
-                    <User size={12} />
-                  </span>
-                  <div>
-                    <div className="text-[13px] font-medium" style={{ color: "#18181B" }}>{r.employee?.name ?? r.approver_user_id}</div>
-                    {r.employee?.designation && <div className="text-[11px]" style={{ color: "#71717A" }}>{r.employee.designation}</div>}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px]" style={{ color: "#71717A" }}>Due by</div>
-                  <div className="text-[12px] font-medium" style={{ color: "#3F3F46" }}>{deadline(r.deadline_days)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Who approves — the plan the chain will be built from */}
+      <div className="rounded-xl bg-white overflow-hidden" style={{ border: "1px solid #E4E4E7" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #F4F4F5", background: "#FAFAFA" }}>
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#52525B" }}>Who will approve</span>
         </div>
-      )}
+        {plan === null ? (
+          <div style={{ padding: "12px 16px", fontSize: 12.5, color: "#A1A1AA" }}>Working out who will be asked…</div>
+        ) : phases.length === 0 ? (
+          <div style={{ padding: "12px 16px", fontSize: 12.5, color: "#A1A1AA" }}>Nobody — this form has no approvers set up.</div>
+        ) : (
+          <div>
+            {phases.map((ph, pi) => {
+              const lastPhase = pi === phases.length - 1;
+              if (ph.lanes === 1) {
+                return ph.rows.map((st, ri) => personRow(st, `${pi}-${ri}`, lastPhase && ri === ph.rows.length - 1, st.stage_label ?? undefined));
+              }
+              const laneSizes: Record<number, number> = {};
+              ph.rows.forEach((r) => { laneSizes[r.lane] = (laneSizes[r.lane] ?? 0) + 1; });
+              return (
+                <div key={pi} style={{ borderBottom: lastPhase ? "none" : "1px solid #F4F4F5" }}>
+                  <div style={{ padding: "8px 16px", background: "#FFFBEB", fontSize: 11.5, color: "#92400E", fontWeight: 600 }}>
+                    {ph.label ? `${ph.label} — ` : ""}at the same time ·{" "}
+                    {ph.quorum ? `any ${ph.quorum} of ${ph.lanes} must clear` : `all ${ph.lanes} must clear`}
+                  </div>
+                  {ph.rows.map((st, ri) =>
+                    personRow(
+                      st,
+                      `${pi}-${ri}`,
+                      ri === ph.rows.length - 1,
+                      st.lane_label
+                        ? laneSizes[st.lane] > 1 ? `${st.lane_label} · ${st.lane_step + 1} of ${laneSizes[st.lane]}` : st.lane_label
+                        : undefined,
+                    ),
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Who gets notified */}
       {resolvedNotifRules.length > 0 && (

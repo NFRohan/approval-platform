@@ -42,7 +42,7 @@ class Query<R = any, Out = R[] | null> implements PromiseLike<Result<Out>> {
     op: 'select' | 'insert' | 'update' | 'delete';
     columns?: string | null;
     filters: Filter[];
-    order?: { col: string; asc: boolean } | null;
+    order?: { col: string; asc: boolean } | { col: string; asc: boolean }[] | null;
     limit?: number | null;
     rows?: Row | Row[];
     patch?: Row;
@@ -102,8 +102,12 @@ class Query<R = any, Out = R[] | null> implements PromiseLike<Result<Out>> {
     return this;
   }
 
+  // Each call adds a key, the first most significant — the way
+  // `.order('a').order('b')` reads. It used to keep only the last one.
   order(col: string, opts: { ascending?: boolean } = {}) {
-    this.body.order = { col, asc: opts.ascending !== false };
+    const key = { col, asc: opts.ascending !== false };
+    const prev = this.body.order;
+    this.body.order = prev ? [...(Array.isArray(prev) ? prev : [prev]), key] : key;
     return this;
   }
 

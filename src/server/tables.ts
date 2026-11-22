@@ -53,15 +53,40 @@ export const TABLES: Record<string, TableDef> = {
     ['id', 'submission_id', 'notice_id', 'stationery_request_id', 
       'maintenance_request_id', 'subject_id', 'subject_type', 
       'approver_user_id', 'step_index', 'status', 'comment', 'acted_at', 
-      'deadline_at', 'reassigned_from', 'created_at'],
+      'deadline_at', 'reassigned_from', 'created_at',
+      // Stage 1: a phase (step_index) runs lanes in parallel, each a
+      // sequence of lane_step.
+      'lane', 'lane_step', 'lane_label', 'quorum', 'stage_label'],
     [],
     [],
   ),
   approval_rules: T(
     ['id', 'subject_type', 'form_template_id', 'approver_user_id', 
-      'deadline_days', 'is_auto_added', 'label', 'step_index'],
+      'deadline_days', 'is_auto_added', 'label', 'step_index',
+      'quorum', 'condition', 'stage_label', 'lane', 'position'],
     ['subject_type', 'form_template_id', 'approver_user_id', 
-      'deadline_days', 'is_auto_added', 'label', 'step_index'],
+      'deadline_days', 'is_auto_added', 'label', 'step_index',
+      'quorum', 'condition', 'stage_label', 'lane', 'position'],
+    ['condition'],
+  ),
+  // Read only: the engine writes the trail, and nothing else may.
+  approval_events: T(
+    ['id', 'request_id', 'subject_type', 'subject_id', 'actor_id', 'action',
+      'comment', 'target_id', 'created_at'],
+    [],
+    [],
+  ),
+  // Read only: asked and answered through ask_question / answer_question,
+  // which check that both people are on the request.
+  approval_queries: T(
+    ['id', 'subject_type', 'subject_id', 'asked_by', 'asked_to', 'question',
+      'answer', 'answered_at', 'created_at'],
+    [],
+    [],
+  ),
+  departments: T(
+    ['id', 'name', 'head_employee_id', 'hrbp_employee_id', 'cxo_employee_id', 'created_at'],
+    ['name', 'head_employee_id', 'hrbp_employee_id', 'cxo_employee_id'],
     [],
   ),
   approval_slabs: T(
@@ -102,13 +127,15 @@ export const TABLES: Record<string, TableDef> = {
     ['field_config'],
   ),
   form_submissions: T(
-    ['id', 'form_template_id', 'submitted_by', 'status', 'submitted_at'],
+    ['id', 'form_template_id', 'submitted_by', 'status', 'submitted_at',
+      'parent_submission_id'],
     ['form_template_id', 'submitted_by', 'status', 'submitted_at'],
     [],
   ),
   form_templates: T(
-    ['id', 'name', 'category', 'created_by', 'status', 'created_at'],
-    ['name', 'category', 'created_by', 'status'],
+    ['id', 'name', 'category', 'created_by', 'status', 'created_at',
+      'followup_template_id'],
+    ['name', 'category', 'created_by', 'status', 'followup_template_id'],
     [],
   ),
   item_stock: T(
@@ -217,6 +244,15 @@ export const RPCS: Record<string, readonly string[]> = {
   // No scheduler in a demo, so the approvals screen asks for this on
   // load. In a real deployment it would be a timer.
   remind_overdue:       [],
+  // Stage 1. Each checks who is acting; see db/005_chain.sql.
+  return_to_approver:   ['p_request_id', 'p_target_id', 'p_comment', 'p_actor'],
+  recall_submission:    ['p_submission_id', 'p_actor'],
+  cancel_submission:    ['p_submission_id', 'p_comment', 'p_actor'],
+  ask_question:         ['p_subject_id', 'p_to', 'p_question', 'p_actor'],
+  answer_question:      ['p_query_id', 'p_answer', 'p_actor'],
+  // Read only: the planner the chain is built from, given the answers on
+  // screen, so the review step shows exactly what will happen.
+  preview_approval_chain: ['p_form_template_id', 'p_requester', 'p_answers'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],

@@ -23,7 +23,8 @@ export type QueryBody = {
   op: 'select' | 'insert' | 'update' | 'delete';
   columns?: string | null;
   filters?: Filter[];
-  order?: { col: string; asc?: boolean } | null;
+  /** One column, or several in priority order. */
+  order?: { col: string; asc?: boolean } | { col: string; asc?: boolean }[] | null;
   limit?: number | null;
   rows?: Record<string, unknown> | Record<string, unknown>[];
   patch?: Record<string, unknown>;
@@ -82,9 +83,15 @@ function whereClause(table: Table, filters: Filter[] | undefined, params: unknow
 
 function orderLimit(table: Table, body: QueryBody): { text: string; applied: number } {
   let text = '';
-  if (body.order?.col) {
-    const dir = body.order.asc === false ? 'desc' : 'asc';
-    text += ` order by ${quote(resolveColumn(table, body.order.col))} ${dir}`;
+  // Several keys when a screen needs them — a chain is ordered by phase,
+  // then lane, then step within the lane.
+  const keys = (Array.isArray(body.order) ? body.order : body.order ? [body.order] : [])
+    .filter((o) => o && o.col)
+    .slice(0, 4);
+  if (keys.length) {
+    text += ' order by ' + keys
+      .map((o) => `${quote(resolveColumn(table, o.col))} ${o.asc === false ? 'desc' : 'asc'}`)
+      .join(', ');
   }
   // A ceiling, and also the default. Every screen in this application
   // read unbounded until now; one prospect generating data was all it

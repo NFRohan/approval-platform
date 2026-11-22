@@ -370,10 +370,12 @@ begin
 end $$;
 
 -- =====================================================================
--- 9. A reviewer inserted mid-chain does not strand the rest
+-- 9. A reviewer is asked before the approver who asked for them
+--    "An approver should be able to add reviewer to review the ticket
+--    before s/he gives approval."
 -- =====================================================================
 do $$
-declare v_id uuid; v_total int; v_seq text; v_dupes int;
+declare v_id uuid; v_rev uuid; v_total int; v_seq text; v_dupes int; v_live text;
 begin
   set local role app_api;
   perform pg_temp.ctx();
@@ -385,29 +387,41 @@ begin
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000005' and step_index = 0;
 
-  perform public.add_reviewer(v_id, 'EMP-EX', 3, pg_temp.owner(v_id));
+  v_rev := public.add_reviewer(v_id, 'EMP-EX', 3, pg_temp.owner(v_id));
 
   select count(*)::int into v_total from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000005';
   if v_total <> 5 then raise exception 'FAIL: % steps after inserting one, expected 5', v_total; end if;
 
-  select string_agg(approver_user_id, ',' order by step_index) into v_seq
+  select string_agg(approver_user_id, ',' order by step_index, lane, lane_step) into v_seq
     from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000005';
-  if v_seq <> 'EMP-LM,EMP-EX,EMP-C1,EMP-C2,EMP-C3' then
-    raise exception 'FAIL: order is % after inserting a reviewer', v_seq;
+  if v_seq <> 'EMP-EX,EMP-LM,EMP-C1,EMP-C2,EMP-C3' then
+    raise exception 'FAIL: order is % after adding a reviewer', v_seq;
   end if;
 
-  -- Renumbering must leave the indexes contiguous and unique, or the
-  -- steps above the insertion are unreachable.
+  select approver_user_id into v_live from public.approval_requests
+   where submission_id = '44444444-0000-4000-8000-000000000005' and status = 'pending';
+  if v_live <> 'EMP-EX' then raise exception 'FAIL: the live step is with % not the reviewer', v_live; end if;
+  if (select status from public.approval_requests where id = v_id) <> 'waiting' then
+    raise exception 'FAIL: the approver who asked for a review is not waiting for it';
+  end if;
+
+  -- Positions stay unique, or a step behind the insertion is unreachable.
   select count(*)::int into v_dupes from (
-    select step_index from public.approval_requests
+    select step_index, lane, lane_step from public.approval_requests
      where submission_id = '44444444-0000-4000-8000-000000000005'
-     group by step_index having count(*) > 1) d;
-  if v_dupes <> 0 then raise exception 'FAIL: % duplicated step indexes', v_dupes; end if;
+     group by step_index, lane, lane_step having count(*) > 1) d;
+  if v_dupes <> 0 then raise exception 'FAIL: % duplicated positions', v_dupes; end if;
+
+  -- When the reviewer passes it on, it comes back to the approver.
+  perform public.act_on_approval(v_rev, 'approve', 'Figures check out', 'EMP-EX');
+  select approver_user_id into v_live from public.approval_requests
+   where submission_id = '44444444-0000-4000-8000-000000000005' and status = 'pending';
+  if v_live <> 'EMP-LM' then raise exception 'FAIL: after review it went to % not back to EMP-LM', v_live; end if;
 
   reset role;
-  raise notice 'pass: a reviewer inserted mid-chain renumbers the rest cleanly';
+  raise notice 'pass: a reviewer is asked first, and the request comes back to the approver after';
 end $$;
 
 -- The whole chain is still walkable after the insertion — the real
@@ -427,14 +441,14 @@ begin
     if n > 10 then raise exception 'FAIL: the chain does not terminate'; end if;
   end loop;
 
-  if n <> 5 then raise exception 'FAIL: walked % steps, expected 5', n; end if;
+  if n <> 4 then raise exception 'FAIL: walked % more steps, expected 4', n; end if;
 
   select status into v_status from public.form_submissions
    where id = '44444444-0000-4000-8000-000000000005';
   if v_status <> 'completed' then raise exception 'FAIL: submission is %', v_status; end if;
 
   reset role;
-  raise notice 'pass: all five steps including the inserted one can be walked';
+  raise notice 'pass: the rest of the chain is walkable after the review';
 end $$;
 
 -- =====================================================================

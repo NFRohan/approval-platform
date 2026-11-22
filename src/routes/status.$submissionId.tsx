@@ -1,6 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import { Award, Clipboard, Clock, FileText, Link2 } from "lucide-react";
+import { Award, Clipboard, Clock, CornerDownRight, FileText, Link2, MessageCircleQuestion, Undo2, XCircle } from "lucide-react";
+import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { StatusBadge, type StatusKey } from "@/components/StatusBadge";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
@@ -12,6 +13,8 @@ import {
 } from "@/components/ApprovalTimeline";
 import { listAttachments, type AttachmentInfo } from "@/lib/attachment-fn";
 import { AttachmentLink } from "@/components/AttachmentLink";
+import { buildTimeline, type ChainRow } from "@/lib/timeline";
+import { answerQuestion, cancelSubmission, recallSubmission } from "@/lib/chain";
 
 export const Route = createFileRoute("/status/$submissionId")({
   head: () => ({
@@ -26,13 +29,50 @@ type SubmissionRow = {
   submitted_at: string | null;
   submitted_by: string | null;
   form_template_id: string | null;
+  parent_submission_id?: string | null;
 };
 
-type ApprovalRow = {
+type EventRow = {
   id: string;
+  actor_id: string | null;
+  action: string;
+  comment: string | null;
+  target_id: string | null;
+  created_at: string;
+};
+
+type QueryRow = {
+  id: string;
+  asked_by: string;
+  asked_to: string;
+  question: string;
+  answer: string | null;
+  answered_at: string | null;
+  created_at: string;
+};
+
+type LinkedSub = { id: string; status: string | null; form_template_id: string; formName?: string };
+
+// What each kind of event reads as in the history.
+const EVENT_TEXT: Record<string, string> = {
+  submitted: "submitted it",
+  approved: "approved",
+  rejected: "rejected it",
+  clarification: "asked the requester for clarification",
+  resumed: "resumed it",
+  forwarded: "forwarded their step to",
+  reviewer_added: "asked for a review from",
+  returned: "returned it to",
+  recalled: "took it back to edit",
+  cancelled: "cancelled it",
+  question: "asked a question of",
+  answer: "answered",
+  completed: "— every approver has cleared it",
+  followup_created: "— a follow-up was started",
+};
+
+type ApprovalRow = ChainRow & {
   submission_id: string | null;
-  approver_user_id: string | null;
-  status: string | null;
   acted_at: string | null;
   comment: string | null;
   deadline_at: string | null;
@@ -121,6 +161,15 @@ function StatusPage() {
   const [linkedFieldTypes, setLinkedFieldTypes] = useState<string[]>([]);
   const [gatePassCardNum, setGatePassCardNum] = useState<string | null>(null);
   const [files, setFiles] = useState<AttachmentInfo[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [queries, setQueries] = useState<QueryRow[]>([]);
+  const [parent, setParent] = useState<LinkedSub | null>(null);
+  const [followups, setFollowups] = useState<LinkedSub[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
   const loadAll = useCallback(async () => {
@@ -179,12 +228,49 @@ function StatusPage() {
       // by date left the finance ladder in an arbitrary order — and a
       // rule with a shorter deadline could float above the step that
       // approves before it.
-      .order("step_index", { ascending: true });
+      .order("step_index", { ascending: true })
+      .order("lane")
+      .order("lane_step");
     const list = (appr as ApprovalRow[] | null) || [];
     setApprovals(list);
 
+    // The trail, the questions asked about it, and what it is linked to.
+    const [{ data: ev }, { data: qs }, { data: kids }] = await Promise.all([
+      db.from("approval_events").select("id, actor_id, action, comment, target_id, created_at")
+        .eq("subject_id", submissionId).order("created_at"),
+      db.from("approval_queries").select("id, asked_by, asked_to, question, answer, answered_at, created_at")
+        .eq("subject_id", submissionId).order("created_at"),
+      db.from("form_submissions").select("id, status, form_template_id")
+        .eq("parent_submission_id", submissionId),
+    ]);
+    setEvents((ev ?? []) as EventRow[]);
+    setQueries((qs ?? []) as QueryRow[]);
+    const parentId = (sub as SubmissionRow | null)?.parent_submission_id ?? null;
+    const linked: LinkedSub[] = [...((kids ?? []) as LinkedSub[])];
+    let parentRow: LinkedSub | null = null;
+    if (parentId) {
+      const { data: p } = await db.from("form_submissions")
+        .select("id, status, form_template_id").eq("id", parentId).maybeSingle();
+      parentRow = (p as LinkedSub | null) ?? null;
+    }
+    const tplIds = Array.from(new Set([...linked, ...(parentRow ? [parentRow] : [])].map((l) => l.form_template_id)));
+    if (tplIds.length) {
+      const { data: tpls } = await db.from("form_templates").select("id, name").in("id", tplIds);
+      const names: Record<string, string> = {};
+      (tpls ?? []).forEach((t) => { names[t.id] = t.name; });
+      linked.forEach((l) => { l.formName = names[l.form_template_id]; });
+      if (parentRow) parentRow.formName = names[parentRow.form_template_id];
+    }
+    setFollowups(linked);
+    setParent(parentRow);
+
     const ids = Array.from(
-      new Set(list.map((r) => r.approver_user_id).filter(Boolean) as string[]),
+      new Set([
+        ...list.map((r) => r.approver_user_id),
+        ...list.map((r) => r.reassigned_from),
+        ...((ev ?? []) as EventRow[]).flatMap((e) => [e.actor_id, e.target_id]),
+        ...((qs ?? []) as QueryRow[]).flatMap((q) => [q.asked_by, q.asked_to]),
+      ].filter((x): x is string => !!x && !/^[0-9a-f]{8}-/.test(x))),
     );
     if (ids.length) {
       const { data: emps } = await db
@@ -248,7 +334,53 @@ function StatusPage() {
     );
   }
 
-  const overall = deriveOverallStatus(approvals);
+  // The engine keeps the submission's own status, and it knows things the
+  // steps cannot say: taken back to edit, cancelled.
+  const KNOWN: StatusKey[] = ["draft", "submitted", "in_progress", "on_hold", "completed", "rejected", "cancelled"];
+  const overall: StatusKey = KNOWN.includes(submission.status as StatusKey)
+    ? (submission.status as StatusKey)
+    : deriveOverallStatus(approvals);
+  const isRequester = submission.submitted_by === currentUser.employee_id;
+  const canWithdraw =
+    isRequester &&
+    ["submitted", "in_progress", "on_hold"].includes(submission.status ?? "") &&
+    !approvals.some((r) => r.status === "approved");
+  const nameOf = (id?: string | null) => (id ? employees[id]?.name ?? id : "Somebody");
+
+  async function recall() {
+    if (!submission) return;
+    setBusy(true);
+    const { error } = await recallSubmission(submission.id, currentUser.employee_id);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Taken back — edit it and submit again when ready");
+    if (submission.form_template_id) {
+      navigate({ to: "/forms/$formId", params: { formId: submission.form_template_id }, search: { draft: submission.id } });
+    }
+  }
+
+  async function cancel() {
+    if (!submission) return;
+    setBusy(true);
+    const { error } = await cancelSubmission(submission.id, currentUser.employee_id, cancelReason);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Cancelled");
+    setCancelling(false);
+    void loadAll();
+  }
+
+  async function answer(q: QueryRow) {
+    const text = (answers[q.id] ?? "").trim();
+    if (!text) { toast.error("Write an answer first"); return; }
+    setBusy(true);
+    const { error } = await answerQuestion(q.id, text, currentUser.employee_id);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Answered");
+    setAnswers((a) => ({ ...a, [q.id]: "" }));
+    void loadAll();
+  }
   const refCode = `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
 
   // This screen is the requester's view and has no actions on it. An
@@ -261,36 +393,8 @@ function StatusPage() {
       (r.status === "pending" || r.status === "clarification"),
   );
 
-  const steps: Step[] = approvals.map((r, i) => {
-    const emp = r.approver_user_id ? employees[r.approver_user_id] : undefined;
-    const name = emp?.name || r.approver_user_id || "Unknown approver";
-    const state = mapApprovalState(r.status);
-    return {
-      id: i + 1,
-      kind: "single",
-      title: emp?.designation || `Approver ${i + 1}`,
-      state,
-      approver: {
-        name,
-        title: emp?.designation || "—",
-        dept: emp?.department || undefined,
-        initials: initials(name),
-        state,
-      },
-      actionAt: r.acted_at ? fmtDateTime(r.acted_at) : undefined,
-      actionLabel:
-        state === "completed"
-          ? "Approved"
-          : state === "rejected"
-          ? "Rejected"
-          : state === "clarification"
-          ? "Clarification requested"
-          : state === "on_hold"
-          ? "Placed on hold"
-          : undefined,
-      comment: r.comment || undefined,
-    };
-  });
+  // Phases, lanes and steps, drawn the way the engine runs them.
+  const steps: Step[] = buildTimeline(approvals, employees);
 
   const activity = approvals
     .filter((r) => r.acted_at)
@@ -317,8 +421,25 @@ function StatusPage() {
     })
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
+  // The engine's own trail, when there is one: it keeps what the steps
+  // overwrite — a step approved, returned and approved again; a forward;
+  // a question. Older requests predate it and fall back to the steps.
+  if (events.length > 0) {
+    activity.length = 0;
+    for (const e of events) {
+      const target = e.target_id && !/^[0-9a-f]{8}-/.test(e.target_id) ? ` ${nameOf(e.target_id)}` : "";
+      activity.push({
+        at: e.created_at,
+        who: e.actor_id ? nameOf(e.actor_id) : "System",
+        role: e.actor_id ? employees[e.actor_id]?.designation || "Approver" : "Approval engine",
+        action: (EVENT_TEXT[e.action] ?? e.action) + target + (e.comment ? ` — "${e.comment}"` : ""),
+        state: "pending" as StepState,
+      });
+    }
+  }
+
   // Prepend the submission itself
-  if (submission.submitted_at) {
+  if (events.length === 0 && submission.submitted_at) {
     activity.unshift({
       at: submission.submitted_at,
       who: submitter?.name || submission.submitted_by || "Submitter",
@@ -463,6 +584,146 @@ function StatusPage() {
               <div key={f.id} className="flex items-center gap-3 flex-wrap">
                 <span className="text-[12px]" style={{ color: "#71717A", minWidth: 140 }}>{f.field_name}</span>
                 <AttachmentLink file={f} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* A draft is finished on the form, not here */}
+      {submission.status === "draft" && isRequester && submission.form_template_id && (
+        <Link
+          to="/forms/$formId"
+          params={{ formId: submission.form_template_id }}
+          search={{ draft: submission.id }}
+          className="flex items-center gap-3 rounded-xl mb-6"
+          style={{ padding: "16px 20px", background: "#EEF2FF", border: "1px solid #C7D2FE", textDecoration: "none" }}
+        >
+          <FileText size={20} style={{ color: "#4338CA", flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[14px]" style={{ color: "#3730A3" }}>This is still a draft</div>
+            <div className="text-[12px]" style={{ color: "#4338CA" }}>
+              {parent ? "It was started for you with the details already filled in. " : ""}Open it to check it and submit.
+            </div>
+          </div>
+          <span className="text-[13px] font-medium" style={{ color: "#4338CA" }}>Open →</span>
+        </Link>
+      )}
+
+      {/* Where it came from, and what followed */}
+      {(parent || followups.length > 0) && (
+        <div className="rounded-xl bg-white mb-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: "#52525B" }}>
+            Linked requests
+          </div>
+          <div className="flex flex-col gap-2 text-[13px]">
+            {parent && (
+              <Link to="/status/$submissionId" params={{ submissionId: parent.id }} className="inline-flex items-center gap-2" style={{ color: "#4338CA" }}>
+                <CornerDownRight size={13} /> Follows from {parent.formName ?? "a request"} · AMS-{parent.id.slice(0, 8).toUpperCase()}
+              </Link>
+            )}
+            {followups.map((f) =>
+              f.status === "draft" && isRequester ? (
+                <Link key={f.id} to="/forms/$formId" params={{ formId: f.form_template_id }} search={{ draft: f.id }} className="inline-flex items-center gap-2" style={{ color: "#4338CA" }}>
+                  <CornerDownRight size={13} /> Follow-up: {f.formName ?? "request"} — a draft ready for you to check and submit
+                </Link>
+              ) : (
+                <Link key={f.id} to="/status/$submissionId" params={{ submissionId: f.id }} className="inline-flex items-center gap-2" style={{ color: "#4338CA" }}>
+                  <CornerDownRight size={13} /> Follow-up: {f.formName ?? "request"} · {f.status}
+                </Link>
+              ),
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* The requester can take it back until somebody approves */}
+      {canWithdraw && (
+        <div className="rounded-xl bg-white mb-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-[13px]" style={{ color: "#3F3F46" }}>
+              Nobody has approved this yet, so you can still take it back to edit, or cancel it.
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={recall}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium"
+                style={{ padding: "7px 12px", border: "1px solid #E4E4E7", background: "#fff", color: "#18181B" }}
+              >
+                <Undo2 size={13} /> Take back to edit
+              </button>
+              <button
+                onClick={() => setCancelling((v) => !v)}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-md text-[13px] font-medium"
+                style={{ padding: "7px 12px", border: "1px solid #FECACA", background: "#fff", color: "#B91C1C" }}
+              >
+                <XCircle size={13} /> Cancel request
+              </button>
+            </div>
+          </div>
+          {cancelling && (
+            <div className="flex gap-2 mt-3">
+              <input
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Why is it being cancelled? (optional)"
+                className="flex-1 rounded-md text-[13px]"
+                style={{ padding: "7px 10px", border: "1px solid #E4E4E7" }}
+              />
+              <button
+                onClick={cancel}
+                disabled={busy}
+                className="rounded-md text-[13px] font-medium"
+                style={{ padding: "7px 12px", background: "#DC2626", color: "#fff" }}
+              >
+                Confirm cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Questions between approvers */}
+      {queries.length > 0 && (
+        <div className="rounded-xl bg-white mb-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: "#52525B" }}>
+            <MessageCircleQuestion size={13} /> Questions between approvers
+          </div>
+          <div className="flex flex-col gap-3">
+            {queries.map((q) => (
+              <div key={q.id} className="rounded-lg" style={{ padding: "10px 12px", background: "#FAFAFA", border: "1px solid #F4F4F5" }}>
+                <div className="text-[12px]" style={{ color: "#71717A" }}>
+                  {nameOf(q.asked_by)} asked {nameOf(q.asked_to)} · {fmtDateTime(q.created_at)}
+                </div>
+                <div className="text-[13.5px] mt-1" style={{ color: "#18181B" }}>{q.question}</div>
+                {q.answer ? (
+                  <div className="text-[13px] mt-2" style={{ color: "#3F3F46", paddingLeft: 10, borderLeft: "2px solid #C7D2FE" }}>
+                    {q.answer}
+                    <span className="text-[11.5px]" style={{ color: "#A1A1AA" }}> — {nameOf(q.asked_to)}, {fmtDateTime(q.answered_at)}</span>
+                  </div>
+                ) : q.asked_to === currentUser.employee_id ? (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      value={answers[q.id] ?? ""}
+                      onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                      placeholder="Your answer"
+                      className="flex-1 rounded-md text-[13px]"
+                      style={{ padding: "7px 10px", border: "1px solid #E4E4E7", background: "#fff" }}
+                    />
+                    <button
+                      onClick={() => answer(q)}
+                      disabled={busy}
+                      className="rounded-md text-[13px] font-medium"
+                      style={{ padding: "7px 12px", background: "var(--color-brand-500)", color: "#fff" }}
+                    >
+                      Answer
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[12px] mt-1.5" style={{ color: "#B45309" }}>Waiting for an answer</div>
+                )}
               </div>
             ))}
           </div>
