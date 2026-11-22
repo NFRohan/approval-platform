@@ -48,6 +48,17 @@ on it a question. The requester can take a request back to edit, or cancel
 it, until anybody has approved. An approved request can start its follow-up as
 a preloaded draft. Everything that happens is kept in an append-only trail.
 
+**A ticket, not just a route.** Every request has a reference that can be
+read out (`AMS-2026-00042`), a priority that shortens every deadline on it,
+people copied on it who hear when it is raised and decided, a notes thread
+that tells everyone on it, links to other requests, and a copy action that
+starts a new draft from it. Documents carry descriptions, tags and every
+version, and opening one is logged. A step can require a drawn signature,
+an exceptional route is flagged wherever the request appears, one
+department clearing tells the others, and a leaver's work is handed to a
+successor in one step. The route can be read as a timeline or as a process
+map, and every date is written dd/MM/yyyy.
+
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
 orders with stock reservation and transfer between venues, delegation of
@@ -127,7 +138,7 @@ npm test          # all six, cheapest first
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 116 checks: tenant isolation, the security policies, provisioning, the approval chain, and the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups |
+| `db:test` | 127 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — and the ticket: references, priority, signatures, notes, CC, links, copies, hand-over |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
 

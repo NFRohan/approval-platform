@@ -39,6 +39,10 @@ export type StageApprover = {
   /** People sharing a track in a stage go in order; blank is a track of one's own. */
   track: string;
   condition: { field: string; op: string; value: string } | null;
+  /** "Signature required" for this approver's step. */
+  requireSignature?: boolean;
+  /** Raised on the request when this step is part of its route — e.g. "Exceptional". */
+  flag?: string | null;
 };
 
 export type Stage = {
@@ -53,7 +57,7 @@ let seq = 0;
 export const newId = (p: string) => `${p}-${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
 export function newApprover(who = ""): StageApprover {
-  return { id: newId("ap"), who, deadlineDays: 3, track: "", condition: null };
+  return { id: newId("ap"), who, deadlineDays: 3, track: "", condition: null, requireSignature: false, flag: null };
 }
 
 /** How many tracks a stage runs: a named track is one, each unnamed person is one. */

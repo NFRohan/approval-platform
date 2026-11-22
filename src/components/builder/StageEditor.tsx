@@ -155,6 +155,23 @@ export function StageEditor({
                     >
                       <Filter size={11} /> {a.condition ? "Only when…" : "Always"}
                     </button>
+                    <label className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: "#52525B" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!a.requireSignature}
+                        onChange={(e) => setApprover(stage.id, a.id, { requireSignature: e.target.checked })}
+                        aria-label="Signature required"
+                      />
+                      Signature
+                    </label>
+                    <input
+                      value={a.flag ?? ""}
+                      onChange={(e) => setApprover(stage.id, a.id, { flag: e.target.value || null })}
+                      placeholder="flag"
+                      title="Mark the request with this when this step is on its route, e.g. Exceptional"
+                      aria-label="Flag"
+                      style={{ ...input, width: 90 }}
+                    />
                     <button
                       onClick={() => setStage(stage.id, { approvers: stage.approvers.filter((x) => x.id !== a.id) })}
                       aria-label="Remove approver"

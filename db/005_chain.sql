@@ -30,6 +30,11 @@ drop function if exists public.add_reviewer(uuid, text, int);
 -- stored submission, so the same planner serves a preview.
 drop function if exists app.condition_holds(uuid, jsonb);
 drop function if exists app.answer_of(uuid, text);
+-- Stage 2: the plan carries a signature requirement and a flag, and
+-- approving can carry a signature. A changed return type or argument
+-- list cannot be replaced in place.
+drop function if exists app.plan_chain(text, uuid, text, jsonb);
+drop function if exists public.act_on_approval(uuid, text, text, text);
 
 -- ---------------------------------------------------------------------
 -- Targets land on working days.
@@ -220,7 +225,8 @@ as $$
   -- of the id is the same reference the status screen already prints.
   select coalesce(case p_type
     when 'form_submission' then (
-      select ft.name || ' (' || app.subject_ref(fs.id) || ')'
+      select coalesce('[' || fs.flag || '] ', '')
+             || ft.name || ' (' || coalesce(fs.ref_number, app.subject_ref(fs.id)) || ')'
         from public.form_submissions fs
         left join public.form_templates ft
           on ft.id = fs.form_template_id and ft.tenant_id = fs.tenant_id
@@ -588,7 +594,9 @@ create or replace function app.plan_chain(
   days        int,
   quorum      int,
   stage_label text,
-  lane_label  text
+  lane_label  text,
+  require_signature boolean,
+  flag        text
 )
 language plpgsql
 stable
@@ -613,6 +621,8 @@ declare
   c_quo   int[]  := '{}';
   c_slbl  text[] := '{}';
   c_llbl  text[] := '{}';
+  c_sig   boolean[] := '{}';
+  c_flag  text[] := '{}';
 begin
   if p_subject_type = 'form_submission' then
     v_amount := app.amount_in(p_form_template_id, p_answers);
@@ -620,7 +630,7 @@ begin
 
   for r in
     select ar.approver_user_id, ar.deadline_days, ar.label, ar.step_index,
-           ar.quorum, ar.condition, ar.stage_label, ar.lane
+           ar.quorum, ar.condition, ar.stage_label, ar.lane, ar.require_signature, ar.flag
       from public.approval_rules ar
      where ar.subject_type = p_subject_type
        and (p_subject_type <> 'form_submission'
@@ -645,6 +655,8 @@ begin
         c_quo   := array_append(c_quo, null::int);
         c_slbl  := array_append(c_slbl, coalesce(r.stage_label, 'Finance'));
         c_llbl  := array_append(c_llbl, null::text);
+        c_sig   := array_append(c_sig, r.require_signature);
+        c_flag  := array_append(c_flag, r.flag);
       end loop;
       v_prev_idx := null;
       continue;
@@ -677,12 +689,14 @@ begin
     c_quo   := array_append(c_quo, r.quorum);
     c_slbl  := array_append(c_slbl, r.stage_label);
     c_llbl  := array_append(c_llbl, r.lane);
+    c_sig   := array_append(c_sig, r.require_signature);
+    c_flag  := array_append(c_flag, r.flag);
   end loop;
 
   return query
   with c as (
-    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl)
-             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, ord)
+    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl, c_sig, c_flag)
+             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, sig, flg, ord)
   ),
   -- A rule with no approver is configuration never finished; skipping it
   -- is better than a step nobody can act on. Nobody approves their own.
@@ -740,7 +754,7 @@ begin
          (row_number() over (partition by g.phase, g.ln order by g.ord) - 1)::int,
          g.appr, g.dd,
          case when pq.quo is not null and pq.quo < pq.nl then pq.quo end,
-         pq.slbl, g.llbl
+         pq.slbl, g.llbl, coalesce(g.sig, false), g.flg
     from g
     join num  on num.phase = g.phase
     join lnum on lnum.phase = g.phase and lnum.ln = g.ln
@@ -770,7 +784,8 @@ as $$
   select coalesce(jsonb_agg(jsonb_build_object(
            'step_index', p.step_index, 'lane', p.lane, 'lane_step', p.lane_step,
            'approver', p.approver, 'days', p.days, 'quorum', p.quorum,
-           'stage_label', p.stage_label, 'lane_label', p.lane_label)
+           'stage_label', p.stage_label, 'lane_label', p.lane_label,
+           'require_signature', p.require_signature, 'flag', p.flag)
            order by p.step_index, p.lane, p.lane_step), '[]'::jsonb)
     from app.plan_chain('form_submission', p_form_template_id, p_requester,
                         coalesce(p_answers, '{}'::jsonb)) p
@@ -799,6 +814,7 @@ declare
   v_requester text;
   v_answers   jsonb;
   v_approver  text;
+  v_priority  text := 'normal';
   n           int;
   v_phases    int;
 begin
@@ -814,12 +830,17 @@ begin
   v_requester := app.subject_requester(p_subject_type, p_subject_id);
   if p_subject_type = 'form_submission' then
     v_answers := app.answers_of(p_subject_id);
+    select coalesce(priority, 'normal') into v_priority
+      from public.form_submissions where id = p_subject_id;
   end if;
 
+  -- "The system can flag the items and fasten the high-priority request
+  -- approval process": an urgent request gets half the time at each step,
+  -- a high one a day less, never under one working day.
   insert into public.approval_requests
     (submission_id, notice_id, stationery_request_id, maintenance_request_id,
      approver_user_id, step_index, lane, lane_step, status, deadline_at,
-     quorum, stage_label, lane_label)
+     quorum, stage_label, lane_label, require_signature)
   select
     case when p_subject_type = 'form_submission'     then p_subject_id end,
     case when p_subject_type = 'notice'              then p_subject_id end,
@@ -827,11 +848,23 @@ begin
     case when p_subject_type = 'maintenance_request' then p_subject_id end,
     p.approver, p.step_index, p.lane, p.lane_step,
     case when p.step_index = 0 and p.lane_step = 0 then 'pending' else 'waiting' end,
-    app.add_working_days(now(), p.days),
-    p.quorum, p.stage_label, p.lane_label
+    app.add_working_days(now(), greatest(1, case v_priority
+                                              when 'urgent' then ceil(p.days / 2.0)::int
+                                              when 'high'   then p.days - 1
+                                              else p.days end)),
+    p.quorum, p.stage_label, p.lane_label, p.require_signature
   from app.plan_chain(p_subject_type, p_form_template_id, v_requester, v_answers) p;
 
   get diagnostics n = row_count;
+
+  -- A rule that asks to be seen — the exceptional CXO approval — marks
+  -- the request, so every notification and list can say so.
+  if p_subject_type = 'form_submission' then
+    update public.form_submissions
+       set flag = (select p.flag from app.plan_chain(p_subject_type, p_form_template_id, v_requester, v_answers) p
+                    where p.flag is not null order by p.step_index, p.lane, p.lane_step limit 1)
+     where id = p_subject_id;
+  end if;
 
   if n > 0 then
     select max(step_index) + 1 into v_phases
@@ -894,6 +927,9 @@ begin
           app.subject_label(p_subject_type, p_subject_id) || ' was submitted.',
           p_subject_type, p_subject_id);
       end loop;
+
+      perform app.notify_cc(p_subject_id, 'cc.raised', 'You were copied on a request',
+        app.subject_label(p_subject_type, p_subject_id) || ' was raised and you were copied on it.');
     end if;
   end if;
 
@@ -958,6 +994,8 @@ begin
       p_type, p_subject);
     perform app.log_event(null, p_type, p_subject, null, 'completed');
     if p_type = 'form_submission' then
+      perform app.notify_cc(p_subject, 'cc.completed', 'Approved',
+        app.subject_label(p_type, p_subject) || ', which you were copied on, has cleared every approver.');
       perform app.spawn_followup(p_subject);
     end if;
     return app.set_subject_status(p_type, p_subject, 'done', null);
@@ -1004,7 +1042,8 @@ create or replace function public.act_on_approval(
   p_request_id uuid,
   p_action     text,
   p_comment    text default null,
-  p_actor      text default null
+  p_actor      text default null,
+  p_signature  text default null
 ) returns text
 language plpgsql
 security invoker
@@ -1041,8 +1080,21 @@ begin
   end if;
 
   if p_action = 'approve' then
+    -- "When user applies, it will be asked to attach a signature if
+    -- 'Signature Required' is checked for that task."
+    if v_req.require_signature then
+      if p_signature is null or p_signature !~ '^data:image/png;base64,[A-Za-z0-9+/=]+$' then
+        raise exception 'this step needs your signature to approve';
+      end if;
+      if length(p_signature) > 300000 then
+        raise exception 'that signature is too large';
+      end if;
+    end if;
+
     update public.approval_requests
-       set status = 'approved', acted_at = now(), comment = coalesce(p_comment, comment)
+       set status = 'approved', acted_at = now(), comment = coalesce(p_comment, comment),
+           signature = case when v_req.require_signature then p_signature end,
+           signed_at = case when v_req.require_signature then now() end
      where id = p_request_id;
     perform app.log_event(p_request_id, v_req.subject_type, v_req.subject_id,
                           p_actor, 'approved', p_comment);
@@ -1070,8 +1122,29 @@ begin
                                     v_next.approver_user_id);
     end if;
 
-    -- The lane is finished. If the phase is not, the request waits on
-    -- the lanes still running.
+    -- The lane is finished. "Once one division approves a ticket, the
+    -- other divisions must be notified of that approval": everybody in
+    -- the phase's other lanes hears that this one has cleared.
+    if exists (select 1 from public.approval_requests
+                where subject_id = v_req.subject_id and step_index = v_req.step_index
+                  and lane <> v_req.lane) then
+      for v_next in
+        select distinct approver_user_id from public.approval_requests
+         where subject_id = v_req.subject_id and step_index = v_req.step_index
+           and lane <> v_req.lane and approver_user_id is not null
+           and approver_user_id is distinct from p_actor
+      loop
+        perform app.notify(
+          v_next.approver_user_id, 'phase.lane_cleared',
+          coalesce(v_req.lane_label, 'Another department') || ' has cleared it',
+          app.subject_label(v_req.subject_type, v_req.subject_id) || ' was cleared by '
+            || coalesce(v_req.lane_label, 'another lane') || '.',
+          v_req.subject_type, v_req.subject_id);
+      end loop;
+    end if;
+
+    -- If the phase is not done, the request waits on the lanes still
+    -- running.
     if not app.phase_done(v_req.subject_id, v_req.step_index) then
       select approver_user_id into v_open
         from public.approval_requests
@@ -1120,6 +1193,11 @@ begin
       app.subject_label(v_req.subject_type, v_req.subject_id)
         || ' was rejected' || coalesce(': ' || p_comment, '.'),
       v_req.subject_type, v_req.subject_id);
+    if v_req.subject_type = 'form_submission' then
+      perform app.notify_cc(v_req.subject_id, 'cc.rejected', 'Rejected',
+        app.subject_label(v_req.subject_type, v_req.subject_id)
+          || ', which you were copied on, was rejected' || coalesce(': ' || p_comment, '.'));
+    end if;
 
     return app.set_subject_status(v_req.subject_type, v_req.subject_id, 'rejected', null);
 
@@ -1643,6 +1721,338 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Stage 2: the ticket.
+-- ---------------------------------------------------------------------
+
+-- Tell everybody copied on a request.
+create or replace function app.notify_cc(p_submission uuid, p_kind text, p_title text, p_body text)
+returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare r record;
+begin
+  for r in select employee_id from public.submission_cc where submission_id = p_submission loop
+    perform app.notify(r.employee_id, p_kind, p_title, p_body, 'form_submission', p_submission);
+  end loop;
+end $$;
+
+-- Is this person part of the request: its requester, an approver on it
+-- (or a current delegate of one), or somebody copied on it?
+create or replace function app.involved_in(p_submission uuid, p_actor text)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select p_actor is not null and (
+    exists (select 1 from public.form_submissions where id = p_submission and submitted_by = p_actor)
+    or exists (select 1 from public.approval_requests ar
+                where ar.submission_id = p_submission
+                  and app.may_act(ar.approver_user_id, ar.subject_type, ar.subject_id, p_actor))
+    or exists (select 1 from public.submission_cc where submission_id = p_submission and employee_id = p_actor))
+$$;
+
+-- ---------------------------------------------------------------------
+-- A note on a request.
+--
+-- "A user can add notes to a ticket after it has been approved."
+-- "Notification needs to be sent to all approvers if any notes are added
+-- in a ticket." Anybody involved may add one, at any stage; everybody
+-- else involved — the requester, every approver on it, everyone copied —
+-- hears about it.
+-- ---------------------------------------------------------------------
+create or replace function public.add_note(
+  p_submission_id uuid,
+  p_body          text,
+  p_actor         text default null
+) returns uuid
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_id uuid;
+  r    record;
+begin
+  if p_body is null or trim(p_body) = '' then
+    raise exception 'a note needs something in it';
+  end if;
+  if not app.involved_in(p_submission_id, p_actor) then
+    raise exception 'only somebody on this request can add a note to it';
+  end if;
+
+  insert into public.ticket_notes (submission_id, author_id, body)
+  values (p_submission_id, p_actor, trim(p_body))
+  returning id into v_id;
+
+  perform app.log_event(null, 'form_submission', p_submission_id, p_actor, 'note', p_body);
+
+  for r in
+    select distinct who from (
+      select submitted_by as who from public.form_submissions where id = p_submission_id
+      union select approver_user_id from public.approval_requests where submission_id = p_submission_id
+      union select employee_id from public.submission_cc where submission_id = p_submission_id
+    ) x
+     where who is not null and who <> p_actor
+  loop
+    perform app.notify(r.who, 'note.added', 'A note was added',
+      p_actor || ' added a note to ' || app.subject_label('form_submission', p_submission_id)
+        || ': ' || left(trim(p_body), 200),
+      'form_submission', p_submission_id);
+  end loop;
+  return v_id;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Who is copied on a request. The requester sets it; whoever is newly
+-- added is told.
+-- ---------------------------------------------------------------------
+create or replace function public.set_cc(
+  p_submission_id uuid,
+  p_people        text[],
+  p_actor         text default null
+) returns int
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_sub    record;
+  v_who    text;
+  v_status text;
+  n        int := 0;
+begin
+  select submitted_by, status into v_sub from public.form_submissions where id = p_submission_id;
+  if not found then
+    raise exception 'no such submission';
+  end if;
+  if v_sub.submitted_by is distinct from p_actor then
+    raise exception 'only the person who raised a request decides who is copied on it';
+  end if;
+
+  delete from public.submission_cc
+   where submission_id = p_submission_id
+     and employee_id <> all (coalesce(p_people, '{}'));
+
+  foreach v_who in array coalesce(p_people, '{}') loop
+    continue when v_who is null or v_who = '' or v_who = p_actor;
+    if not exists (select 1 from public.employees where employee_id = v_who) then
+      raise exception 'no employee with id %', v_who;
+    end if;
+    insert into public.submission_cc (submission_id, employee_id, added_by)
+    values (p_submission_id, v_who, p_actor)
+    on conflict (tenant_id, submission_id, employee_id) do nothing;
+    if found then
+      n := n + 1;
+      -- Nobody else's business until it is routed; then they hear it was
+      -- raised, from the chain itself. Only somebody added afterwards is
+      -- told here.
+      if exists (select 1 from public.approval_requests where submission_id = p_submission_id) then
+        perform app.notify(v_who, 'cc.added', 'You were copied on a request',
+          p_actor || ' copied you on ' || app.subject_label('form_submission', p_submission_id) || '.',
+          'form_submission', p_submission_id);
+      end if;
+    end if;
+  end loop;
+  return n;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Link two requests. The other one may be named by its reference.
+-- ---------------------------------------------------------------------
+create or replace function public.link_submissions(
+  p_submission_id uuid,
+  p_other         text,
+  p_note          text default null,
+  p_actor         text default null
+) returns uuid
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_other uuid;
+  v_id    uuid;
+begin
+  if not app.involved_in(p_submission_id, p_actor) then
+    raise exception 'only somebody on this request can link it to another';
+  end if;
+
+  select id into v_other from public.form_submissions
+   where upper(ref_number) = upper(trim(p_other))
+      or id::text = lower(trim(p_other))
+   limit 1;
+  if v_other is null then
+    raise exception 'there is no request %', trim(p_other);
+  end if;
+  if v_other = p_submission_id then
+    raise exception 'a request cannot be linked to itself';
+  end if;
+  if exists (select 1 from public.submission_links
+              where (from_id = p_submission_id and to_id = v_other)
+                 or (from_id = v_other and to_id = p_submission_id)) then
+    raise exception 'those two are already linked';
+  end if;
+
+  insert into public.submission_links (from_id, to_id, note, created_by)
+  values (p_submission_id, v_other, nullif(trim(p_note), ''), p_actor)
+  returning id into v_id;
+
+  perform app.log_event(null, 'form_submission', p_submission_id, p_actor, 'linked', p_note,
+                        (select ref_number from public.form_submissions where id = v_other));
+  return v_id;
+end $$;
+
+create or replace function public.unlink_submissions(
+  p_submission_id uuid,
+  p_other_id      uuid,
+  p_actor         text default null
+) returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if not app.involved_in(p_submission_id, p_actor) then
+    raise exception 'only somebody on this request can unlink it';
+  end if;
+  delete from public.submission_links
+   where (from_id = p_submission_id and to_id = p_other_id)
+      or (from_id = p_other_id and to_id = p_submission_id);
+  perform app.log_event(null, 'form_submission', p_submission_id, p_actor, 'unlinked', null,
+                        (select ref_number from public.form_submissions where id = p_other_id));
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Copy a request.
+--
+-- "A ticket can be copied from any of the previous ticket and later it
+-- can be edited according to requirement." The copy is a draft of the
+-- same form for whoever is copying it, with the same answers and the
+-- current version of each document, linked back to the original.
+-- ---------------------------------------------------------------------
+create or replace function public.copy_submission(
+  p_submission_id uuid,
+  p_actor         text default null
+) returns uuid
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_src record;
+  v_new uuid;
+begin
+  if p_actor is null or not exists (select 1 from public.employees where employee_id = p_actor) then
+    raise exception 'say who is copying it';
+  end if;
+  select form_template_id, priority into v_src from public.form_submissions where id = p_submission_id;
+  if not found then
+    raise exception 'no such submission';
+  end if;
+
+  insert into public.form_submissions (form_template_id, submitted_by, status, priority)
+  values (v_src.form_template_id, p_actor, 'draft', v_src.priority)
+  returning id into v_new;
+
+  insert into public.submission_values (submission_id, field_name, value)
+  select v_new, field_name, value from public.submission_values where submission_id = p_submission_id;
+
+  insert into public.attachments
+    (submission_id, field_name, file_name, content_type, size_bytes, data, uploaded_by, description, tags)
+  select v_new, field_name, file_name, content_type, size_bytes, data, p_actor, description, tags
+    from public.attachments
+   where submission_id = p_submission_id and superseded_at is null;
+
+  insert into public.submission_links (from_id, to_id, note, created_by)
+  values (v_new, p_submission_id, 'Copied from', p_actor);
+
+  return v_new;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Somebody is leaving: hand everything of theirs to a successor.
+--
+-- "Leavers' delegation." A date-ranged delegation covers a holiday; a
+-- leaver needs every step waiting on them, every rule and slab that
+-- names them, every department role they hold and every report who
+-- reports to them handed over for good — and their own row kept, marked
+-- as left, because the trail still names them.
+-- ---------------------------------------------------------------------
+create or replace function public.hand_over(
+  p_leaver    text,
+  p_successor text,
+  p_actor     text default null
+) returns int
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  n   int := 0;
+  k   int;
+  r   record;
+begin
+  if p_leaver is null or p_successor is null or p_leaver = p_successor then
+    raise exception 'name somebody leaving and somebody else to take over';
+  end if;
+  if not exists (select 1 from public.employees where employee_id = p_leaver) then
+    raise exception 'no employee with id %', p_leaver;
+  end if;
+  if not exists (select 1 from public.employees where employee_id = p_successor and active) then
+    raise exception '% is not an active employee', p_successor;
+  end if;
+
+  -- Steps waiting on them now or later.
+  for r in
+    update public.approval_requests
+       set approver_user_id = p_successor,
+           reassigned_from  = coalesce(reassigned_from, p_leaver)
+     where approver_user_id = p_leaver
+       and status in ('pending', 'waiting', 'clarification')
+    returning id, subject_type, subject_id, status
+  loop
+    n := n + 1;
+    perform app.log_event(r.id, r.subject_type, r.subject_id, p_actor, 'handed_over', null, p_successor);
+    if r.status in ('pending', 'clarification') then
+      perform app.notify(p_successor, 'approval.turn', 'Handed over to you',
+        app.subject_label(r.subject_type, r.subject_id) || ' was handed over to you from somebody who has left.',
+        r.subject_type, r.subject_id);
+    end if;
+  end loop;
+
+  -- Everywhere the configuration names them.
+  update public.approval_rules     set approver_user_id = p_successor where approver_user_id = p_leaver;
+  update public.approval_slabs     set approver_user_id = p_successor where approver_user_id = p_leaver;
+  update public.notification_rules set notifyee_user_id = p_successor where notifyee_user_id = p_leaver;
+  update public.departments set head_employee_id = p_successor where head_employee_id = p_leaver;
+  update public.departments set hrbp_employee_id = p_successor where hrbp_employee_id = p_leaver;
+  update public.departments set cxo_employee_id  = p_successor where cxo_employee_id  = p_leaver;
+  update public.employees   set line_manager_id  = p_successor
+   where line_manager_id = p_leaver and employee_id <> p_successor;
+
+  -- Their own delegations end with them.
+  delete from public.delegation_rules where delegator_id = p_leaver or delegate_id = p_leaver;
+
+  update public.employees set active = false, left_on = (now() at time zone 'Asia/Dhaka')::date
+   where employee_id = p_leaver;
+
+  insert into public.activity_log (actor_id, action, entity_type, entity_id, detail)
+  select p_actor, 'handed_over', 'employee', e.id,
+         'Handed everything of ' || e.name || ' over to '
+           || coalesce((select name from public.employees where employee_id = p_successor), p_successor)
+    from public.employees e where e.employee_id = p_leaver;
+
+  perform app.notify(p_successor, 'handover.received', 'You have taken over from a leaver',
+    coalesce((select name from public.employees where employee_id = p_leaver), p_leaver)
+      || ' has left; their approvals and responsibilities are now yours (' || n || ' open or upcoming steps).');
+  return n;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- Overdue reminders.
 --
 -- This is what turns a target from something displayed into something
@@ -1698,7 +2108,7 @@ to app_api;
 
 grant execute on function
   public.build_approval_chain(text, uuid, uuid, numeric),
-  public.act_on_approval(uuid, text, text, text),
+  public.act_on_approval(uuid, text, text, text, text),
   public.reassign_approval(uuid, text, text, text),
   public.add_reviewer(uuid, text, int, text),
   app.slab_approvers(uuid, numeric),
@@ -1714,6 +2124,14 @@ grant execute on function
   app.condition_holds(jsonb, jsonb),
   app.plan_chain(text, uuid, text, jsonb),
   public.preview_approval_chain(uuid, text, jsonb),
+  app.notify_cc(uuid, text, text, text),
+  app.involved_in(uuid, text),
+  public.add_note(uuid, text, text),
+  public.set_cc(uuid, text[], text),
+  public.link_submissions(uuid, text, text, text),
+  public.unlink_submissions(uuid, uuid, text),
+  public.copy_submission(uuid, text),
+  public.hand_over(text, text, text),
   app.resolve_role(text, text),
   app.is_org_role(text),
   app.log_event(uuid, text, uuid, text, text, text, text),

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/forms/")({
   head: () => ({
@@ -23,14 +24,6 @@ type FormRow = {
 
 type Creator = { name: string; designation: string | null };
 
-function fmtDate(iso: string | null) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 // The divisions the scope of work names. Compliance holds the ABC
 // declarations; Commercial the campaign requests and their NFAs.

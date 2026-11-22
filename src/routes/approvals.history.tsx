@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { toCsv, downloadCsv } from "@/lib/csv";
+import { fmtDateTime } from "@/lib/dates";
 
 export const Route = createFileRoute("/approvals/history")({
   head: () => ({
@@ -24,14 +25,7 @@ type Row = {
 };
 
 function fmt(iso?: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return fmtDateTime(iso);
 }
 
 const statusToBadge = (s: string | null) => {

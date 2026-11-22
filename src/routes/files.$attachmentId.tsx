@@ -26,8 +26,12 @@ function plain(status: number, message: string) {
 export const Route = createFileRoute("/files/$attachmentId")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
+      GET: async ({ params, request }) => {
         const id = params.attachmentId;
+        // Who is opening it, for the access log. Like every actor in this
+        // demo it is the persona the screen is acting as, named by the
+        // link; once sign-in names the employee it comes from the session.
+        const by = new URL(request.url).searchParams.get("by")?.slice(0, 40) || null;
         if (!UUID.test(id)) return plain(404, "No such file.");
 
         let ctx;
@@ -46,6 +50,13 @@ export const Route = createFileRoute("/files/$attachmentId")({
                  from public.attachments where id = $1`,
               [id],
             );
+            // "Keep track of accessed or modified specific documents."
+            if (rows[0]) {
+              await client.query(
+                "insert into public.attachment_access (attachment_id, actor_id) values ($1, $2)",
+                [id, by],
+              );
+            }
             return rows[0] as { file_name: string; content_type: string; data: Buffer } | undefined;
           });
           if (!row) return plain(404, "No such file.");

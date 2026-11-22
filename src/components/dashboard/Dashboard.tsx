@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Avatar } from "@/components/shell/Avatar";
 import { db } from "@/lib/db";
+import { fmtDate } from "@/lib/dates";
 
 type StatusKey = "submitted" | "in_progress" | "on_hold" | "completed" | "cancelled";
 
@@ -135,10 +136,10 @@ function StatCard({ s, loading }: { s: Stat; loading?: boolean }) {
 
 type Recent = { id: string; form: string; sub: string | null; date: string; status: StatusKey; next: string };
 
-// The same reference the status screen prints and notifications now
-// carry, so two claims on one form can be told apart at a glance.
-function subjectRef(id: string) {
-  return `AMS-${id.slice(0, 8).toUpperCase()}`;
+// The same reference the status screen prints and notifications carry,
+// so two claims on one form can be told apart at a glance.
+function subjectRef(id: string, ref?: string | null) {
+  return ref ?? `AMS-${id.slice(0, 8).toUpperCase()}`;
 }
 
 // ---------------------------------------------------------------------
@@ -156,7 +157,7 @@ function useRecentSubmissions(employeeId: string) {
     (async () => {
       const { data: subs } = await db
         .from("form_submissions")
-        .select("id, form_template_id, status, submitted_at")
+        .select("id, form_template_id, status, submitted_at, ref_number")
         .eq("submitted_by", employeeId)
         .order("submitted_at", { ascending: false })
         .limit(5);
@@ -198,7 +199,7 @@ function useRecentSubmissions(employeeId: string) {
       setRows(list.map((r) => ({
         id: r.id,
         form: r.form_template_id ? (names[r.form_template_id] ?? "Submission") : "Submission",
-        sub: subjectRef(r.id),
+        sub: subjectRef(r.id, (r as { ref_number?: string | null }).ref_number),
         date: r.submitted_at ? String(r.submitted_at).slice(0, 10) : "—",
         status: (r.status ?? "in_progress") as StatusKey,
         next: nextBy[r.id] ?? "—",
@@ -210,7 +211,11 @@ function useRecentSubmissions(employeeId: string) {
   return rows;
 }
 
-type PendingItem = { id: string; who: string; initials: string; what: string; due: string; overdue: boolean };
+type PendingItem = {
+  id: string; who: string; initials: string; what: string; due: string; overdue: boolean;
+  /** A step that needs a signature is signed in the queue, not here. */
+  needsSignature: boolean; subjectId: string | null;
+};
 
 function usePendingForMe(employeeId: string) {
   const [rows, setRows] = useState<PendingItem[] | null>(null);
@@ -220,7 +225,7 @@ function usePendingForMe(employeeId: string) {
     {
       const { data: steps } = await db
         .from("approval_requests")
-        .select("id, subject_id, subject_type, submission_id, deadline_at")
+        .select("id, subject_id, subject_type, submission_id, deadline_at, require_signature")
         .eq("approver_user_id", employeeId)
         .eq("status", "pending")
         .order("deadline_at")
@@ -249,8 +254,10 @@ function usePendingForMe(employeeId: string) {
           what: info?.label ?? "A request",
           due: !when ? "No deadline"
             : when.toDateString() === today ? "Today"
-            : when.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+            : fmtDate(when),
           overdue: when ? when.getTime() < Date.now() : false,
+          needsSignature: !!(r as { require_signature?: boolean }).require_signature,
+          subjectId: r.subject_id ?? null,
         };
       }));
     }
@@ -524,6 +531,19 @@ function PendingRow({ p, onDone }: { p: PendingItem; onDone: () => void }) {
           Cancel
         </button>
       </div>
+    );
+  }
+
+  if (p.needsSignature) {
+    return (
+      <Link
+        to="/approvals"
+        search={{ focus: p.subjectId ?? undefined }}
+        className="rounded-md font-medium bg-white shrink-0"
+        style={{ ...btn, color: "#4338CA", border: "1px solid #C7D2FE" }}
+      >
+        Sign in queue
+      </Link>
     );
   }
 

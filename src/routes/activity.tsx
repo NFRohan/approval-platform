@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Activity as ActivityIcon } from "lucide-react";
 import { db } from "@/lib/db";
+import { fmtDateTime } from "@/lib/dates";
 
 export const Route = createFileRoute("/activity")({
   // Global search sends a person here — it is the only page that can
@@ -18,7 +19,7 @@ type LogRow = { id: string; actor_id: string | null; action: string; entity_type
 const ENTITY_TYPES = ["form_submission", "movement_order", "notice", "stationery_request", "maintenance_request", "approval_slab"];
 
 function fmt(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return fmtDateTime(iso);
 }
 
 const ACTION_COLORS: Record<string, string> = {

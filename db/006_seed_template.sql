@@ -92,7 +92,7 @@ insert into public.form_templates (id, name, category, created_by, status) value
   ('11111111-0000-4000-8000-000000000003', 'IT System Access Request',       'Admin',   'EMP-0445', 'published'),
   ('11111111-0000-4000-8000-000000000004', 'Gate Pass',                      'Admin',   'EMP-0445', 'published'),
   ('11111111-0000-4000-8000-000000000005', 'New Employee Onboarding',        'HR',      'EMP-0201', 'published'),
-  ('11111111-0000-4000-8000-000000000006', 'Capital Expenditure Request',    'Finance', 'EMP-0312', 'draft');
+  ('11111111-0000-4000-8000-000000000006', 'Capital Expenditure Request',    'Finance', 'EMP-0312', 'published');
 
 insert into public.form_fields (form_template_id, field_type, field_name, order_index, is_required, field_config) values
   -- Travel & Expense: the money field is what pulls in the finance chain
@@ -270,6 +270,44 @@ insert into public.approval_slabs (form_template_id, min_amount, max_amount, app
 insert into public.notification_rules (form_template_id, notifyee_user_id, is_auto_added, label) values
   ('11111111-0000-4000-8000-000000000007', 'EMP-0201', true, 'hr_watch'),
   ('11111111-0000-4000-8000-000000000008', null,       true, 'submitter');
+
+
+-- =====================================================================
+-- 3b. Stage 2 — what a ticket carries
+--
+-- Capital expenditure is classified budgetary or non-budgetary, climbs
+-- the finance ladder by amount, and above 5,000,000 needs the board:
+-- any two of three members. The campaign's exceptional route is flagged
+-- wherever the request appears, and HR signs the final settlement.
+-- =====================================================================
+insert into public.form_fields (form_template_id, field_type, field_name, order_index, is_required, field_config) values
+  ('11111111-0000-4000-8000-000000000006', 'gen_employee_name', 'Employee name', 0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000006', 'text',     'Project',               1, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000006', 'select',   'Classification',        2, true,  '{"options":["Budgetary","Non-budgetary"]}'),
+  ('11111111-0000-4000-8000-000000000006', 'money',    'Amount',                3, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000006', 'textarea', 'Justification',         4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000006', 'file',     'Quotation',             5, false, '{}');
+
+insert into public.approval_rules
+  (form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, quorum, stage_label, condition) values
+  ('11111111-0000-4000-8000-000000000006', 'EMP-1134', 2, true,  'line_manager', 0, 0, null, null, null),
+  ('11111111-0000-4000-8000-000000000006', null,       3, true,  'slab_finance', 1, 0, null, null, null),
+  ('11111111-0000-4000-8000-000000000006', 'EMP-0700', 5, false, 'board',        2, 0, 2, 'Board approval',
+   '{"field": "Amount", "op": "gt", "value": "5000000"}'),
+  ('11111111-0000-4000-8000-000000000006', 'EMP-0800', 5, false, 'board',        2, 1, 2, 'Board approval',
+   '{"field": "Amount", "op": "gt", "value": "5000000"}'),
+  ('11111111-0000-4000-8000-000000000006', 'EMP-0650', 5, false, 'board',        2, 2, 2, 'Board approval',
+   '{"field": "Amount", "op": "gt", "value": "5000000"}');
+
+insert into public.approval_slabs (form_template_id, min_amount, max_amount, approver_user_id, order_index) values
+  ('11111111-0000-4000-8000-000000000006', 0,          null, 'EMP-0312', 0),
+  ('11111111-0000-4000-8000-000000000006', 1000000.01, null, 'EMP-0600', 1),
+  ('11111111-0000-4000-8000-000000000006', 2500000.01, null, 'EMP-0700', 2);
+
+update public.approval_rules set flag = 'Exceptional'
+ where label = 'cxo_exception' and tenant_id = app.current_tenant();
+update public.approval_rules set require_signature = true
+ where label = 'hr_final' and tenant_id = app.current_tenant();
 
 -- =====================================================================
 -- 4. Submissions, at different stages of the chain
@@ -496,6 +534,15 @@ begin
    where submission_id = '22222222-0000-4000-8000-000000000008'
      and approver_user_id = 'EMP-0830' and status = 'pending';
   perform public.act_on_approval(v_step, 'approve', 'Value is under the reporting threshold', 'EMP-0830');
+
+  -- The exit clearance has been talked about: Tom copied Priya, Admin
+  -- left a note, and it is linked to the leave that runs out his notice.
+  perform public.set_cc('22222222-0000-4000-8000-000000000007', array['EMP-0650'], 'EMP-2847');
+  perform public.add_note('22222222-0000-4000-8000-000000000007',
+    'Laptop and access card collected at the front desk. Locker key still outstanding.', 'EMP-0445');
+  perform public.link_submissions('22222222-0000-4000-8000-000000000007',
+    (select ref_number from public.form_submissions where id = '22222222-0000-4000-8000-000000000003'),
+    'Leave taken during the notice period', 'EMP-2847');
 end $chains$;
 
 commit;

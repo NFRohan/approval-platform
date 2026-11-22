@@ -10,6 +10,7 @@
 // =====================================================================
 
 import type { Approver, Step, StepState } from "@/components/ApprovalTimeline";
+import { fmtDateTime } from "@/lib/dates";
 
 export type ChainRow = {
   id: string;
@@ -25,6 +26,7 @@ export type ChainRow = {
   acted_at?: string | null;
   deadline_at?: string | null;
   reassigned_from?: string | null;
+  signature?: string | null;
 };
 
 export type Person = { name: string; designation: string | null; department?: string | null };
@@ -64,10 +66,7 @@ function initials(name: string) {
 }
 
 function when(iso?: string | null) {
-  if (!iso) return undefined;
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
-  });
+  return iso ? fmtDateTime(iso) : undefined;
 }
 
 function actionLabel(state: StepState) {
@@ -127,6 +126,7 @@ export function buildTimeline(rows: ChainRow[], people: Record<string, Person>):
       actionAt: when(r.acted_at),
       actionLabel: actionLabel(state),
       comment: r.comment || undefined,
+      signature: r.signature || undefined,
     };
   };
 

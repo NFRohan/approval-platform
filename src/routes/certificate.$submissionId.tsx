@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Printer, ArrowLeft } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { db } from "@/lib/db";
+import { fmtDate as fmtDateLib } from "@/lib/dates";
 
 export const Route = createFileRoute("/certificate/$submissionId")({
   head: () => ({
@@ -31,12 +32,7 @@ type SubmissionValue = {
 };
 
 function fmtDate(iso?: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return fmtDateLib(iso);
 }
 
 function initials(name: string) {
@@ -59,15 +55,17 @@ function CertificatePage() {
   const [department, setDepartment] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
-  const refCode = `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
+  const [refNumber, setRefNumber] = useState<string | null>(null);
+  const refCode = refNumber ?? `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
   const verifyUrl = `${window.location.origin}/status/${submissionId}`;
 
   const load = useCallback(async () => {
     const { data: sub } = await db
       .from("form_submissions")
-      .select("submitted_by, submitted_at, form_template_id")
+      .select("submitted_by, submitted_at, form_template_id, ref_number")
       .eq("id", submissionId)
       .maybeSingle();
+    setRefNumber((sub as { ref_number?: string | null } | null)?.ref_number ?? null);
 
     if (sub?.form_template_id) {
       const { data: tpl } = await db

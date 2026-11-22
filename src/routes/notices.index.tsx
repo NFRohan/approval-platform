@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Megaphone, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/notices/")({
   head: () => ({ meta: [{ title: "Notice Board · Admin Services Portal" }] }),
@@ -23,7 +24,7 @@ type Notice = {
 };
 
 function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return fmtDate(iso);
 }
 
 function NoticeBoardPage() {

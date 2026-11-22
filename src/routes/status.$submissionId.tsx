@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import { Award, Clipboard, Clock, CornerDownRight, FileText, Link2, MessageCircleQuestion, Undo2, XCircle } from "lucide-react";
+import { Award, Clipboard, Clock, FileText, Link2, MessageCircleQuestion, Undo2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { StatusBadge, type StatusKey } from "@/components/StatusBadge";
@@ -11,10 +11,11 @@ import {
   type Step,
   type StepState,
 } from "@/components/ApprovalTimeline";
-import { listAttachments, type AttachmentInfo } from "@/lib/attachment-fn";
-import { AttachmentLink } from "@/components/AttachmentLink";
 import { buildTimeline, type ChainRow } from "@/lib/timeline";
-import { answerQuestion, cancelSubmission, recallSubmission } from "@/lib/chain";
+import { answerQuestion, cancelSubmission, copySubmission, recallSubmission } from "@/lib/chain";
+import { CcPanel, DocumentsPanel, LinksPanel, NotesPanel } from "@/components/ticket/TicketPanels";
+import { ProcessMap } from "@/components/ProcessMap";
+import { fmtDateTime as fmtDateTimeLib } from "@/lib/dates";
 
 export const Route = createFileRoute("/status/$submissionId")({
   head: () => ({
@@ -30,6 +31,9 @@ type SubmissionRow = {
   submitted_by: string | null;
   form_template_id: string | null;
   parent_submission_id?: string | null;
+  ref_number?: string | null;
+  priority?: string | null;
+  flag?: string | null;
 };
 
 type EventRow = {
@@ -103,15 +107,7 @@ function initials(name: string) {
 }
 
 function fmtDateTime(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return fmtDateTimeLib(iso);
 }
 
 function mapApprovalState(s: string | null): StepState {
@@ -160,7 +156,6 @@ function StatusPage() {
   const [employees, setEmployees] = useState<Record<string, EmployeeRow>>({});
   const [linkedFieldTypes, setLinkedFieldTypes] = useState<string[]>([]);
   const [gatePassCardNum, setGatePassCardNum] = useState<string | null>(null);
-  const [files, setFiles] = useState<AttachmentInfo[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [queries, setQueries] = useState<QueryRow[]>([]);
   const [parent, setParent] = useState<LinkedSub | null>(null);
@@ -169,6 +164,8 @@ function StatusPage() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fileFields, setFileFields] = useState<string[]>([]);
+  const [view, setView] = useState<"timeline" | "map">("timeline");
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
@@ -180,10 +177,6 @@ function StatusPage() {
       .maybeSingle();
     setSubmission(sub as SubmissionRow | null);
 
-    // What was attached, so whoever is following the request can open it.
-    listAttachments({ data: { submissionId } })
-      .then(setFiles)
-      .catch(() => setFiles([]));
 
     if (sub?.form_template_id) {
       const { data: f } = await db
@@ -263,6 +256,14 @@ function StatusPage() {
     }
     setFollowups(linked);
     setParent(parentRow);
+
+    // The questions a document can answer, so a new one can be attached
+    // to the right one.
+    if ((sub as SubmissionRow | null)?.form_template_id) {
+      const { data: ff } = await db.from("form_fields").select("field_name")
+        .eq("form_template_id", (sub as SubmissionRow).form_template_id as string).eq("field_type", "file");
+      setFileFields((ff ?? []).map((f) => f.field_name as string).filter(Boolean));
+    }
 
     const ids = Array.from(
       new Set([
@@ -346,6 +347,20 @@ function StatusPage() {
     ["submitted", "in_progress", "on_hold"].includes(submission.status ?? "") &&
     !approvals.some((r) => r.status === "approved");
   const nameOf = (id?: string | null) => (id ? employees[id]?.name ?? id : "Somebody");
+  // On the request: raised it, or an approver on it. Whoever is copied is
+  // on it too; the database is the judge of every write either way.
+  const involved = isRequester || approvals.some((r) => r.approver_user_id === currentUser.employee_id);
+  const closed = submission.status === "cancelled";
+
+  async function copy() {
+    if (!submission?.form_template_id) return;
+    setBusy(true);
+    const { data, error } = await copySubmission(submission.id, currentUser.employee_id);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Copied — edit it and submit when ready");
+    navigate({ to: "/forms/$formId", params: { formId: submission.form_template_id }, search: { draft: data as string } });
+  }
 
   async function recall() {
     if (!submission) return;
@@ -381,7 +396,7 @@ function StatusPage() {
     setAnswers((a) => ({ ...a, [q.id]: "" }));
     void loadAll();
   }
-  const refCode = `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
+  const refCode = submission.ref_number ?? `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
 
   // This screen is the requester's view and has no actions on it. An
   // approver who arrives here — from a notification, the dashboard, or a
@@ -525,8 +540,33 @@ function StatusPage() {
               </div>
             </div>
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div className="flex flex-col items-end gap-2" style={{ flexShrink: 0 }}>
             <StatusBadge status={overall} size="lg" showIcon />
+            <div className="flex gap-1.5">
+              {submission.flag && (
+                <span className="rounded-full text-[11.5px] font-semibold" style={{ padding: "2px 10px", background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>
+                  {submission.flag}
+                </span>
+              )}
+              {submission.priority && submission.priority !== "normal" && (
+                <span className="rounded-full text-[11.5px] font-semibold" style={{
+                  padding: "2px 10px",
+                  background: submission.priority === "urgent" ? "#FEF2F2" : "#FFFBEB",
+                  color: submission.priority === "urgent" ? "#B91C1C" : "#B45309",
+                  border: `1px solid ${submission.priority === "urgent" ? "#FECACA" : "#FDE68A"}`,
+                }}>
+                  {submission.priority === "urgent" ? "Urgent" : "High priority"}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={copy}
+              disabled={busy}
+              className="rounded-md text-[12.5px] font-medium"
+              style={{ padding: "5px 10px", border: "1px solid #E4E4E7", background: "#fff", color: "#3F3F46" }}
+            >
+              Copy to a new request
+            </button>
           </div>
         </div>
       </div>
@@ -573,23 +613,6 @@ function StatusPage() {
         </Link>
       )}
 
-      {/* Attachments */}
-      {files.length > 0 && (
-        <div className="rounded-xl bg-white mb-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
-          <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: "#52525B" }}>
-            Attachments
-          </div>
-          <div className="flex flex-col gap-2">
-            {files.map((f) => (
-              <div key={f.id} className="flex items-center gap-3 flex-wrap">
-                <span className="text-[12px]" style={{ color: "#71717A", minWidth: 140 }}>{f.field_name}</span>
-                <AttachmentLink file={f} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* A draft is finished on the form, not here */}
       {submission.status === "draft" && isRequester && submission.form_template_id && (
         <Link
@@ -610,32 +633,7 @@ function StatusPage() {
         </Link>
       )}
 
-      {/* Where it came from, and what followed */}
-      {(parent || followups.length > 0) && (
-        <div className="rounded-xl bg-white mb-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
-          <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: "#52525B" }}>
-            Linked requests
-          </div>
-          <div className="flex flex-col gap-2 text-[13px]">
-            {parent && (
-              <Link to="/status/$submissionId" params={{ submissionId: parent.id }} className="inline-flex items-center gap-2" style={{ color: "#4338CA" }}>
-                <CornerDownRight size={13} /> Follows from {parent.formName ?? "a request"} · AMS-{parent.id.slice(0, 8).toUpperCase()}
-              </Link>
-            )}
-            {followups.map((f) =>
-              f.status === "draft" && isRequester ? (
-                <Link key={f.id} to="/forms/$formId" params={{ formId: f.form_template_id }} search={{ draft: f.id }} className="inline-flex items-center gap-2" style={{ color: "#4338CA" }}>
-                  <CornerDownRight size={13} /> Follow-up: {f.formName ?? "request"} — a draft ready for you to check and submit
-                </Link>
-              ) : (
-                <Link key={f.id} to="/status/$submissionId" params={{ submissionId: f.id }} className="inline-flex items-center gap-2" style={{ color: "#4338CA" }}>
-                  <CornerDownRight size={13} /> Follow-up: {f.formName ?? "request"} · {f.status}
-                </Link>
-              ),
-            )}
-          </div>
-        </div>
-      )}
+      <LinksPanel submissionId={submissionId} actor={currentUser.employee_id} canWrite={involved && !closed} parentId={submission.parent_submission_id ?? null} />
 
       {/* The requester can take it back until somebody approves */}
       {canWithdraw && (
@@ -730,8 +728,37 @@ function StatusPage() {
         </div>
       )}
 
-      {/* Timeline */}
-      {steps.length > 0 ? (
+      <DocumentsPanel submissionId={submissionId} actor={currentUser.employee_id} canWrite={(involved || submission.status === "draft") && !closed} fileFields={fileFields} />
+      <CcPanel submissionId={submissionId} actor={currentUser.employee_id} isRequester={isRequester && !closed} />
+      <NotesPanel submissionId={submissionId} actor={currentUser.employee_id} canWrite={involved} />
+
+      {/* Timeline, or the same route as a flowchart */}
+      {steps.length > 0 && (
+        <div className="flex gap-1 mb-4" role="tablist" aria-label="Route view">
+          {(["timeline", "map"] as const).map((v) => (
+            <button
+              key={v}
+              role="tab"
+              aria-selected={view === v}
+              onClick={() => setView(v)}
+              className="rounded-md text-[12.5px] font-medium"
+              style={{
+                padding: "5px 12px",
+                border: `1px solid ${view === v ? "#C7D2FE" : "#E4E4E7"}`,
+                background: view === v ? "#EEF2FF" : "#fff",
+                color: view === v ? "#4338CA" : "#52525B",
+              }}
+            >
+              {v === "timeline" ? "Timeline" : "Process map"}
+            </button>
+          ))}
+        </div>
+      )}
+      {steps.length > 0 && view === "map" ? (
+        <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: 16 }}>
+          <ProcessMap rows={approvals} people={employees} />
+        </div>
+      ) : steps.length > 0 ? (
         <ApprovalTimeline steps={steps} />
       ) : (
         <div

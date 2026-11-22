@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { todayInOrg } from "@/lib/workdays";
 import { listAttachments, type AttachmentInfo } from "@/lib/attachment-fn";
 import { AttachmentLink } from "@/components/AttachmentLink";
+import { SignaturePad } from "@/components/SignaturePad";
+import { fmtDate as fmtDateLib } from "@/lib/dates";
 
 export const Route = createFileRoute("/approvals")({
   // A notification that says your approval is needed can name which
@@ -42,8 +44,11 @@ type Row = {
   deadline_at: string | null;
   acted_at: string | null;
   comment: string | null;
+  require_signature?: boolean | null;
   // joined
   formName?: string;
+  priority?: string | null;
+  flag?: string | null;
   subjectLabel?: string;
   submittedAt?: string | null;
   raisedAt?: string | null;
@@ -57,12 +62,7 @@ type Row = {
 type SubVal = { field_name: string | null; value: string | null };
 
 function fmtDate(iso?: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return fmtDateLib(iso);
 }
 
 function formatValue(raw: string | null): ReactNode {
@@ -134,6 +134,8 @@ function formatValue(raw: string | null): ReactNode {
 
     return raw;
   } catch {
+    // A date answer, written the one way dates are written here.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) return fmtDateLib(raw.trim());
     // Pure number → add thousand separators
     if (/^\d+(\.\d+)?$/.test(raw.trim())) {
       const n = parseFloat(raw);
@@ -181,6 +183,10 @@ function ApprovalsInbox() {
     { id: string; subject_id: string; subject_type: string; asked_by: string; question: string; created_at: string }[]
   >([]);
   const [qAnswers, setQAnswers] = useState<Record<string, string>>({});
+  const [upcoming, setUpcoming] = useState<{ id: string; submissionId: string | null; label: string }[]>([]);
+  // A step that asks for a signature opens the pad instead of approving.
+  const [signing, setSigning] = useState<Row | null>(null);
+  const [signature, setSignature] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -260,7 +266,10 @@ function ApprovalsInbox() {
     );
     let subsMap: Record<
       string,
-      { form_template_id: string | null; submitted_at: string | null; submitted_by: string | null }
+      {
+        form_template_id: string | null; submitted_at: string | null; submitted_by: string | null;
+        ref_number?: string | null; priority?: string | null; flag?: string | null;
+      }
     > = {};
     let formsMap: Record<string, string> = {};
     let empMap: Record<string, { name: string; department: string | null }> = {};
@@ -268,7 +277,7 @@ function ApprovalsInbox() {
     if (submissionIds.length) {
       const { data: subs } = await db
         .from("form_submissions")
-        .select("id, form_template_id, submitted_at, submitted_by")
+        .select("id, form_template_id, submitted_at, submitted_by, ref_number, priority, flag")
         .in("id", submissionIds);
       (subs || []).forEach((s) => {
         subsMap[s.id] = s;
@@ -389,8 +398,10 @@ function ApprovalsInbox() {
           // Two claims against one form are otherwise the same sentence
           // twice. Same reference the status screen and the bell print.
           subjectRef: r.submission_id
-            ? `AMS-${r.submission_id.slice(0, 8).toUpperCase()}`
+            ? sub?.ref_number ?? `AMS-${r.submission_id.slice(0, 8).toUpperCase()}`
             : undefined,
+          priority: sub?.priority ?? null,
+          flag: sub?.flag ?? null,
           submittedBy: requester,
           submitterName: submitter?.name,
           submitterDept: submitter?.department || undefined,
@@ -402,7 +413,11 @@ function ApprovalsInbox() {
     // sitting in it there was no way to find the one you just raised —
     // a date three days out told you nothing about which was which.
     // Newest first, and anything without a timestamp settles at the end.
+    // Urgent first, then high — "fasten the high-priority request
+    // approval process" starts with it being the first thing seen.
+    const rank = (p?: string | null) => (p === "urgent" ? 0 : p === "high" ? 1 : 2);
     enriched.sort((a, b) => {
+      if (rank(a.priority) !== rank(b.priority)) return rank(a.priority) - rank(b.priority);
       const at = a.raisedAt ? Date.parse(a.raisedAt) : NaN;
       const bt = b.raisedAt ? Date.parse(b.raisedAt) : NaN;
       if (Number.isNaN(at) && Number.isNaN(bt)) return 0;
@@ -414,6 +429,33 @@ function ApprovalsInbox() {
     });
 
     setRows(enriched);
+
+    // What is coming: steps waiting on me behind somebody else. The
+    // "list of approvals that will be processed" — upcoming, not yet
+    // actionable, so shown apart from the queue.
+    const { data: ahead } = await db
+      .from("approval_requests")
+      .select("id, submission_id, subject_id, subject_type, step_index, deadline_at")
+      .in("approver_user_id", approverIds)
+      .eq("status", "waiting")
+      .order("deadline_at");
+    const aheadSubs = Array.from(new Set((ahead ?? []).map((a) => a.submission_id).filter(Boolean) as string[]));
+    const aheadInfo: Record<string, { ref: string | null; form: string | null }> = {};
+    if (aheadSubs.length) {
+      const { data: s2 } = await db.from("form_submissions").select("id, ref_number, form_template_id").in("id", aheadSubs);
+      const tpl = Array.from(new Set((s2 ?? []).map((x) => x.form_template_id as string)));
+      const { data: t2 } = tpl.length ? await db.from("form_templates").select("id, name").in("id", tpl) : { data: [] };
+      (s2 ?? []).forEach((x) => {
+        aheadInfo[x.id] = { ref: x.ref_number, form: (t2 ?? []).find((t) => t.id === x.form_template_id)?.name ?? null };
+      });
+    }
+    setUpcoming((ahead ?? []).map((a) => ({
+      id: a.id as string,
+      submissionId: a.submission_id as string | null,
+      label: a.submission_id
+        ? `${aheadInfo[a.submission_id]?.form ?? "Request"} · ${aheadInfo[a.submission_id]?.ref ?? ""}`
+        : subjectLabels[a.subject_id as string] ?? "Request",
+    })));
     setLoading(false);
   }, [currentUser.employee_id]);
 
@@ -494,6 +536,7 @@ function ApprovalsInbox() {
     row: Row,
     action: "approve" | "reject" | "clarification" | "resume",
     note?: string,
+    signature?: string | null,
   ): Promise<boolean> => {
     const { error } = await db.rpc("act_on_approval", {
       p_request_id: row.id,
@@ -502,6 +545,7 @@ function ApprovalsInbox() {
       // Acting for a delegator is still acting as yourself: the database
       // checks that this person holds a delegation covering the step.
       p_actor: currentUser.employee_id,
+      p_signature: signature ?? null,
     });
     if (error) {
       toast.error(error.message);
@@ -527,9 +571,15 @@ function ApprovalsInbox() {
     return true;
   };
 
-  const handleApprove = async (row: Row) => {
-    if (!(await act(row, "approve"))) return;
+  const handleApprove = async (row: Row, signed?: string | null) => {
+    if (row.require_signature && !signed) {
+      setSignature(null);
+      setSigning(row);
+      return;
+    }
+    if (!(await act(row, "approve", undefined, signed))) return;
     toast.success("Approved — it has moved to the next approver");
+    setSigning(null);
     fadeAndRemove(row.id);
   };
 
@@ -790,6 +840,24 @@ function ApprovalsInbox() {
                             style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: "#71717A" }}
                           >
                             {r.subjectRef}
+                          </span>
+                        )}
+                        {r.flag && (
+                          <span className="rounded-full" style={{ marginLeft: 8, padding: "1px 8px", fontSize: 11, fontWeight: 600, background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>
+                            {r.flag}
+                          </span>
+                        )}
+                        {r.priority && r.priority !== "normal" && (
+                          <span className="rounded-full" style={{ marginLeft: 6, padding: "1px 8px", fontSize: 11, fontWeight: 600,
+                            background: r.priority === "urgent" ? "#FEF2F2" : "#FFFBEB",
+                            color: r.priority === "urgent" ? "#B91C1C" : "#B45309",
+                            border: `1px solid ${r.priority === "urgent" ? "#FECACA" : "#FDE68A"}` }}>
+                            {r.priority === "urgent" ? "Urgent" : "High"}
+                          </span>
+                        )}
+                        {r.require_signature && (
+                          <span className="rounded-full" style={{ marginLeft: 6, padding: "1px 8px", fontSize: 11, fontWeight: 500, background: "#F4F4F5", color: "#52525B", border: "1px solid #E4E4E7" }}>
+                            Signature required
                           </span>
                         )}
                       </div>
@@ -1059,6 +1127,52 @@ function ApprovalsInbox() {
           })}
         </div>
       )}
+
+      {upcoming.length > 0 && (
+        <div className="rounded-xl bg-white mt-8" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Coming your way</div>
+          <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
+            Requests that will reach you once the approvers before you have acted.
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {upcoming.map((u) =>
+              u.submissionId ? (
+                <Link key={u.id} to="/status/$submissionId" params={{ submissionId: u.submissionId }} style={{ fontSize: 13, color: "#4338CA" }}>
+                  {u.label}
+                </Link>
+              ) : (
+                <span key={u.id} style={{ fontSize: 13, color: "#3F3F46" }}>{u.label}</span>
+              ),
+            )}
+          </div>
+        </div>
+      )}
+
+      <Dialog open={!!signing} onOpenChange={(o) => !o && setSigning(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>This step needs your signature</DialogTitle>
+          </DialogHeader>
+          <SignaturePad onChange={setSignature} />
+          <DialogFooter>
+            <button
+              onClick={() => setSigning(null)}
+              className="rounded-md font-medium bg-white"
+              style={{ padding: "7px 12px", fontSize: 13, color: "#52525B", border: "1px solid #E4E4E7" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => signing && handleApprove(signing, signature)}
+              disabled={!signature}
+              className="rounded-md text-white font-medium"
+              style={{ padding: "7px 14px", fontSize: 13, background: "#4F46E5", opacity: signature ? 1 : 0.5 }}
+            >
+              Sign and approve
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!modal} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent>

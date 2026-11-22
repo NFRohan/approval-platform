@@ -124,7 +124,7 @@ create policy staff_audit_insert on public.staff_audit
 -- =====================================================================
 -- Everything else — the demo's own data.
 --
--- Generated in a loop, as before, because 26 tables genuinely share one
+-- Generated in a loop, as before, because 31 tables genuinely share one
 -- rule. The difference is the rule.
 -- =====================================================================
 do $$
@@ -136,7 +136,8 @@ declare
     'attachments','approval_requests','items','venues','item_stock','movement_orders',
     'notices','notice_comments','stationery_requests','maintenance_items',
     'maintenance_requests','maintenance_request_items','activity_log','notifications',
-    'departments','approval_events','approval_queries'
+    'departments','approval_events','approval_queries',
+    'tenant_counters','submission_links','submission_cc','ticket_notes','attachment_access'
   ];
 begin
   foreach t in array data_tables loop
@@ -153,7 +154,7 @@ begin
     -- trail the audited party can rewrite is not a trail. It gets an
     -- insert policy below instead of the general write policy, which is
     -- why it is skipped rather than granted and then overridden.
-    if t not in ('activity_log', 'approval_events') then
+    if t not in ('activity_log', 'approval_events', 'ticket_notes', 'attachment_access') then
       execute format($f$
         create policy %1$s_member_write on public.%1$I
           for all to app_api
@@ -173,6 +174,17 @@ create policy activity_log_member_insert on public.activity_log
 -- request is added to and read, never rewritten.
 drop policy if exists approval_events_member_insert on public.approval_events;
 create policy approval_events_member_insert on public.approval_events
+  for insert to app_api
+  with check (tenant_id = app.current_tenant() and app.is_member());
+
+-- Notes on a request and the document access log: added to and read,
+-- never rewritten.
+drop policy if exists ticket_notes_member_insert on public.ticket_notes;
+create policy ticket_notes_member_insert on public.ticket_notes
+  for insert to app_api
+  with check (tenant_id = app.current_tenant() and app.is_member());
+drop policy if exists attachment_access_member_insert on public.attachment_access;
+create policy attachment_access_member_insert on public.attachment_access
   for insert to app_api
   with check (tenant_id = app.current_tenant() and app.is_member());
 

@@ -142,8 +142,8 @@ begin
   -- employees: employee_id copies across unchanged, which is what lets
   -- every text reference to a person survive without remapping.
   insert into _m select id, gen_random_uuid() from public.employees where tenant_id = v_tpl;
-  insert into public.employees (id, tenant_id, employee_id, name, designation, department, line_manager_id, gate_pass_card_number)
-  select m.new, v_new, e.employee_id, e.name, e.designation, e.department, e.line_manager_id, e.gate_pass_card_number
+  insert into public.employees (id, tenant_id, employee_id, name, designation, department, line_manager_id, gate_pass_card_number, active, left_on)
+  select m.new, v_new, e.employee_id, e.name, e.designation, e.department, e.line_manager_id, e.gate_pass_card_number, e.active, e.left_on
     from public.employees e join _m m on m.old = e.id
    where e.tenant_id = v_tpl;
 
@@ -182,9 +182,11 @@ begin
   -- Rules for notices and service requests have no template, so the
   -- template join is a left one.
   insert into public.approval_rules (id, tenant_id, subject_type, form_template_id, approver_user_id, deadline_days,
-                                     is_auto_added, label, step_index, quorum, condition, stage_label, lane, position)
+                                     is_auto_added, label, step_index, quorum, condition, stage_label, lane, position,
+                                     require_signature, flag)
   select m.new, v_new, r.subject_type, mt.new, r.approver_user_id, r.deadline_days,
-         r.is_auto_added, r.label, r.step_index, r.quorum, r.condition, r.stage_label, r.lane, r.position
+         r.is_auto_added, r.label, r.step_index, r.quorum, r.condition, r.stage_label, r.lane, r.position,
+         r.require_signature, r.flag
     from public.approval_rules r
     join _m m  on m.old  = r.id
     left join _m mt on mt.old = r.form_template_id
@@ -219,8 +221,15 @@ begin
    where d.tenant_id = v_tpl;
 
   insert into _m select id, gen_random_uuid() from public.form_submissions where tenant_id = v_tpl;
-  insert into public.form_submissions (id, tenant_id, form_template_id, submitted_by, status, submitted_at)
-  select m.new, v_new, mt.new, s.submitted_by, s.status, s.submitted_at
+  -- References copy across as they are, and so does the counter behind
+  -- them, so the next request raised in the evaluation follows on.
+  insert into public.tenant_counters (tenant_id, name, value)
+  select v_new, c.name, c.value from public.tenant_counters c where c.tenant_id = v_tpl;
+
+  insert into public.form_submissions (id, tenant_id, form_template_id, submitted_by, status, submitted_at,
+                                       ref_number, priority, flag)
+  select m.new, v_new, mt.new, s.submitted_by, s.status, s.submitted_at,
+         s.ref_number, s.priority, s.flag
     from public.form_submissions s
     join _m m  on m.old  = s.id
     join _m mt on mt.old = s.form_template_id
@@ -320,8 +329,8 @@ begin
   -- outward: exactly one is set on any given row, so the other three
   -- resolve to null and the arc is preserved on the far side.
   insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
-  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, status, comment, acted_at, deadline_at, reassigned_from, created_at)
-  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
+  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at)
+  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
     from public.approval_requests a
     join      _m m   on m.old   = a.id
     left join _m ms  on ms.old  = a.submission_id
@@ -333,6 +342,47 @@ begin
   -- entity_id is an untyped pointer at whatever the entry describes, so
   -- it is resolved through the same map. Anything not found keeps its
   -- original value rather than being dropped.
+  -- The chain's history, the questions asked on it, and the ticket's own
+  -- links, copies, notes and documents.
+  insert into public.approval_events (id, tenant_id, request_id, subject_type, subject_id, actor_id, action, comment, target_id, created_at)
+  select gen_random_uuid(), v_new, mr.new, e.subject_type, coalesce(ms.new, e.subject_id),
+         e.actor_id, e.action, e.comment, e.target_id, e.created_at
+    from public.approval_events e
+    left join _m mr on mr.old = e.request_id
+    left join _m ms on ms.old = e.subject_id
+   where e.tenant_id = v_tpl;
+
+  insert into public.approval_queries (id, tenant_id, subject_type, subject_id, asked_by, asked_to, question, answer, answered_at, created_at)
+  select gen_random_uuid(), v_new, q.subject_type, coalesce(ms.new, q.subject_id),
+         q.asked_by, q.asked_to, q.question, q.answer, q.answered_at, q.created_at
+    from public.approval_queries q
+    left join _m ms on ms.old = q.subject_id
+   where q.tenant_id = v_tpl;
+
+  insert into public.submission_links (id, tenant_id, from_id, to_id, note, created_by, created_at)
+  select gen_random_uuid(), v_new, mf.new, mt.new, l.note, l.created_by, l.created_at
+    from public.submission_links l
+    join _m mf on mf.old = l.from_id
+    join _m mt on mt.old = l.to_id
+   where l.tenant_id = v_tpl;
+
+  insert into public.submission_cc (id, tenant_id, submission_id, employee_id, added_by, created_at)
+  select gen_random_uuid(), v_new, ms.new, c.employee_id, c.added_by, c.created_at
+    from public.submission_cc c join _m ms on ms.old = c.submission_id
+   where c.tenant_id = v_tpl;
+
+  insert into public.ticket_notes (id, tenant_id, submission_id, author_id, body, created_at)
+  select gen_random_uuid(), v_new, ms.new, n.author_id, n.body, n.created_at
+    from public.ticket_notes n join _m ms on ms.old = n.submission_id
+   where n.tenant_id = v_tpl;
+
+  insert into public.attachments (id, tenant_id, submission_id, field_name, file_name, content_type, size_bytes,
+                                  data, uploaded_by, created_at, description, tags, version, superseded_at)
+  select gen_random_uuid(), v_new, ms.new, a.field_name, a.file_name, a.content_type, a.size_bytes,
+         a.data, a.uploaded_by, a.created_at, a.description, a.tags, a.version, a.superseded_at
+    from public.attachments a join _m ms on ms.old = a.submission_id
+   where a.tenant_id = v_tpl;
+
   insert into public.activity_log (id, tenant_id, actor_id, action, entity_type, entity_id, detail, created_at)
   select gen_random_uuid(), v_new, a.actor_id, a.action, a.entity_type,
          coalesce(mm.new, a.entity_id), a.detail, a.created_at

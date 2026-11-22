@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { toCsv, downloadCsv } from "@/lib/csv";
+import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/movement-orders")({
   head: () => ({
@@ -66,10 +67,6 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
   on_hold:      { label: "On Hold",      color: "#6B7280", bg: "#F3F4F6" },
 };
 
-function fmtDate(iso?: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-}
 
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS_LABELS[status] ?? { label: status, color: "#52525B", bg: "#F4F4F5" };

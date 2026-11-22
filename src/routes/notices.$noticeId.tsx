@@ -7,6 +7,7 @@ import { actOnSubject, openStep } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { fmtDateTime } from "@/lib/dates";
 
 export const Route = createFileRoute("/notices/$noticeId")({
   head: () => ({ meta: [{ title: "Notice · Admin Services Portal" }] }),
@@ -21,7 +22,7 @@ type Notice = {
 type Comment = { id: string; author_id: string | null; text: string; created_at: string; authorName?: string };
 
 function fmt(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return fmtDateTime(iso);
 }
 
 function NoticeDetailPage() {

@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { todayInOrg } from "@/lib/workdays";
+import { fmtDate as fmtDateLib } from "@/lib/dates";
+import { handOver } from "@/lib/chain";
 
 export const Route = createFileRoute("/approvals/delegate")({
   head: () => ({
@@ -35,11 +37,7 @@ type EmployeeRow = {
 };
 
 function fmtDate(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return fmtDateLib(iso);
 }
 
 function isActive(row: DelegationRow) {
@@ -360,6 +358,79 @@ function DelegationPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      <LeaverHandOver actor={currentUser.employee_id} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Somebody is leaving.
+//
+// "Leavers' delegation." Delegation above covers a period; a leaver
+// needs everything handed over for good — every step waiting on them,
+// every rule, slab and department role that names them, and their
+// reports. hand_over does it in one transaction and keeps their row,
+// marked as left, because the trail still names them.
+// ---------------------------------------------------------------------
+function LeaverHandOver({ actor }: { actor: string }) {
+  const [people, setPeople] = useState<{ employee_id: string; name: string; designation: string | null; active: boolean }[]>([]);
+  const [leaver, setLeaver] = useState("");
+  const [successor, setSuccessor] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await db.from("employees").select("employee_id, name, designation, active").order("name");
+    setPeople((data ?? []) as typeof people);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function go() {
+    if (!leaver || !successor) return;
+    setBusy(true);
+    const { data, error } = await handOver(leaver, successor, actor);
+    setBusy(false);
+    if (error) { toast.error(error.message); return; }
+    const who = (id: string) => people.find((p) => p.employee_id === id)?.name ?? id;
+    toast.success(`${who(leaver)}'s work is now ${who(successor)}'s — ${data ?? 0} open or upcoming steps moved`);
+    setLeaver(""); setSuccessor("");
+    void load();
+  }
+
+  const active = people.filter((p) => p.active !== false);
+  const left = people.filter((p) => p.active === false);
+  const sel: React.CSSProperties = { padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7", borderRadius: 6, background: "#fff", minWidth: 200 };
+
+  return (
+    <div className="rounded-xl bg-white mt-8" style={{ border: "1px solid #E4E4E7", padding: "16px 18px" }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: "#18181B" }}>Somebody is leaving</div>
+      <p style={{ fontSize: 13, color: "#71717A", margin: "4px 0 12px" }}>
+        Hand everything of theirs to a successor for good: the approvals waiting on them now and later,
+        every rule and department role that names them, and the people who report to them.
+      </p>
+      <div className="flex gap-2 flex-wrap items-center">
+        <select value={leaver} onChange={(e) => setLeaver(e.target.value)} aria-label="Who is leaving" style={sel}>
+          <option value="">Who is leaving…</option>
+          {active.map((p) => <option key={p.employee_id} value={p.employee_id}>{p.name}{p.designation ? ` — ${p.designation}` : ""}</option>)}
+        </select>
+        <span style={{ fontSize: 13, color: "#71717A" }}>→</span>
+        <select value={successor} onChange={(e) => setSuccessor(e.target.value)} aria-label="Who takes over" style={sel}>
+          <option value="">Who takes over…</option>
+          {active.filter((p) => p.employee_id !== leaver).map((p) => <option key={p.employee_id} value={p.employee_id}>{p.name}{p.designation ? ` — ${p.designation}` : ""}</option>)}
+        </select>
+        <button
+          onClick={go}
+          disabled={!leaver || !successor || busy}
+          style={{ padding: "8px 14px", fontSize: 13, fontWeight: 500, borderRadius: 6, background: "#B91C1C", color: "#fff", opacity: !leaver || !successor || busy ? 0.5 : 1 }}
+        >
+          Hand over
+        </button>
+      </div>
+      {left.length > 0 && (
+        <div style={{ fontSize: 12, color: "#A1A1AA", marginTop: 10 }}>
+          Left: {left.map((p) => p.name).join(", ")}
         </div>
       )}
     </div>

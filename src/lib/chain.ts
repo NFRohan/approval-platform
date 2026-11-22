@@ -133,6 +133,7 @@ export async function actOnSubject(
     p_action: action,
     p_comment: comment?.trim() || null,
     p_actor: actor,
+    p_signature: null,
   });
 }
 
@@ -148,12 +149,14 @@ export async function actOnStep(
   action: ChainAction,
   actor: string,
   comment?: string,
+  signature?: string | null,
 ): Promise<{ error: { message: string } | null }> {
   return db.rpc('act_on_approval', {
     p_request_id: requestId,
     p_action: action,
     p_comment: comment?.trim() || null,
     p_actor: actor,
+    p_signature: signature ?? null,
   });
 }
 
@@ -278,4 +281,39 @@ export function askQuestion(subjectId: string, to: string, question: string, act
 
 export function answerQuestion(queryId: string, answer: string, actor: string) {
   return db.rpc('answer_question', { p_query_id: queryId, p_answer: answer.trim(), p_actor: actor });
+}
+
+// ---------------------------------------------------------------------
+// Stage 2: the ticket. Each names who is acting; the database checks it.
+// ---------------------------------------------------------------------
+
+export function addNote(submissionId: string, body: string, actor: string) {
+  return db.rpc('add_note', { p_submission_id: submissionId, p_body: body.trim(), p_actor: actor });
+}
+
+export function setCc(submissionId: string, people: string[], actor: string) {
+  return db.rpc('set_cc', { p_submission_id: submissionId, p_people: people, p_actor: actor });
+}
+
+/** `other` is a reference number such as AMS-2026-00042. */
+export function linkSubmissions(submissionId: string, other: string, actor: string, note?: string) {
+  return db.rpc('link_submissions', {
+    p_submission_id: submissionId,
+    p_other: other.trim(),
+    p_note: note?.trim() || null,
+    p_actor: actor,
+  });
+}
+
+export function unlinkSubmissions(submissionId: string, otherId: string, actor: string) {
+  return db.rpc('unlink_submissions', { p_submission_id: submissionId, p_other_id: otherId, p_actor: actor });
+}
+
+/** A new draft of the same form, for the actor, with the same answers and current documents. */
+export function copySubmission(submissionId: string, actor: string) {
+  return db.rpc('copy_submission', { p_submission_id: submissionId, p_actor: actor });
+}
+
+export function handOver(leaver: string, successor: string, actor: string) {
+  return db.rpc('hand_over', { p_leaver: leaver, p_successor: successor, p_actor: actor });
 }

@@ -7,6 +7,7 @@ import {
 } from "@/lib/staff-fn";
 import { currentSession } from "@/lib/auth-fn";
 import { LoadingRows } from "@/components/Loading";
+import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/staff")({
   head: () => ({ meta: [{ title: "Evaluations · Admin Services Portal" }] }),
@@ -178,7 +179,7 @@ function StaffPage() {
                 </div>
 
                 <div style={{ fontSize: 11.5, color: "#A1A1AA", width: 108 }}>
-                  {r.lastLoginAt ? `used ${new Date(r.lastLoginAt).toLocaleDateString()}` : "never signed in"}
+                  {r.lastLoginAt ? `used ${fmtDate(r.lastLoginAt)}` : "never signed in"}
                 </div>
 
                 <div className="flex gap-1.5 shrink-0">

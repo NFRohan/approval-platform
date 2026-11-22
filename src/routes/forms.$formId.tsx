@@ -13,6 +13,8 @@ import { type ApprovalSlab } from "@/lib/approvalSlabs";
 import { resolveWatcher } from "@/lib/routing";
 import { addWorkingDays } from "@/lib/workdays";
 import { uploadAttachment } from "@/lib/attachment-fn";
+import { setCc } from "@/lib/chain";
+import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/forms/$formId")({
   // Resuming a draft is the same screen with something already in it.
@@ -82,6 +84,29 @@ function FillFormPage() {
   // moment a draft is first saved, so saving twice updates one row
   // rather than leaving a trail of abandoned ones.
   const [openDraft, setOpenDraft] = useState<string | null>(draftId ?? null);
+  // How urgent it is, and who it is copied to — set on the review step.
+  const [priority, setPriority] = useState<"normal" | "high" | "urgent">("normal");
+  const [cc, setCcList] = useState<string[]>([]);
+  const [people, setPeople] = useState<{ employee_id: string; name: string; designation: string | null }[]>([]);
+  useEffect(() => {
+    void db.from("employees").select("employee_id, name, designation").order("name")
+      .then(({ data }) => setPeople((data ?? []) as typeof people));
+  }, []);
+  // A draft brings its own priority and CC list with it.
+  useEffect(() => {
+    if (!openDraft) return;
+    void (async () => {
+      const [{ data: sub }, { data: ccs }] = await Promise.all([
+        db.from("form_submissions").select("priority").eq("id", openDraft).maybeSingle(),
+        db.from("submission_cc").select("employee_id").eq("submission_id", openDraft),
+      ]);
+      const pr = (sub as { priority?: string } | null)?.priority;
+      if (pr === "high" || pr === "urgent" || pr === "normal") setPriority(pr);
+      setCcList((ccs ?? []).map((c) => c.employee_id as string));
+    })();
+    // Only the draft that was opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [savingDraft, setSavingDraft] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [employeeData, setEmployeeData] = useState<EmployeeRow | null>(null);
@@ -396,7 +421,7 @@ function FillFormPage() {
       if (!id) {
         const { data, error } = await db
           .from("form_submissions")
-          .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "draft" })
+          .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "draft", priority })
           .select("id")
           .single();
         if (error || !data) { toast.error("Could not save the draft: " + (error?.message ?? "unknown")); return; }
@@ -404,6 +429,8 @@ function FillFormPage() {
         setOpenDraft(id);
       }
 
+      await db.from("form_submissions").update({ priority }).eq("id", id);
+      await setCc(id, cc, currentUser.employee_id);
       await db.from("submission_values").delete().eq("submission_id", id);
       const rows = answerRows(id).filter((r) => r.value !== "");
       if (rows.length) await db.from("submission_values").insert(rows);
@@ -443,7 +470,7 @@ function FillFormPage() {
       if (openDraft) {
         const { error } = await db
           .from("form_submissions")
-          .update({ status: "submitted", submitted_at: new Date().toISOString() })
+          .update({ status: "submitted", submitted_at: new Date().toISOString(), priority })
           .eq("id", openDraft);
         if (error) { toast.error("Failed to submit: " + error.message); return; }
         await db.from("submission_values").delete().eq("submission_id", openDraft);
@@ -451,7 +478,7 @@ function FillFormPage() {
       } else {
         const { data, error } = await db
           .from("form_submissions")
-          .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "submitted" })
+          .insert({ form_template_id: formId, submitted_by: currentUser.employee_id, status: "submitted", priority })
           .select("id")
           .single();
         if (error || !data) { toast.error("Failed to submit: " + (error?.message ?? "unknown")); return; }
@@ -499,6 +526,15 @@ function FillFormPage() {
         await db.from("form_submissions").update({ status: "draft" }).eq("id", sub.id);
         setOpenDraft(sub.id);
         toast.error("A file did not attach, so it was kept as a draft — " + uploadErr);
+        return;
+      }
+
+      // Who is copied, before the chain: building it tells them.
+      const { error: ccErr } = await setCc(sub.id, cc, currentUser.employee_id);
+      if (ccErr) {
+        await db.from("form_submissions").update({ status: "draft" }).eq("id", sub.id);
+        setOpenDraft(sub.id);
+        toast.error("The CC list could not be saved, so it was kept as a draft — " + ccErr.message);
         return;
       }
 
@@ -592,7 +628,51 @@ function FillFormPage() {
           </div>
 
           {isLastStep ? (
+            <>
+            <div className="rounded-xl bg-white mb-5" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+              <div className="flex gap-6 flex-wrap">
+                <label className="flex flex-col gap-1" style={{ minWidth: 180 }}>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#52525B" }}>Priority</span>
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as typeof priority)}
+                    aria-label="Priority"
+                    className="rounded-md bg-white"
+                    style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="high">High — a day less at each step</option>
+                    <option value="urgent">Urgent — half the time at each step</option>
+                  </select>
+                </label>
+                <div className="flex flex-col gap-1 flex-1" style={{ minWidth: 240 }}>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#52525B" }}>Copy people on it</span>
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    {cc.map((id) => (
+                      <span key={id} className="inline-flex items-center gap-1 rounded-full text-[12px]" style={{ padding: "2px 8px", background: "#F4F4F5", border: "1px solid #E4E4E7" }}>
+                        {people.find((p) => p.employee_id === id)?.name ?? id}
+                        <button onClick={() => setCcList((l) => l.filter((x) => x !== id))} aria-label="Remove" style={{ color: "#71717A" }}>×</button>
+                      </span>
+                    ))}
+                    <select
+                      value=""
+                      onChange={(e) => { const v = e.target.value; if (v) setCcList((l) => (l.includes(v) ? l : [...l, v])); }}
+                      aria-label="Copy somebody"
+                      className="rounded-md bg-white"
+                      style={{ padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7" }}
+                    >
+                      <option value="">Add somebody…</option>
+                      {people.filter((p) => p.employee_id !== currentUser.employee_id && !cc.includes(p.employee_id)).map((p) => (
+                        <option key={p.employee_id} value={p.employee_id}>{p.name}{p.designation ? ` — ${p.designation}` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="text-[11px]" style={{ color: "#A1A1AA" }}>They are told when it is raised and when it is decided, and can open it and its documents.</span>
+                </div>
+              </div>
+            </div>
             <SummaryStep fields={fields} values={values} genValue={genValue} plan={plan} notifRules={notifRules} employeeData={employeeData} empMap={empMap} requester={currentUser.employee_id} lineManager={lineManager} formCreator={formCreator} />
+            </>
           ) : (
             <div className="flex flex-col gap-3.5">
               {current.fields.map((f) =>
@@ -756,7 +836,7 @@ function SummaryStep({ fields, values, genValue, plan, notifRules, employeeData,
   // Working days, as the database will count them when the step opens.
   function deadline(days: number | null) {
     const d = addWorkingDays(new Date(), days ?? 7);
-    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    return fmtDate(d);
   }
 
   return (

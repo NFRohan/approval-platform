@@ -107,7 +107,7 @@ function ApproversStep() {
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
         db.from("approval_rules")
-          .select("approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position")
+          .select("approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag")
           .eq("form_template_id", templateId)
           .order("step_index")
           .order("position"),
@@ -134,6 +134,7 @@ function ApproversStep() {
         approver_user_id: string | null; deadline_days: number | null; label: string | null;
         step_index: number | null; quorum: number | null; stage_label: string | null; lane: string | null;
         condition: { field?: string; op?: string; value?: string } | null;
+        require_signature: boolean | null; flag: string | null;
       };
       const byStage = new Map<number, SavedManual[]>();
       for (const r of (rules ?? []) as (SavedManual & { is_auto_added: boolean | null })[]) {
@@ -162,6 +163,8 @@ function ApproversStep() {
                 ...newApprover(isRole ? `role:${role}` : (r.approver_user_id as string)),
                 fallback: isRole ? r.approver_user_id : null,
                 label: isRole ? null : r.label,
+                requireSignature: !!r.require_signature,
+                flag: r.flag,
                 deadlineDays: r.deadline_days ?? 7,
                 track: r.lane ?? "",
                 condition: r.condition?.field
@@ -289,10 +292,12 @@ function ApproversStep() {
             quorum: st.quorum,
             stage_label: st.label.trim() || null,
             condition: a.condition && a.condition.field ? a.condition : null,
+            require_signature: !!a.requireSignature,
+            flag: a.flag?.trim() || null,
           };
         }),
       );
-    const allRows = [...rows.map((r) => ({ ...r, lane: null, quorum: null, stage_label: null, condition: null })), ...stageRows];
+    const allRows = [...rows.map((r) => ({ ...r, lane: null, quorum: null, stage_label: null, condition: null, require_signature: false, flag: null })), ...stageRows];
 
     const { error } = await db.from("approval_rules").insert(allRows);
     if (error) {

@@ -124,6 +124,8 @@ export interface Approver {
   actionLabel?: string;
   comment?: string;
   deadline?: string;
+  /** A drawn signature, where the step asked for one. */
+  signature?: string;
 }
 
 export interface SingleStep {
@@ -234,6 +236,15 @@ function StepNode({ state, n }: { state: StepState; n: number }) {
   );
 }
 
+function SignatureImage({ src }: { src: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10.5, color: "#A1A1AA", marginBottom: 2 }}>Signed</div>
+      <img src={src} alt="Signature" style={{ height: 48, maxWidth: 200, border: "1px solid #F4F4F5", borderRadius: 6, background: "#fff" }} />
+    </div>
+  );
+}
+
 function ApproverCard({ approver }: { approver: Approver }) {
   const cfg = STATE[approver.state] || STATE.idle;
   return (
@@ -306,6 +317,7 @@ function ApproverCard({ approver }: { approver: Approver }) {
             {approver.comment}
           </div>
         )}
+        {approver.signature && <SignatureImage src={approver.signature} />}
       </div>
     </div>
   );
@@ -390,6 +402,12 @@ function SingleBody({ step }: { step: SingleStep }) {
           }}
         >
           “{step.comment}”
+        </div>
+      )}
+
+      {step.approver.signature && (
+        <div style={{ marginTop: 12 }}>
+          <SignatureImage src={step.approver.signature} />
         </div>
       )}
 

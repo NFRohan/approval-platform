@@ -40,7 +40,7 @@ const T = (
 
 export const TABLES: Record<string, TableDef> = {
   activity_log: T(
-    ['id', 'actor_id', 'action', 'entity_type', 'entity_id', 'detail', 
+    ['id', 'actor_id', 'action', 'entity_type', 'entity_id', 'detail',
       'created_at'],
     ['actor_id', 'action', 'entity_type', 'entity_id', 'detail'],
     [],
@@ -50,23 +50,26 @@ export const TABLES: Record<string, TableDef> = {
   // the next one, move the subject's status — so the client asks for the
   // action and the database performs it. Nothing here is writable.
   approval_requests: T(
-    ['id', 'submission_id', 'notice_id', 'stationery_request_id', 
-      'maintenance_request_id', 'subject_id', 'subject_type', 
-      'approver_user_id', 'step_index', 'status', 'comment', 'acted_at', 
+    ['id', 'submission_id', 'notice_id', 'stationery_request_id',
+      'maintenance_request_id', 'subject_id', 'subject_type',
+      'approver_user_id', 'step_index', 'status', 'comment', 'acted_at',
       'deadline_at', 'reassigned_from', 'created_at',
       // Stage 1: a phase (step_index) runs lanes in parallel, each a
       // sequence of lane_step.
-      'lane', 'lane_step', 'lane_label', 'quorum', 'stage_label'],
+      'lane', 'lane_step', 'lane_label', 'quorum', 'stage_label',
+      'require_signature', 'signature', 'signed_at'],
     [],
     [],
   ),
   approval_rules: T(
-    ['id', 'subject_type', 'form_template_id', 'approver_user_id', 
+    ['id', 'subject_type', 'form_template_id', 'approver_user_id',
       'deadline_days', 'is_auto_added', 'label', 'step_index',
-      'quorum', 'condition', 'stage_label', 'lane', 'position'],
-    ['subject_type', 'form_template_id', 'approver_user_id', 
+      'quorum', 'condition', 'stage_label', 'lane', 'position',
+      'require_signature', 'flag'],
+    ['subject_type', 'form_template_id', 'approver_user_id',
       'deadline_days', 'is_auto_added', 'label', 'step_index',
-      'quorum', 'condition', 'stage_label', 'lane', 'position'],
+      'quorum', 'condition', 'stage_label', 'lane', 'position',
+      'require_signature', 'flag'],
     ['condition'],
   ),
   // Read only: the engine writes the trail, and nothing else may.
@@ -84,29 +87,52 @@ export const TABLES: Record<string, TableDef> = {
     [],
     [],
   ),
+  // Stage 2. All read only here: written through add_note, set_cc,
+  // link_submissions and the attachment functions, which check who is
+  // acting.
+  submission_links: T(
+    ['id', 'from_id', 'to_id', 'note', 'created_by', 'created_at'],
+    [],
+    [],
+  ),
+  submission_cc: T(
+    ['id', 'submission_id', 'employee_id', 'added_by', 'created_at'],
+    [],
+    [],
+  ),
+  ticket_notes: T(
+    ['id', 'submission_id', 'author_id', 'body', 'created_at'],
+    [],
+    [],
+  ),
+  attachment_access: T(
+    ['id', 'attachment_id', 'actor_id', 'accessed_at'],
+    [],
+    [],
+  ),
   departments: T(
     ['id', 'name', 'head_employee_id', 'hrbp_employee_id', 'cxo_employee_id', 'created_at'],
     ['name', 'head_employee_id', 'hrbp_employee_id', 'cxo_employee_id'],
     [],
   ),
   approval_slabs: T(
-    ['id', 'form_template_id', 'min_amount', 'max_amount', 
+    ['id', 'form_template_id', 'min_amount', 'max_amount',
       'approver_user_id', 'order_index'],
-    ['form_template_id', 'min_amount', 'max_amount', 'approver_user_id', 
+    ['form_template_id', 'min_amount', 'max_amount', 'approver_user_id',
       'order_index'],
     [],
   ),
   delegation_rules: T(
-    ['id', 'delegator_id', 'delegate_id', 'start_date', 'end_date', 
+    ['id', 'delegator_id', 'delegate_id', 'start_date', 'end_date',
       'reason', 'form_template_ids', 'created_at'],
-    ['delegator_id', 'delegate_id', 'start_date', 'end_date', 'reason', 
+    ['delegator_id', 'delegate_id', 'start_date', 'end_date', 'reason',
       'form_template_ids'],
     [],
   ),
   employees: T(
-    ['id', 'employee_id', 'name', 'designation', 'department', 
-      'line_manager_id', 'gate_pass_card_number'],
-    ['employee_id', 'name', 'designation', 'department', 
+    ['id', 'employee_id', 'name', 'designation', 'department',
+      'line_manager_id', 'gate_pass_card_number', 'active', 'left_on'],
+    ['employee_id', 'name', 'designation', 'department',
       'line_manager_id', 'gate_pass_card_number'],
     [],
   ),
@@ -120,16 +146,18 @@ export const TABLES: Record<string, TableDef> = {
   // decides where it may land — the client picks the key, not the tenant.
   // Keep this when regenerating.
   form_fields: T(
-    ['id', 'form_template_id', 'field_type', 'field_name', 
+    ['id', 'form_template_id', 'field_type', 'field_name',
       'field_config', 'order_index', 'is_required'],
-    ['id', 'form_template_id', 'field_type', 'field_name', 'field_config', 
+    ['id', 'form_template_id', 'field_type', 'field_name', 'field_config',
       'order_index', 'is_required'],
     ['field_config'],
   ),
   form_submissions: T(
     ['id', 'form_template_id', 'submitted_by', 'status', 'submitted_at',
-      'parent_submission_id'],
-    ['form_template_id', 'submitted_by', 'status', 'submitted_at'],
+      'parent_submission_id', 'ref_number', 'priority', 'flag'],
+    // The reference is assigned by the database and the flag by the
+    // chain; priority is the requester's to set.
+    ['form_template_id', 'submitted_by', 'status', 'submitted_at', 'priority'],
     [],
   ),
   form_templates: T(
@@ -159,21 +187,21 @@ export const TABLES: Record<string, TableDef> = {
     [],
   ),
   maintenance_requests: T(
-    ['id', 'ref_number', 'requester_id', 'location', 'status', 
+    ['id', 'ref_number', 'requester_id', 'location', 'status',
       'assigned_to', 'admin_comment', 'created_at', 'updated_at'],
-    ['ref_number', 'requester_id', 'location', 'status', 'assigned_to', 
+    ['ref_number', 'requester_id', 'location', 'status', 'assigned_to',
       'admin_comment'],
     [],
   ),
   movement_orders: T(
-    ['id', 'ref_number', 'requester_id', 'item_name', 'item_type', 
-      'quantity', 'source_location', 'destination_location', 
-      'justification', 'preferred_time', 'assigned_mover_id', 'status', 
-      'admin_comment', 'item_id', 'source_venue_id', 
+    ['id', 'ref_number', 'requester_id', 'item_name', 'item_type',
+      'quantity', 'source_location', 'destination_location',
+      'justification', 'preferred_time', 'assigned_mover_id', 'status',
+      'admin_comment', 'item_id', 'source_venue_id',
       'destination_venue_id', 'created_at', 'updated_at'],
-    ['ref_number', 'requester_id', 'item_name', 'item_type', 'quantity', 
-      'source_location', 'destination_location', 'justification', 
-      'preferred_time', 'assigned_mover_id', 'status', 'admin_comment', 
+    ['ref_number', 'requester_id', 'item_name', 'item_type', 'quantity',
+      'source_location', 'destination_location', 'justification',
+      'preferred_time', 'assigned_mover_id', 'status', 'admin_comment',
       'item_id', 'source_venue_id', 'destination_venue_id'],
     [],
   ),
@@ -183,31 +211,31 @@ export const TABLES: Record<string, TableDef> = {
     [],
   ),
   notices: T(
-    ['id', 'title', 'content', 'category', 'status', 'created_by', 
+    ['id', 'title', 'content', 'category', 'status', 'created_by',
       'current_approver_id', 'created_at', 'updated_at'],
-    ['title', 'content', 'category', 'status', 'created_by', 
+    ['title', 'content', 'category', 'status', 'created_by',
       'current_approver_id'],
     [],
   ),
   notification_rules: T(
-    ['id', 'form_template_id', 'notifyee_user_id', 'is_auto_added', 
+    ['id', 'form_template_id', 'notifyee_user_id', 'is_auto_added',
       'label'],
     ['form_template_id', 'notifyee_user_id', 'is_auto_added', 'label'],
     [],
   ),
   notifications: T(
-    ['id', 'recipient_id', 'kind', 'title', 'body', 'entity_type', 
+    ['id', 'recipient_id', 'kind', 'title', 'body', 'entity_type',
       'entity_id', 'read_at', 'created_at'],
-    ['recipient_id', 'kind', 'title', 'body', 'entity_type', 'entity_id', 
+    ['recipient_id', 'kind', 'title', 'body', 'entity_type', 'entity_id',
       'read_at'],
     [],
   ),
   stationery_requests: T(
-    ['id', 'kind', 'requester_id', 'name', 'designation', 'department', 
-      'division', 'email', 'contact_number', 'reason', 'comments', 
+    ['id', 'kind', 'requester_id', 'name', 'designation', 'department',
+      'division', 'email', 'contact_number', 'reason', 'comments',
       'status', 'current_approver_id', 'created_at', 'updated_at'],
-    ['kind', 'requester_id', 'name', 'designation', 'department', 
-      'division', 'email', 'contact_number', 'reason', 'comments', 
+    ['kind', 'requester_id', 'name', 'designation', 'department',
+      'division', 'email', 'contact_number', 'reason', 'comments',
       'status', 'current_approver_id'],
     [],
   ),
@@ -238,7 +266,8 @@ export const RPCS: Record<string, readonly string[]> = {
   build_approval_chain: ['p_subject_type', 'p_subject_id', 'p_form_template_id'],
   // p_actor names who is acting, and the database refuses anybody who is
   // neither the step's approver nor a current, in-scope delegate of theirs.
-  act_on_approval:      ['p_request_id', 'p_action', 'p_comment', 'p_actor'],
+  // p_signature is required by a step that asks for one.
+  act_on_approval:      ['p_request_id', 'p_action', 'p_comment', 'p_actor', 'p_signature'],
   reassign_approval:    ['p_request_id', 'p_to', 'p_comment', 'p_actor'],
   add_reviewer:         ['p_request_id', 'p_employee', 'p_deadline_days', 'p_actor'],
   // No scheduler in a demo, so the approvals screen asks for this on
@@ -253,6 +282,13 @@ export const RPCS: Record<string, readonly string[]> = {
   // Read only: the planner the chain is built from, given the answers on
   // screen, so the review step shows exactly what will happen.
   preview_approval_chain: ['p_form_template_id', 'p_requester', 'p_answers'],
+  // Stage 2.
+  add_note:             ['p_submission_id', 'p_body', 'p_actor'],
+  set_cc:               ['p_submission_id', 'p_people', 'p_actor'],
+  link_submissions:     ['p_submission_id', 'p_other', 'p_note', 'p_actor'],
+  unlink_submissions:   ['p_submission_id', 'p_other_id', 'p_actor'],
+  copy_submission:      ['p_submission_id', 'p_actor'],
+  hand_over:            ['p_leaver', 'p_successor', 'p_actor'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { actOnSubject, startChain, OPEN_STATUSES, type Step } from "@/lib/chain";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/maintenance")({
   head: () => ({ meta: [{ title: "Maintenance · Admin Services Portal" }] }),
@@ -56,7 +57,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return fmtDate(iso);
 }
 
 function NewRequestForm({ items, onCancel, onSaved }: { items: Item[]; onCancel: () => void; onSaved: () => void }) {

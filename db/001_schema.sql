@@ -1024,4 +1024,189 @@ create index if not exists approval_queries_subject_idx
 create index if not exists approval_queries_to_idx
   on public.approval_queries(tenant_id, asked_to) where answer is null;
 
+-- =====================================================================
+-- Stage 2 — the ticket.
+--
+-- What a request carries besides its route: a reference a person can
+-- say aloud, a priority, people copied on it, notes, links to other
+-- requests, documents with descriptions, tags and versions, and a
+-- signature where a step asks for one.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Reference numbers: AMS-2026-00042.
+--
+-- The reference used to be the head of the uuid, which nobody can read
+-- out over the phone and nobody can guess the order of. Audit and
+-- compliance ask for records by reference number, so each tenant counts
+-- its own, by the year the request was raised in Dhaka.
+-- ---------------------------------------------------------------------
+create table if not exists public.tenant_counters (
+  tenant_id uuid not null default app.current_tenant()
+              references public.tenants(id) on delete cascade,
+  name      text not null,
+  value     bigint not null default 0,
+  primary key (tenant_id, name)
+);
+
+create or replace function app.next_counter(p_tenant uuid, p_name text)
+returns bigint
+language sql
+security invoker
+set search_path = public, pg_temp
+as $$
+  insert into public.tenant_counters as c (tenant_id, name, value)
+  values (p_tenant, p_name, 1)
+  on conflict (tenant_id, name) do update set value = c.value + 1
+  returning value
+$$;
+
+alter table public.form_submissions add column if not exists ref_number text;
+alter table public.form_submissions add column if not exists priority   text not null default 'normal';
+-- Set when the route includes a rule that asks to be seen — the
+-- exceptional CXO approval — so notifications, queues and reports can
+-- say so.
+alter table public.form_submissions add column if not exists flag       text;
+
+do $s2$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'form_submissions_priority_check') then
+    alter table public.form_submissions
+      add constraint form_submissions_priority_check check (priority in ('normal', 'high', 'urgent'));
+  end if;
+end $s2$;
+create unique index if not exists form_submissions_ref_idx
+  on public.form_submissions(tenant_id, ref_number) where ref_number is not null;
+
+create or replace function app.assign_ref_number()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.ref_number is null then
+    new.ref_number := 'AMS-'
+      || to_char(coalesce(new.submitted_at, now()) at time zone 'Asia/Dhaka', 'YYYY') || '-'
+      || lpad(app.next_counter(new.tenant_id, 'submission')::text, 5, '0');
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists form_submissions_ref on public.form_submissions;
+create trigger form_submissions_ref before insert on public.form_submissions
+  for each row execute function app.assign_ref_number();
+
+-- Requests raised before references existed get theirs, oldest first.
+do $s2$
+declare r record;
+begin
+  for r in
+    select id, tenant_id, submitted_at from public.form_submissions
+     where ref_number is null order by tenant_id, submitted_at, id
+  loop
+    update public.form_submissions
+       set ref_number = 'AMS-' || to_char(r.submitted_at at time zone 'Asia/Dhaka', 'YYYY') || '-'
+                        || lpad(app.next_counter(r.tenant_id, 'submission')::text, 5, '0')
+     where id = r.id;
+  end loop;
+end $s2$;
+
+-- ---------------------------------------------------------------------
+-- Linked requests: "a ticket should have option to link other tickets".
+-- Stored once, in either direction.
+-- ---------------------------------------------------------------------
+create table if not exists public.submission_links (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null default app.current_tenant()
+               references public.tenants(id) on delete cascade,
+  from_id    uuid not null,
+  to_id      uuid not null,
+  note       text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  unique (id, tenant_id),
+  unique (tenant_id, from_id, to_id),
+  check (from_id <> to_id),
+  foreign key (from_id, tenant_id) references public.form_submissions(id, tenant_id) on delete cascade,
+  foreign key (to_id, tenant_id)   references public.form_submissions(id, tenant_id) on delete cascade
+);
+
+-- ---------------------------------------------------------------------
+-- People copied on a request by whoever raised it. They are told when it
+-- is raised and when it finishes, and see it among the requests copied
+-- to them — the ad-hoc report CC the scope of work says people in CC
+-- currently cannot get at.
+-- ---------------------------------------------------------------------
+create table if not exists public.submission_cc (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  submission_id uuid not null,
+  employee_id   text not null,
+  added_by      text,
+  created_at    timestamptz not null default now(),
+  unique (id, tenant_id),
+  unique (tenant_id, submission_id, employee_id),
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete cascade,
+  foreign key (employee_id, tenant_id)   references public.employees(employee_id, tenant_id) on delete cascade
+);
+
+-- ---------------------------------------------------------------------
+-- Notes on a request, from anybody on it, at any time — including after
+-- it is approved. Append-only, like the rest of the trail.
+-- ---------------------------------------------------------------------
+create table if not exists public.ticket_notes (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  submission_id uuid not null,
+  author_id     text not null,
+  body          text not null check (length(trim(body)) > 0),
+  created_at    timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete cascade
+);
+create index if not exists ticket_notes_submission_idx on public.ticket_notes(tenant_id, submission_id, created_at);
+
+-- ---------------------------------------------------------------------
+-- Documents: what each one is, tags to find it by, and every version.
+--
+-- Attaching again used to replace the file. Supporting documents are
+-- revised after submission — "further claim adjustment" — and the
+-- earlier one is evidence too, so a new file is a new version and the
+-- old one is kept, marked superseded.
+-- ---------------------------------------------------------------------
+alter table public.attachments add column if not exists description   text;
+alter table public.attachments add column if not exists tags          text[] not null default '{}';
+alter table public.attachments add column if not exists version       integer not null default 1;
+alter table public.attachments add column if not exists superseded_at timestamptz;
+create index if not exists attachments_tags_idx on public.attachments using gin (tags);
+
+-- Who opened which document, for audit. Append-only.
+create table if not exists public.attachment_access (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  attachment_id uuid not null,
+  actor_id      text,
+  accessed_at   timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (attachment_id, tenant_id) references public.attachments(id, tenant_id) on delete cascade
+);
+
+-- ---------------------------------------------------------------------
+-- A signature where a step asks for one, and a flag a rule can raise.
+-- ---------------------------------------------------------------------
+alter table public.approval_rules    add column if not exists require_signature boolean not null default false;
+alter table public.approval_rules    add column if not exists flag              text;
+alter table public.approval_requests add column if not exists require_signature boolean not null default false;
+alter table public.approval_requests add column if not exists signature         text;
+alter table public.approval_requests add column if not exists signed_at         timestamptz;
+
+-- ---------------------------------------------------------------------
+-- Leavers. An employee who has left keeps their row, because the trail
+-- names them, but is no longer active.
+-- ---------------------------------------------------------------------
+alter table public.employees add column if not exists active  boolean not null default true;
+alter table public.employees add column if not exists left_on date;
+
 commit;

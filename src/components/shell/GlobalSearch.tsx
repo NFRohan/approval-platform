@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, CornerDownLeft } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { db } from "@/lib/db";
+import { searchDocuments, type TaggedDocument } from "@/lib/attachment-fn";
 
 type Hit = {
   key: string;
@@ -75,13 +76,17 @@ export function GlobalSearch() {
     const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
     setBusy(true);
 
-    const [forms, values, people, notices, maint, stationery] = await Promise.all([
+    const [forms, values, people, notices, maint, stationery, refs, docs] = await Promise.all([
       db.from("form_templates").select("id, name, category").ilike("name", like).limit(PER_GROUP),
       db.from("submission_values").select("submission_id, field_name, value").ilike("value", like).limit(8),
       db.from("employees").select("employee_id, name, designation, department").ilike("name", like).limit(PER_GROUP),
       db.from("notices").select("id, title, category").ilike("title", like).limit(PER_GROUP),
       db.from("maintenance_requests").select("id, ref_number, location, status").ilike("ref_number", like).limit(PER_GROUP),
       db.from("stationery_requests").select("id, name, kind, status").ilike("name", like).limit(PER_GROUP),
+      // A request by its reference — how audit and compliance ask for one.
+      db.from("form_submissions").select("id").ilike("ref_number", like).limit(PER_GROUP),
+      // Documents by tag, description or name.
+      searchDocuments({ data: { query: q } }).catch(() => [] as TaggedDocument[]),
     ]);
 
     const out: Hit[] = [];
@@ -96,12 +101,14 @@ export function GlobalSearch() {
 
     // A submission has no name of its own, so it is found through the
     // values inside it — which is how a person actually looks for one.
-    const subIds = Array.from(new Set(
-      (values.data ?? []).map((v) => v.submission_id).filter(Boolean) as string[])).slice(0, PER_GROUP);
+    const subIds = Array.from(new Set([
+      ...(refs.data ?? []).map((r) => r.id as string),
+      ...((values.data ?? []).map((v) => v.submission_id).filter(Boolean) as string[]),
+    ])).slice(0, PER_GROUP);
     if (subIds.length) {
       const { data: subs } = await db
         .from("form_submissions")
-        .select("id, form_template_id, status, submitted_at")
+        .select("id, form_template_id, status, submitted_at, ref_number")
         .in("id", subIds);
       const templateIds = Array.from(new Set(
         (subs ?? []).map((r) => r.form_template_id).filter(Boolean) as string[]));
@@ -115,12 +122,20 @@ export function GlobalSearch() {
         out.push({
           key: `sub:${sub.id}`,
           group: "Submissions",
-          label: sub.form_template_id ? (names[sub.form_template_id] ?? "Submission") : "Submission",
+          label: `${sub.form_template_id ? (names[sub.form_template_id] ?? "Submission") : "Submission"}${sub.ref_number ? ` · ${sub.ref_number}` : ""}`,
           sub: match ? `${match.field_name}: ${match.value}` : (sub.status ?? undefined),
           go: () => navigate({ to: "/status/$submissionId", params: { submissionId: sub.id } }),
         });
       });
     }
+
+    docs.forEach((d) => out.push({
+      key: `doc:${d.submission_id}:${d.field_name}`,
+      group: "Documents",
+      label: d.file_name,
+      sub: [d.ref_number, d.tags.length ? `#${d.tags.join(" #")}` : null, d.description].filter(Boolean).join(" · "),
+      go: () => navigate({ to: "/status/$submissionId", params: { submissionId: d.submission_id } }),
+    }));
 
     (people.data ?? []).forEach((p) => out.push({
       key: `emp:${p.employee_id}`,
