@@ -1,9 +1,18 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { signIn, changePassword } from "@/lib/auth-fn";
+import { signIn, changePassword, verifySignInCode } from "@/lib/auth-fn";
+import { PasswordRules } from "@/components/PasswordRules";
+import { passwordProblem } from "@/lib/password-policy";
 
 export const Route = createFileRoute("/login")({
+  // ?idle=1: signed out for inactivity. From the route, not from window,
+  // so the server renders the same notice the browser does.
+  // Kept as 1, which is how the idle watcher writes it: anything else is
+  // rewritten by the router into a redirect.
+  validateSearch: (search: Record<string, unknown>): { idle?: 1 } => ({
+    idle: search.idle ? 1 : undefined,
+  }),
   head: () => ({ meta: [{ title: "Sign in · Admin Services Portal" }] }),
   component: LoginPage,
 });
@@ -29,8 +38,13 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A first sign-in on a freshly issued evaluation lands here.
+  // A first sign-in on a freshly issued evaluation lands here, and so
+  // does a password past its 90 days.
   const [mustChange, setMustChange] = useState(false);
+  // The password was right and the account uses two-step sign-in.
+  const [needCode, setNeedCode] = useState(false);
+  const [code, setCode] = useState("");
+  const idle = Route.useSearch().idle === 1;
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -46,11 +60,18 @@ function LoginPage() {
       setError(result.error);
       return;
     }
+    if (result.mfaRequired) {
+      setNeedCode(true);
+      return;
+    }
+    await arrive(result);
+  }
+
+  async function arrive(result: { mustChangePassword: boolean; isStaff: boolean }) {
     if (result.mustChangePassword) {
       setMustChange(true);
       return;
     }
-    // The router cached a "no session" answer on the way in.
     // The router cached a "no session" answer on the way in.
     await router.invalidate();
 
@@ -60,10 +81,30 @@ function LoginPage() {
     navigate({ to: result.isStaff ? "/staff" : "/" });
   }
 
+  async function submitCode(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const result = await verifySignInCode({ data: { code: code.trim() } });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      if (/sign in again|too long/i.test(result.error)) { setNeedCode(false); setCode(""); }
+      return;
+    }
+    if (result.mfaRequired) return;
+    await arrive(result);
+  }
+
   async function submitNewPassword(e: React.FormEvent) {
     e.preventDefault();
     if (nextPassword !== confirmPassword) {
       setError("Those two passwords are not the same.");
+      return;
+    }
+    const problem = passwordProblem(nextPassword, username);
+    if (problem) {
+      setError(problem);
       return;
     }
     setBusy(true);
@@ -114,8 +155,8 @@ function LoginPage() {
                   Choose a password
                 </div>
                 <p style={{ fontSize: 12.5, color: "#71717A", margin: "5px 0 0", lineHeight: 1.5 }}>
-                  The one you were issued works once. Pick something only you know — at least
-                  10 characters.
+                  The one you were issued works once, and a password lasts 90 days. Pick
+                  something only you know, and not one of your last five.
                 </p>
               </div>
               <label className="flex flex-col gap-1.5">
@@ -132,11 +173,41 @@ function LoginPage() {
                   value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                 />
               </label>
+              <PasswordRules password={nextPassword} username={username} />
               {error && <Problem>{error}</Problem>}
               <Submit busy={busy} label="Save and continue" />
             </form>
+          ) : needCode ? (
+            <form onSubmit={submitCode} className="flex flex-col gap-3.5">
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#18181B" }}>
+                  Two-step verification
+                </div>
+                <p style={{ fontSize: 12.5, color: "#71717A", margin: "5px 0 0", lineHeight: 1.5 }}>
+                  Enter the six-digit code from your authenticator app.
+                </p>
+              </div>
+              <label className="flex flex-col gap-1.5">
+                <span style={{ fontSize: 12, color: "#52525B" }}>Code</span>
+                <input
+                  style={{ ...inputStyle, letterSpacing: "0.3em", fontVariantNumeric: "tabular-nums" }}
+                  autoFocus autoComplete="one-time-code" inputMode="numeric" maxLength={7}
+                  name="code" value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, ""))}
+                />
+              </label>
+              {error && <Problem>{error}</Problem>}
+              <Submit busy={busy} label="Verify" />
+            </form>
           ) : (
             <form onSubmit={submit} className="flex flex-col gap-3.5">
+              {idle && !error && (
+                <div
+                  role="status" className="rounded-md"
+                  style={{ padding: "9px 11px", fontSize: 12.5, color: "#3F3F46", background: "#F4F4F5", border: "1px solid #E4E4E7" }}
+                >
+                  You were signed out after 5 minutes without activity.
+                </div>
+              )}
               <label className="flex flex-col gap-1.5">
                 <span style={{ fontSize: 12, color: "#52525B" }}>Username</span>
                 <input

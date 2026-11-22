@@ -17,6 +17,9 @@ import {
   Megaphone,
   CreditCard,
   Wrench,
+  Users,
+  ShieldCheck,
+  Network,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -129,6 +132,26 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
     const [first, ...rest] = sections;
     sections = [{ ...first, items: [DASHBOARD, ...first.items] }, ...rest];
   }
+
+  // What somebody may administer comes from their roles, not from who
+  // they are. The builder is for whoever designs workflows or changes
+  // their task settings; the rest are for whoever holds the permission.
+  const can = (p: string) => user.permissions.includes(p);
+  const designs = can("forms.build") || can("forms.settings");
+  sections = sections
+    .map((s) => ({ ...s, items: s.items.filter((i) => i.to !== "/builder" || designs) }))
+    .filter((s) => s.items.length > 0);
+  if (designs && !has(sections, "/builder")) {
+    const [first, ...rest] = sections;
+    sections = [{ ...first, items: [...first.items, { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder", accent: true }] }, ...rest];
+  }
+
+  const admin: Item[] = [];
+  if (can("users.manage") || can("users.approve")) admin.push({ id: "users", label: "Users", Icon: Users, to: "/admin/users" });
+  if (can("roles.manage") || can("roles.approve")) admin.push({ id: "roles", label: "Roles", Icon: ShieldCheck, to: "/admin/roles" });
+  if (can("org.manage")) admin.push({ id: "people", label: "People & Directory", Icon: Network, to: "/admin/people" });
+  if (can("audit.view") && !has(sections, "/activity")) admin.push({ id: "activity", label: "Activity Log", Icon: Activity, to: "/activity" });
+  if (admin.length) sections = [...sections, { section: "Administration", items: admin }];
 
   return sections;
 }

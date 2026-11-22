@@ -21,7 +21,7 @@ import { Avatar } from "@/components/shell/Avatar";
 import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/dates";
 
-type StatusKey = "submitted" | "in_progress" | "on_hold" | "completed" | "cancelled";
+type StatusKey = "draft" | "submitted" | "in_progress" | "on_hold" | "completed" | "rejected" | "cancelled";
 
 const STATUS_MAP: Record<StatusKey, { l: string; bg: string; fg: string; bd: string }> = {
   submitted: { l: "Submitted", bg: "#EFF6FF", fg: "#1D4ED8", bd: "#BFDBFE" },
@@ -29,10 +29,14 @@ const STATUS_MAP: Record<StatusKey, { l: string; bg: string; fg: string; bd: str
   on_hold: { l: "On Hold", bg: "#FFFBEB", fg: "#B45309", bd: "#FDE68A" },
   completed: { l: "Completed", bg: "#F0FDF4", fg: "#15803D", bd: "#BBF7D0" },
   cancelled: { l: "Cancelled", bg: "#F4F4F5", fg: "#71717A", bd: "#E4E4E7" },
+  // Both are statuses a request can have — a follow-up starts as a draft —
+  // and a dashboard that met one used to crash on it.
+  draft: { l: "Draft", bg: "#F4F4F5", fg: "#52525B", bd: "#E4E4E7" },
+  rejected: { l: "Rejected", bg: "#FEF2F2", fg: "#B91C1C", bd: "#FECACA" },
 };
 
 function StatusBadge({ status }: { status: StatusKey }) {
-  const c = STATUS_MAP[status];
+  const c = STATUS_MAP[status] ?? STATUS_MAP.in_progress;
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full whitespace-nowrap font-medium"

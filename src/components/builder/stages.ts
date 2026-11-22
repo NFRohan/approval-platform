@@ -26,6 +26,8 @@ export const CONDITION_OPS: { value: string; label: string }[] = [
 
 export type StageApprover = {
   id: string;
+  /** The saved rule this came from, so task settings can be changed on it alone. */
+  ruleId?: string;
   /** An employee id, or "role:<role>". */
   who: string;
   /**

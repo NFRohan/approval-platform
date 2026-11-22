@@ -49,7 +49,7 @@ function isActive(row: DelegationRow) {
 type FormTemplate = { id: string; name: string };
 
 function DelegationPage() {
-  const { currentUser } = useCurrentUser();
+  const { currentUser, can } = useCurrentUser();
   const [delegations, setDelegations] = useState<DelegationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -361,7 +361,9 @@ function DelegationPage() {
         </div>
       )}
 
-      <LeaverHandOver actor={currentUser.employee_id} />
+      {/* Handing a leaver's work over rewrites the org chart, so it is for
+          whoever keeps it (org.manage); the database refuses anybody else. */}
+      {can("org.manage") && <LeaverHandOver actor={currentUser.employee_id} />}
     </div>
   );
 }

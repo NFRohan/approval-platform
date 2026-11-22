@@ -545,4 +545,84 @@ begin
     'Leave taken during the notice period', 'EMP-2847');
 end $chains$;
 
+-- =====================================================================
+-- 6. Who may do what
+--
+-- An evaluation's login switches between these people, and each carries
+-- their own permissions, so a demonstration can show the difference:
+-- Farah administers the system, Priya approves the accounts Farah
+-- registers, Nadia designs workflows, Raj may only change a workflow's
+-- task settings, Alex approves role changes, and everybody else raises
+-- and approves requests and nothing more.
+-- =====================================================================
+update public.tenants
+   set persona_switching = true, require_admin_mfa = false, default_persona = 'EMP-2847'
+ where id = app.current_tenant();
+
+insert into public.roles (name, description, permissions, status, created_by, approved_by) values
+  ('System administrator', 'Accounts, roles, the org chart and workflow design',
+   array['forms.build', 'forms.settings', 'users.manage', 'roles.manage', 'org.manage', 'audit.view', 'reports.view'],
+   'active', 'EMP-0445', 'EMP-0700'),
+  ('HR administrator', 'Approves accounts and profile changes; keeps the org chart',
+   array['users.manage', 'users.approve', 'org.manage', 'audit.view', 'reports.view'],
+   'active', 'EMP-0445', 'EMP-0700'),
+  ('Workflow designer', 'Designs forms and their approval routes',
+   array['forms.build', 'forms.settings', 'reports.view'],
+   'active', 'EMP-0445', 'EMP-0700'),
+  ('Workflow settings', 'Changes a workflow''s task settings — deadlines and signatures — and nothing else',
+   array['forms.settings', 'reports.view'],
+   'active', 'EMP-0445', 'EMP-0700'),
+  ('Security officer', 'Approves roles and changes to them',
+   array['roles.approve', 'audit.view'],
+   'active', 'EMP-0445', 'EMP-0700'),
+  ('Compliance auditor', 'Reads the audit trails and reports',
+   array['audit.view', 'reports.view'],
+   'active', 'EMP-0445', 'EMP-0700');
+
+insert into public.employee_roles (employee_id, role_id, assigned_by)
+select v.emp, r.id, 'EMP-0445'
+  from (values ('EMP-0445', 'System administrator'),
+               ('EMP-0650', 'HR administrator'),
+               ('EMP-0201', 'Workflow designer'),
+               ('EMP-0312', 'Workflow settings'),
+               ('EMP-0700', 'Security officer'),
+               ('EMP-0830', 'Compliance auditor')) v(emp, role)
+  join public.roles r on r.name = v.role and r.tenant_id = app.current_tenant();
+
+-- Work addresses, as the HR master file would carry them.
+update public.employees
+   set email = lower(replace(name, ' ', '.')) || '@example.com'
+ where tenant_id = app.current_tenant();
+
+-- ---------------------------------------------------------------------
+-- Evaluations issued before roles existed get the template's, so that
+-- somebody in them can still design a workflow once that needs a
+-- permission, and they start as the template's default persona.
+-- Re-running finds nothing to do.
+-- ---------------------------------------------------------------------
+insert into public.roles (tenant_id, name, description, permissions, status, created_by, approved_by)
+select d.id, r.name, r.description, r.permissions, r.status, r.created_by, r.approved_by
+  from public.tenants d
+  join public.tenants tpl on tpl.kind = 'template'
+  join public.roles r on r.tenant_id = tpl.id
+ where d.kind = 'demo'
+   and not exists (select 1 from public.roles x where x.tenant_id = d.id);
+
+insert into public.employee_roles (tenant_id, employee_id, role_id, assigned_by)
+select d.id, er.employee_id, dr.id, er.assigned_by
+  from public.tenants d
+  join public.tenants tpl on tpl.kind = 'template'
+  join public.employee_roles er on er.tenant_id = tpl.id
+  join public.roles tr on tr.id = er.role_id
+  join public.roles dr on dr.tenant_id = d.id and dr.name = tr.name
+ where d.kind = 'demo'
+   and exists (select 1 from public.employees e where e.tenant_id = d.id and e.employee_id = er.employee_id)
+   and not exists (select 1 from public.employee_roles x where x.tenant_id = d.id)
+on conflict do nothing;
+
+update public.tenants d
+   set default_persona = tpl.default_persona
+  from public.tenants tpl
+ where tpl.kind = 'template' and d.kind = 'demo' and d.default_persona is null;
+
 commit;

@@ -9,22 +9,12 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
-import { useEffect } from "react";
-import { CurrentUserProvider, USERS, useCurrentUser } from "@/contexts/CurrentUserContext";
-import { currentSession } from "@/lib/auth-fn";
+import { CurrentUserProvider } from "@/contexts/CurrentUserContext";
+import { currentSession, switchPersona } from "@/lib/auth-fn";
+import { IdleWatcher } from "@/components/shell/IdleWatcher";
 import { AppShell } from "@/components/shell/AppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { PendingBar } from "@/components/shell/PendingBar";
-
-function UserSyncFromUrl({ as }: { as: string | undefined }) {
-  const { setCurrentUser } = useCurrentUser();
-  useEffect(() => {
-    if (!as) return;
-    const user = USERS.find((u) => u.employee_id === as);
-    if (user) setCurrentUser(user);
-  }, [as, setCurrentUser]);
-  return null;
-}
 
 function NotFoundComponent() {
   return (
@@ -81,15 +71,29 @@ export const Route = createRootRoute({
   // Every route is behind sign-in except the sign-in page. Doing this
   // once at the root means a new screen is protected by existing rather
   // than by somebody remembering to add a guard to it.
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ location, search }) => {
     const onLogin = location.pathname === "/login";
-    const session = await currentSession();
+    let session = await currentSession();
 
     if (!session && !onLogin) {
       throw redirect({ to: "/login" });
     }
     if (session && onLogin) {
-      throw redirect({ to: session.isStaff ? "/staff" : "/" });
+      throw redirect({ to: session.mustChangePassword ? "/account" : session.isStaff ? "/staff" : "/" });
+    }
+
+    // A first password, or one past its 90 days, is changed before
+    // anything else. The server refuses every other request until then;
+    // this sends the person to where they can do it.
+    if (session?.mustChangePassword && location.pathname !== "/account") {
+      throw redirect({ to: "/account" });
+    }
+
+    // ?as=EMP-0700 in a link acts as that persona, for an evaluation's
+    // login. The server decides whether that is allowed and records it.
+    if (session?.canSwitch && search.as && search.as !== session.employeeId) {
+      const switched = await switchPersona({ data: { employeeId: search.as } });
+      if (switched.ok) session = switched.session;
     }
 
     // A staff bookmark of the dashboard is a dashboard of zeroes.
@@ -119,7 +123,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { as } = Route.useSearch();
+  const { session } = Route.useRouteContext();
   const isBuilder = pathname.startsWith("/builder");
 
   // The sign-in page is not part of the application chrome — no sidebar,
@@ -133,9 +137,22 @@ function RootComponent() {
     );
   }
 
+  // Until a required password change is done the server answers nothing
+  // else, so the screen is the account page alone, without the shell
+  // that would be asking it for queues and notifications.
+  if (session?.mustChangePassword) {
+    return (
+      <CurrentUserProvider session={session}>
+        <IdleWatcher idleSeconds={session.idleSeconds} />
+        <Outlet />
+        <Toaster />
+      </CurrentUserProvider>
+    );
+  }
+
   return (
-    <CurrentUserProvider>
-      <UserSyncFromUrl as={as} />
+    <CurrentUserProvider session={session ?? null}>
+      <IdleWatcher idleSeconds={session?.idleSeconds ?? 300} />
       <AppShell hideTopBar={isBuilder} sidebarDefaultCollapsed={isBuilder} noScroll={isBuilder}>
         <div key={pathname} className="page-enter h-full">
           <Outlet />

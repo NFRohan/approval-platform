@@ -1,6 +1,7 @@
 import { ChevronRight, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 import { StepProgress, type Step } from "./StepProgress";
+import { AccessBanner, useBuilderAccess } from "./access";
 
 type Props = {
   step: Step;
@@ -23,8 +24,10 @@ export function BuilderChrome({
   rightActions,
   children,
 }: Props) {
+  const access = useBuilderAccess();
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
+      <AccessBanner access={access} />
       {/* Top bar */}
       <div
         className="flex items-center gap-3 shrink-0"

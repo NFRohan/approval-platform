@@ -15,7 +15,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { withContext } from '@/server/db';
 import { hashPassword, generatePassword } from '@/server/auth';
-import { sessionFromCookie } from '@/server/session';
+import { liveSession } from '@/server/session';
 import { HttpError } from '@/server/tables';
 
 export type Evaluation = {
@@ -31,8 +31,9 @@ export type Evaluation = {
 };
 
 async function staffContext() {
-  const session = await sessionFromCookie();
+  const session = await liveSession();
   if (!session?.isStaff) throw new HttpError(403, 'staff only');
+  if (session.mustChangePassword) throw new HttpError(403, 'change your password first');
   return { tenantId: null, userId: session.userId, role: 'admin', isStaff: true };
 }
 

@@ -1209,4 +1209,141 @@ alter table public.approval_requests add column if not exists signed_at         
 alter table public.employees add column if not exists active  boolean not null default true;
 alter table public.employees add column if not exists left_on date;
 
+-- =====================================================================
+-- Stage 3 — who somebody is, and what they may do.
+--
+-- Until now one login stood for a whole evaluation and the browser said
+-- which employee it was acting as. Now a session names an employee: a
+-- person's own account is linked to theirs, and an evaluation's login
+-- acts as one persona at a time, switched on the server and audited.
+-- What an employee may do comes from the roles they hold; creating or
+-- changing an account or a role is approved by somebody else.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Tenant settings.
+--   persona_switching   an evaluation's login may act as any employee;
+--                       an organisation's people sign in as themselves
+--   require_admin_mfa   anybody holding an administrative permission
+--                       must set up two-step sign-in
+--   default_persona     who an evaluation's login acts as at first
+-- ---------------------------------------------------------------------
+alter table public.tenants add column if not exists persona_switching boolean not null default true;
+alter table public.tenants add column if not exists require_admin_mfa boolean not null default false;
+alter table public.tenants add column if not exists default_persona   text;
+
+-- ---------------------------------------------------------------------
+-- Accounts.
+--
+-- employee_id links an account to the person it belongs to; an
+-- evaluation's own login has none and acts as personas instead.
+-- The password policy needs a history, a count of failures and a lock;
+-- two-step sign-in needs a secret; maker-checker needs to know who
+-- asked for an account and who approved it, and to hold a profile change
+-- until it is approved.
+-- ---------------------------------------------------------------------
+alter table public.app_users add column if not exists employee_id          text;
+alter table public.app_users add column if not exists failed_attempts      integer not null default 0;
+alter table public.app_users add column if not exists locked_at            timestamptz;
+alter table public.app_users add column if not exists password_history     text[] not null default '{}';
+alter table public.app_users add column if not exists mfa_secret           text;
+alter table public.app_users add column if not exists mfa_enabled          boolean not null default false;
+alter table public.app_users add column if not exists auth_source          text not null default 'local';
+alter table public.app_users add column if not exists approval_state       text not null default 'approved';
+alter table public.app_users add column if not exists pending_profile      jsonb;
+alter table public.app_users add column if not exists created_by_employee  text;
+alter table public.app_users add column if not exists approved_by_employee text;
+alter table public.app_users add column if not exists deactivated_at       timestamptz;
+-- The last time-step a two-step code was accepted for, so a code cannot
+-- be used twice inside its window.
+alter table public.app_users add column if not exists mfa_last_step        bigint;
+
+do $s3$
+begin
+  -- Deactivated is permanent; disabled can be undone.
+  alter table public.app_users drop constraint if exists app_users_status_check;
+  alter table public.app_users
+    add constraint app_users_status_check check (status in ('active', 'disabled', 'deactivated'));
+
+  if not exists (select 1 from pg_constraint where conname = 'app_users_auth_source_check') then
+    alter table public.app_users
+      add constraint app_users_auth_source_check check (auth_source in ('local', 'ldap'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'app_users_approval_state_check') then
+    alter table public.app_users
+      add constraint app_users_approval_state_check check (approval_state in ('pending', 'approved', 'rejected'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'app_users_employee_fk') then
+    alter table public.app_users
+      add constraint app_users_employee_fk foreign key (employee_id, tenant_id)
+      references public.employees(employee_id, tenant_id) on delete set null (employee_id);
+  end if;
+end $s3$;
+
+-- One account per person.
+create unique index if not exists app_users_employee_idx
+  on public.app_users(tenant_id, employee_id) where employee_id is not null;
+
+-- ---------------------------------------------------------------------
+-- Roles: named sets of permissions, held by employees.
+--
+-- A new role is pending until somebody other than its author approves
+-- it; a change to an active role waits in pending_* while the role keeps
+-- working as it was.
+-- ---------------------------------------------------------------------
+create table if not exists public.roles (
+  id                  uuid primary key default gen_random_uuid(),
+  tenant_id           uuid not null default app.current_tenant()
+                        references public.tenants(id) on delete cascade,
+  name                text not null,
+  description         text,
+  permissions         text[] not null default '{}',
+  status              text not null default 'pending' check (status in ('pending', 'active', 'rejected')),
+  pending_name        text,
+  pending_permissions text[],
+  created_by          text,
+  changed_by          text,
+  approved_by         text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  unique (id, tenant_id),
+  unique (tenant_id, name)
+);
+
+create table if not exists public.employee_roles (
+  tenant_id   uuid not null default app.current_tenant()
+                references public.tenants(id) on delete cascade,
+  employee_id text not null,
+  role_id     uuid not null,
+  assigned_by text,
+  created_at  timestamptz not null default now(),
+  primary key (tenant_id, employee_id, role_id),
+  foreign key (employee_id, tenant_id) references public.employees(employee_id, tenant_id) on delete cascade,
+  foreign key (role_id, tenant_id)     references public.roles(id, tenant_id) on delete cascade
+);
+
+-- ---------------------------------------------------------------------
+-- Who a form is for. "NFA or Memo report or template should be visible
+-- as per the role of the user and his/her's division." Null is everyone.
+-- ---------------------------------------------------------------------
+alter table public.form_templates add column if not exists audience_departments text[];
+
+-- ---------------------------------------------------------------------
+-- People syncs — from the HR file, the directory, or the daily schedule.
+-- ---------------------------------------------------------------------
+create table if not exists public.directory_syncs (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null default app.current_tenant()
+               references public.tenants(id) on delete cascade,
+  source     text not null check (source in ('ldap', 'csv', 'scheduled')),
+  result     jsonb,
+  error      text,
+  run_by     text,
+  created_at timestamptz not null default now()
+);
+create index if not exists directory_syncs_tenant_idx on public.directory_syncs(tenant_id, created_at desc);
+
+-- An employee's work address, from the HR master file.
+alter table public.employees add column if not exists email text;
+
 commit;

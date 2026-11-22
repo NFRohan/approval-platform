@@ -3,6 +3,19 @@
   "framework": null,
   "buildCommand": "vite build",
   "outputDirectory": "dist/client",
-  "regions": ["sin1"],
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+  "regions": [
+    "sin1"
+  ],
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/cron/directory-sync",
+      "schedule": "0 20 * * *"
+    }
+  ]
 }

@@ -59,6 +59,27 @@ department clearing tells the others, and a leaver's work is handed to a
 successor in one step. The route can be read as a timeline or as a process
 map, and every date is written dd/MM/yyyy.
 
+**Who somebody is, and what they may do.** A session names an employee, and
+every function that acts takes the actor from it — not from what the browser
+says. What people may do comes from roles they hold: designing workflows,
+changing only a workflow's task settings, managing or approving accounts,
+managing or approving roles, keeping the org chart, reading audit trails.
+Accounts and roles are registered or changed by one person and approved by
+another, never by their subject; a profile change waits the same way. The
+password policy is 12 characters with upper, lower, a number and a special
+character, 90-day expiry, no reuse of the last five, and a lock after ten
+wrong attempts. Two-step sign-in uses any authenticator app, and an
+organisation can require it of whoever administers. Five minutes without
+activity signs out. People come from an HR master file or from LDAP / Active
+Directory, nightly and on demand, with a history of every sync; directory
+accounts sign in with their directory password. A form can be offered to
+some departments only.
+
+An evaluation's own login still acts as any of its people, so one
+credential can show the difference between them — but switching is a
+request to the server, checked and written to the activity log, and the
+persona carries that person's permissions and nothing more.
+
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
 orders with stock reservation and transfer between venues, delegation of
@@ -105,7 +126,7 @@ connection with no context reads nothing rather than everything.
 npm install
 cp .env.example .env          # fill in DATABASE_URL, DIRECT_URL and JWT_SECRET
 
-npm run db:apply              # 6 files, re-runnable, dependency-ordered
+npm run db:apply              # 7 files, re-runnable, dependency-ordered
 node --env-file=.env scripts/dev-tenant.mjs      # issue an evaluation
 node --env-file=.env scripts/staff-account.mjs   # and the account that issues them
 
@@ -120,6 +141,22 @@ evaluations, which are clones of it, and every policy requires a signed-in
 member — so there is nothing to sign in to until an evaluation exists. That is
 also how production works.
 
+In an evaluation, the cast hold these roles: Farah Haddad is the System
+administrator, Priya Raman approves accounts (HR administrator), Nadia Okonjo
+designs workflows, Raj Patel may change only task settings, Alex Mercer
+approves roles (Security officer) and Lena Ortiz reads the audit trails.
+Everybody else raises and approves requests.
+
+### A directory
+
+To sign people in with LDAP or Active Directory and sync them from it, set
+`LDAP_URL`, `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD`, `LDAP_BASE_DN` and
+`LDAP_TENANT` (the organisation's slug); the attribute names and filters have
+defaults for OpenLDAP and are listed in `src/server/ldap.ts` with the Active
+Directory equivalents. The nightly sync is `/cron/directory-sync`, called by
+Vercel Cron with `CRON_SECRET`. `MFA_KEY` seals two-step secrets at rest and
+falls back to `JWT_SECRET`.
+
 Walking the demo changes it. To start over:
 
 ```bash
@@ -129,17 +166,19 @@ node --env-file=.env scripts/dev-tenant.mjs --fresh
 ### Tests
 
 ```bash
-npm test          # all six, cheapest first
+npm test          # all seven, cheapest first
 ```
 
 | | |
 |---|---|
 | `typecheck` | TypeScript, no emit |
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
+| `test:identity` | 35 checks with no database: two-step codes against the RFC 6238 vectors, sealing their secrets, the password policy and a generator that always meets it, the idle timeout and the 12-hour limit, reading the HR file |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 127 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — and the ticket: references, priority, signatures, notes, CC, links, copies, hand-over |
+| `db:test` | 144 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
+| `test:ldap` | 13 checks against a real OpenLDAP in Docker: signing in with a directory password (and not with an empty one, a wildcard or an injected filter), failing closed, and reading people with their managers resolved. Needs Docker; not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
 
 `db:test` and `test:journey` refuse a pooled connection string. The suites carry fixture ids in
@@ -158,9 +197,11 @@ Stated plainly, because a demo that hides its edges wastes everyone's time.
 - **Overdue reminders need a page load.** `remind_overdue()` writes one
   reminder per person per day, and the approvals screen asks for it — there is
   no scheduler behind a demo. In a real deployment it would be a timer.
-- **Persona switching is not authentication.** Signing in identifies the
-  evaluation; switching persona inside it is a demo feature, and deliberately
-  unrestricted. One credential per prospect, not one per approval level.
+- **An evaluation's login can be anybody in it.** That is what lets one
+  credential demonstrate every role. It is switched off per organisation
+  (`persona_switching`), and a person's own account never switches.
+- **The directory is one per deployment.** LDAP settings come from the
+  environment, for the one organisation named by `LDAP_TENANT`.
 - **Five of the ten specified admin modules are absent on purpose** — dispatch,
   event coordination, visitor management, air ticketing and standalone stock
   are each their own project.

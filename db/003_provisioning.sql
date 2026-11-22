@@ -120,14 +120,19 @@ begin
 
   select id into v_tpl from public.tenants where kind = 'template' limit 1;
   if v_tpl is null then
-    raise exception 'no template tenant — run 004_seed_template.sql first';
+    raise exception 'no template tenant — run 007_seed_template.sql first';
   end if;
 
   v_slug := left(app.slugify(p_name), 40);
   v_exp  := now() + p_ttl;
 
-  insert into public.tenants (name, slug, kind, expires_at, notes, created_by)
-  values (p_name, v_slug || '-' || substr(gen_random_uuid()::text, 1, 6), 'demo', v_exp, p_notes, p_actor)
+  -- An evaluation's settings start as the template's: its login switches
+  -- between personas, starting as the template's default one.
+  insert into public.tenants (name, slug, kind, expires_at, notes, created_by,
+                              persona_switching, require_admin_mfa, default_persona)
+  select p_name, v_slug || '-' || substr(gen_random_uuid()::text, 1, 6), 'demo', v_exp, p_notes, p_actor,
+         t.persona_switching, t.require_admin_mfa, t.default_persona
+    from public.tenants t where t.id = v_tpl
   returning id, tenants.slug into v_new, v_slug;
 
   insert into public.app_users (tenant_id, username, password_hash, full_name, role)
@@ -142,13 +147,24 @@ begin
   -- employees: employee_id copies across unchanged, which is what lets
   -- every text reference to a person survive without remapping.
   insert into _m select id, gen_random_uuid() from public.employees where tenant_id = v_tpl;
-  insert into public.employees (id, tenant_id, employee_id, name, designation, department, line_manager_id, gate_pass_card_number, active, left_on)
-  select m.new, v_new, e.employee_id, e.name, e.designation, e.department, e.line_manager_id, e.gate_pass_card_number, e.active, e.left_on
+  insert into public.employees (id, tenant_id, employee_id, name, designation, department, line_manager_id, gate_pass_card_number, active, left_on, email)
+  select m.new, v_new, e.employee_id, e.name, e.designation, e.department, e.line_manager_id, e.gate_pass_card_number, e.active, e.left_on, e.email
     from public.employees e join _m m on m.old = e.id
    where e.tenant_id = v_tpl;
 
   -- Who heads each department, its HRBP and CXO: the org roles rules
   -- can name.
+  -- Roles and who holds them: what each persona may do.
+  insert into _m select id, gen_random_uuid() from public.roles where tenant_id = v_tpl;
+  insert into public.roles (id, tenant_id, name, description, permissions, status, created_by, approved_by, created_at, updated_at)
+  select m.new, v_new, r.name, r.description, r.permissions, r.status, r.created_by, r.approved_by, r.created_at, r.updated_at
+    from public.roles r join _m m on m.old = r.id
+   where r.tenant_id = v_tpl;
+  insert into public.employee_roles (tenant_id, employee_id, role_id, assigned_by, created_at)
+  select v_new, er.employee_id, m.new, er.assigned_by, er.created_at
+    from public.employee_roles er join _m m on m.old = er.role_id
+   where er.tenant_id = v_tpl;
+
   insert into _m select id, gen_random_uuid() from public.departments where tenant_id = v_tpl;
   insert into public.departments (id, tenant_id, name, head_employee_id, hrbp_employee_id, cxo_employee_id, created_at)
   select m.new, v_new, d.name, d.head_employee_id, d.hrbp_employee_id, d.cxo_employee_id, d.created_at

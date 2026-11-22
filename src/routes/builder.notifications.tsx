@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
 import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/builder/PeopleStep";
 import { toast } from "sonner";
+import { useBuilderAccess } from "@/components/builder/access";
 import { ruleRole } from "@/lib/routing";
 
 const search = z.object({ templateId: z.string() });
@@ -74,6 +75,7 @@ function formatSlabRange(min: number): string {
 function NotificationsStep() {
   const { templateId } = Route.useSearch();
   const navigate = useNavigate();
+  const access = useBuilderAccess();
   const [formName, setFormName] = useState("Employee Departure Due Diligence Form");
   const [manual, setManual] = useState<ManualEntry[]>([]);
   const [savedAgo, setSavedAgo] = useState("just now");
@@ -172,6 +174,10 @@ function NotificationsStep() {
   })();
 
   async function handlePublish() {
+    if (access !== "full") {
+      navigate({ to: "/forms" });
+      return;
+    }
     setPublishing(true);
     try {
       await db.from("notification_rules").delete().eq("form_template_id", templateId);
@@ -228,7 +234,7 @@ function NotificationsStep() {
         <>
           <SecondaryButton onClick={handleBack}>← Back</SecondaryButton>
           <PrimaryButton onClick={handlePublish} disabled={publishing}>
-            {publishing ? "Publishing…" : "Publish Form"}
+            {publishing ? "Publishing…" : access === "full" ? "Publish Form" : "Done"}
           </PrimaryButton>
         </>
       }

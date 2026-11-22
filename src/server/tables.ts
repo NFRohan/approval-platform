@@ -129,9 +129,24 @@ export const TABLES: Record<string, TableDef> = {
       'form_template_ids'],
     [],
   ),
+  // Stage 3: roles and who holds them are read here and written only
+  // through the administration functions (src/lib/admin-fn.ts), which
+  // check permission and maker-checker in the database.
+  roles: T(
+    ['id', 'name', 'description', 'permissions', 'status', 'pending_name',
+      'pending_permissions', 'created_by', 'changed_by', 'approved_by',
+      'created_at', 'updated_at'],
+    [],
+    [],
+  ),
+  employee_roles: T(
+    ['employee_id', 'role_id', 'assigned_by', 'created_at'],
+    [],
+    [],
+  ),
   employees: T(
     ['id', 'employee_id', 'name', 'designation', 'department',
-      'line_manager_id', 'gate_pass_card_number', 'active', 'left_on'],
+      'line_manager_id', 'gate_pass_card_number', 'active', 'left_on', 'email'],
     ['employee_id', 'name', 'designation', 'department',
       'line_manager_id', 'gate_pass_card_number'],
     [],
@@ -162,8 +177,9 @@ export const TABLES: Record<string, TableDef> = {
   ),
   form_templates: T(
     ['id', 'name', 'category', 'created_by', 'status', 'created_at',
-      'followup_template_id'],
-    ['name', 'category', 'created_by', 'status', 'followup_template_id'],
+      'followup_template_id', 'audience_departments'],
+    ['name', 'category', 'created_by', 'status', 'followup_template_id',
+      'audience_departments'],
     [],
   ),
   item_stock: T(
@@ -289,6 +305,9 @@ export const RPCS: Record<string, readonly string[]> = {
   unlink_submissions:   ['p_submission_id', 'p_other_id', 'p_actor'],
   copy_submission:      ['p_submission_id', 'p_actor'],
   hand_over:            ['p_leaver', 'p_successor', 'p_actor'],
+  // Stage 3: a workflow's task settings — deadlines and signatures — for
+  // somebody with forms.settings, who may not otherwise touch the design.
+  update_rule_settings: ['p_rule', 'p_deadline_days', 'p_require_signature'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],

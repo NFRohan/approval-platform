@@ -107,7 +107,7 @@ export const uploadAttachment = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<{ ok: true; attachment: AttachmentInfo } | { ok: false; error: string }> => {
     const submissionId = String(data.get('submissionId') ?? '');
     const fieldName = String(data.get('fieldName') ?? '').trim();
-    const uploadedBy = String(data.get('uploadedBy') ?? '').trim() || null;
+    const claimedBy = String(data.get('uploadedBy') ?? '').trim() || null;
     const description = cleanDescription(data.get('description'));
     const tags = cleanTags(String(data.get('tags') ?? ''));
     const file = data.get('file');
@@ -121,6 +121,9 @@ export const uploadAttachment = createServerFn({ method: 'POST' })
 
     const bytes = Buffer.from(await file.arrayBuffer());
     const ctx = await resolveContext();
+    // Who uploaded it is the session's to say; the form's claim is used
+    // only where there is no employee in the session at all.
+    const uploadedBy = ctx.employeeId ?? claimedBy;
 
     return withContext(ctx, async (client) => {
       const { rows: subs } = await client.query(
@@ -191,7 +194,7 @@ export const describeAttachment = createServerFn({ method: 'POST' })
     const ctx = await resolveContext();
     return withContext(ctx, async (client) => {
       const { rows } = await client.query(
-        `select a.submission_id, app.involved_in(a.submission_id, $2) as ok
+        `select a.submission_id, app.involved_in(a.submission_id, app.acting($2)) as ok
            from public.attachments a where a.id = $1`,
         [data.attachmentId, data.actor],
       );

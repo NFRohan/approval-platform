@@ -5,7 +5,7 @@ import { RoleSwitcher } from "./RoleSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
-import { currentSession, signOut, type PublicSession } from "@/lib/auth-fn";
+import { signOut } from "@/lib/auth-fn";
 
 // =====================================================================
 // The breadcrumb.
@@ -332,14 +332,10 @@ function NotificationsDropdown({
 // ---------------------------------------------------------------------
 function AccountMenu() {
   const router = useRouter();
-  const [session, setSession] = useState<PublicSession | null>(null);
+  // The root route already holds the session; asking again here showed a
+  // stale one after switching persona.
+  const { session } = useCurrentUser();
   const [leaving, setLeaving] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    void currentSession().then((s) => { if (alive) setSession(s); });
-    return () => { alive = false; };
-  }, []);
 
   if (!session) return null;
   const soon = session.daysLeft !== null && session.daysLeft <= 7;

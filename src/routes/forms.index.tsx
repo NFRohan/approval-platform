@@ -17,6 +17,7 @@ type FormRow = {
   id: string;
   name: string;
   status: string | null;
+  audience_departments?: string[] | null;
   category: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -35,19 +36,24 @@ function FormsPage() {
   const [creators, setCreators] = useState<Record<string, Creator>>({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("HR");
-  const { currentUser } = useCurrentUser();
-  const isAdmin = currentUser.employee_id === "EMP-0201";
+  const { currentUser, can } = useCurrentUser();
+  // Whoever designs workflows manages the published ones — a permission
+  // from their roles, not one person's id.
+  const isAdmin = can("forms.build");
+  const [myDepartment, setMyDepartment] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     (async () => {
       const { data } = await db
         .from("form_templates")
-        .select("id, name, status, category, created_by, created_at")
+        .select("id, name, status, category, created_by, created_at, audience_departments")
         .eq("status", "published")
         .order("created_at", { ascending: false });
       const rows = (data ?? []) as FormRow[];
       setForms(rows);
+      const { data: me } = await db.from("employees").select("department").eq("employee_id", currentUser.employee_id).maybeSingle();
+      setMyDepartment((me as { department: string | null } | null)?.department ?? null);
 
       // The card used to name a person who was typed into the markup and
       // did not exist in the employee table. Resolve the real one.
@@ -67,14 +73,19 @@ function FormsPage() {
       }
       setLoading(false);
     })();
-  }, []);
+  }, [currentUser.employee_id]);
 
   function handleDeleted(id: string) {
     setForms((prev) => prev.filter((f) => f.id !== id));
   }
 
+  // A form for some departments is offered to them; a designer sees all
+  // of them. The database refuses a request from outside the audience
+  // either way.
+  const offered = (f: FormRow) =>
+    isAdmin || !f.audience_departments?.length || (!!myDepartment && f.audience_departments.includes(myDepartment));
   const visible = forms.filter(
-    (f) => (f.category ?? "").toLowerCase() === tab.toLowerCase(),
+    (f) => offered(f) && (f.category ?? "").toLowerCase() === tab.toLowerCase(),
   );
 
   return (

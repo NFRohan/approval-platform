@@ -28,10 +28,9 @@ export const Route = createFileRoute("/files/$attachmentId")({
     handlers: {
       GET: async ({ params, request }) => {
         const id = params.attachmentId;
-        // Who is opening it, for the access log. Like every actor in this
-        // demo it is the persona the screen is acting as, named by the
-        // link; once sign-in names the employee it comes from the session.
-        const by = new URL(request.url).searchParams.get("by")?.slice(0, 40) || null;
+        // Who is opening it, for the access log: the session's employee.
+        // The link's ?by= is used only where the session names nobody.
+        const claimed = new URL(request.url).searchParams.get("by")?.slice(0, 40) || null;
         if (!UUID.test(id)) return plain(404, "No such file.");
 
         let ctx;
@@ -54,7 +53,7 @@ export const Route = createFileRoute("/files/$attachmentId")({
             if (rows[0]) {
               await client.query(
                 "insert into public.attachment_access (attachment_id, actor_id) values ($1, $2)",
-                [id, by],
+                [id, ctx.employeeId ?? claimed],
               );
             }
             return rows[0] as { file_name: string; content_type: string; data: Buffer } | undefined;

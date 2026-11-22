@@ -13,9 +13,8 @@
 // =====================================================================
 
 import pg from 'pg';
-import { getCookie } from '@tanstack/react-start/server';
 import { HttpError } from './tables';
-import { SESSION_COOKIE, verifySession } from './auth';
+import { liveSession } from './session';
 
 const { Pool } = pg;
 
@@ -44,10 +43,15 @@ export type RequestContext = {
   userId: string | null;
   role?: string;
   isStaff?: boolean;
+  /** Who is acting. The chain functions take the actor from this, not from their arguments. */
+  employeeId?: string | null;
+  /** Did the session pass two-step sign-in? Administrative permissions may depend on it. */
+  mfa?: boolean;
 };
 
 const ROLES = new Set(['admin', 'creator', 'viewer', 'anon']);
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const EMPLOYEE = /^[A-Za-z0-9._-]{1,40}$/;
 
 /**
  * The session preamble, as one statement.
@@ -68,17 +72,23 @@ function preamble(ctx: RequestContext): string {
   const user = id(ctx.userId, 'user id');
   const role = ctx.role && ROLES.has(ctx.role) ? ctx.role : 'anon';
   const staff = ctx.isStaff ? 'true' : 'false';
+  const employee = ctx.employeeId ?? '';
+  if (employee && !EMPLOYEE.test(employee)) throw new HttpError(400, 'employee id has an unexpected shape');
+  const mfa = ctx.mfa ? 'true' : 'false';
 
-  // The liveness check rides along in the same batch, so enforcing it
-  // on every request costs no extra round trip. It raises 28000 when
-  // the evaluation has been withdrawn or has run out.
+  // The liveness checks ride along in the same batch, so enforcing them
+  // on every request costs no extra round trip. They raise 28000 when
+  // the evaluation has been withdrawn or has run out, or the account has
+  // been disabled, deactivated or locked since the session was issued.
   return `begin;
           set local role app_api;
           select set_config('app.tenant_id', '${tenant}', true),
                  set_config('app.user_id',   '${user}',   true),
                  set_config('app.role',      '${role}',   true),
-                 set_config('app.is_staff',  '${staff}',  true);
-          select app.assert_tenant_live();`;
+                 set_config('app.is_staff',  '${staff}',  true),
+                 set_config('app.employee_id', '${employee}', true),
+                 set_config('app.mfa',       '${mfa}',    true);
+          select app.assert_tenant_live(), app.assert_account_live();`;
 }
 
 /** Run `fn` with the given identity applied to the session. */
@@ -142,14 +152,24 @@ export async function withContext<T>(
 // quietly serves some default tenant to anonymous callers is the thing
 // this sprint exists to remove.
 // ---------------------------------------------------------------------
+//
+// So does who is acting: the session's employee, which the chain
+// functions use in place of whatever actor the caller passed.
+//
+// A password that has to be changed first — the first sign-in, or one
+// past its 90 days — opens nothing until it is.
+// ---------------------------------------------------------------------
 export async function resolveContext(): Promise<RequestContext> {
-  const session = await verifySession(getCookie(SESSION_COOKIE));
+  const session = await liveSession();
   if (!session) throw new HttpError(401, "not signed in");
+  if (session.mustChangePassword) throw new HttpError(403, "change your password first");
 
   return {
     tenantId: session.tenantId,
     userId: session.userId,
     role: session.role,
     isStaff: session.isStaff,
+    employeeId: session.employeeId,
+    mfa: session.mfa,
   };
 }

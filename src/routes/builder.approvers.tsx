@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Trash2, Plus } from "lucide-react";
 import { ruleRole } from "@/lib/routing";
+import { useBuilderAccess } from "@/components/builder/access";
 
 const search = z.object({ templateId: z.string() });
 
@@ -31,7 +32,7 @@ export const Route = createFileRoute("/builder/approvers")({
 //
 // `label` is what is saved on the rule and what the engine reads;
 // app.rule_role in db/005_chain.sql is the list of roles it knows.
-type AutoApprover = AutoEntry & { label: string; _requires?: string };
+type AutoApprover = AutoEntry & { label: string; _requires?: string; ruleId?: string; requireSignature?: boolean };
 
 const ALL_AUTO_APPROVERS: AutoApprover[] = [
   {
@@ -69,7 +70,7 @@ const ALL_AUTO_APPROVERS: AutoApprover[] = [
   },
 ];
 
-type SavedRule = { label: string; user_id: string | null; deadlineDays: number };
+type SavedRule = { label: string; user_id: string | null; deadlineDays: number; ruleId: string; requireSignature: boolean };
 
 // The organisational roles a rule can name; see app.resolve_role.
 const ROLE_LABELS = new Set(["line_manager", "skip_level", "department_head", "hrbp", "cxo"]);
@@ -98,22 +99,29 @@ function ApproversStep() {
   // new one is given the defaults.
   const [savedAuto, setSavedAuto] = useState<SavedRule[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const access = useBuilderAccess();
+  // Who may raise this form: departments, or everybody when empty.
+  const [audience, setAudience] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
       const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }, { data: tpls }] = await Promise.all([
-        db.from("form_templates").select("name, followup_template_id").eq("id", templateId).maybeSingle(),
+        db.from("form_templates").select("name, followup_template_id, audience_departments").eq("id", templateId).maybeSingle(),
         db.from("form_fields").select("field_type, field_name, order_index").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
         db.from("approval_rules")
-          .select("approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag")
+          .select("id, approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag")
           .eq("form_template_id", templateId)
           .order("step_index")
           .order("position"),
         db.from("form_templates").select("id, name").order("name"),
       ]);
       if (tpl?.name) setFormName(tpl.name);
+      setAudience(((tpl as { audience_departments?: string[] | null } | null)?.audience_departments) ?? []);
+      void db.from("departments").select("name").order("name").then(({ data }) =>
+        setDepartments(((data ?? []) as { name: string }[]).map((d) => d.name)));
       setFollowup((tpl as { followup_template_id?: string | null } | null)?.followup_template_id ?? "");
       setTemplates(((tpls ?? []) as { id: string; name: string }[]).filter((t) => t.id !== templateId));
       setFieldLabels(
@@ -131,6 +139,7 @@ function ApproversStep() {
       // replace every rule on save, so opening a form's approvers and
       // pressing Next deleted the ones added before.
       type SavedManual = {
+        id: string;
         approver_user_id: string | null; deadline_days: number | null; label: string | null;
         step_index: number | null; quorum: number | null; stage_label: string | null; lane: string | null;
         condition: { field?: string; op?: string; value?: string } | null;
@@ -161,6 +170,7 @@ function ApproversStep() {
               const isRole = ROLE_LABELS.has(role ?? "");
               return {
                 ...newApprover(isRole ? `role:${role}` : (r.approver_user_id as string)),
+                ruleId: r.id,
                 fallback: isRole ? r.approver_user_id : null,
                 label: isRole ? null : r.label,
                 requireSignature: !!r.require_signature,
@@ -178,7 +188,10 @@ function ApproversStep() {
         rules && rules.length > 0
           ? rules
               .filter((r) => r.is_auto_added)
-              .map((r) => ({ label: r.label ?? "", user_id: r.approver_user_id, deadlineDays: r.deadline_days ?? 7 }))
+              .map((r) => ({
+                label: r.label ?? "", user_id: r.approver_user_id, deadlineDays: r.deadline_days ?? 7,
+                ruleId: r.id as string, requireSignature: !!r.require_signature,
+              }))
           : null,
       );
       setLoading(false);
@@ -235,8 +248,10 @@ function ApproversStep() {
       const def = ALL_AUTO_APPROVERS.find((a) => a.label === role && (role === "line_manager" || role === "slab_finance"));
       // The person on a line-manager rule is the fallback for somebody
       // with no manager on record, so it is kept.
-      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays };
+      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays, ruleId: r.ruleId, requireSignature: r.requireSignature };
       return named({
+        ruleId: r.ruleId,
+        requireSignature: r.requireSignature,
         id: `saved-auto-${i}`,
         user_id: r.user_id,
         label: r.label,
@@ -252,7 +267,30 @@ function ApproversStep() {
     return [...kept, ...added];
   })();
 
+  // Task settings only: each saved step's deadline and signature, through
+  // the one function that may change them, and nothing else.
+  async function saveSettings() {
+    const changes = [
+      ...autoApprovers.filter((a) => a.ruleId).map((a) => ({ id: a.ruleId!, days: a.deadlineDays ?? 7, sig: !!a.requireSignature })),
+      ...stages.flatMap((st) => st.approvers.filter((a) => a.ruleId).map((a) => ({ id: a.ruleId!, days: a.deadlineDays, sig: !!a.requireSignature }))),
+    ];
+    for (const c of changes) {
+      const { error } = await db.rpc("update_rule_settings", { p_rule: c.id, p_deadline_days: c.days, p_require_signature: c.sig });
+      if (error) {
+        toast.error("Could not save the task settings: " + error.message);
+        return;
+      }
+    }
+    setSavedAgo("just now");
+    toast.success("Task settings saved");
+  }
+
   async function handleNext() {
+    if (access === "settings") return saveSettings();
+    if (access === "read") {
+      navigate({ to: "/builder/notifications", search: { templateId } });
+      return;
+    }
     // Replace existing approval_rules for this template
     await db.from("approval_rules").delete().eq("form_template_id", templateId);
 
@@ -307,7 +345,7 @@ function ApproversStep() {
 
     const { error: fuErr } = await db
       .from("form_templates")
-      .update({ followup_template_id: followup || null })
+      .update({ followup_template_id: followup || null, audience_departments: audience.length ? audience : null })
       .eq("id", templateId);
     if (fuErr) {
       toast.error("Failed to save the follow-up: " + fuErr.message);
@@ -360,7 +398,7 @@ function ApproversStep() {
       rightActions={
         <>
           <SecondaryButton onClick={handleBack}>← Back</SecondaryButton>
-          <PrimaryButton onClick={handleNext}>Next →</PrimaryButton>
+          <PrimaryButton onClick={handleNext}>{access === "settings" ? "Save task settings" : "Next →"}</PrimaryButton>
         </>
       }
     >
@@ -396,6 +434,25 @@ function ApproversStep() {
                 <option value="">Nothing follows</option>
                 {templates.map((t) => <option key={t.id} value={t.id}>Start: {t.name}</option>)}
               </select>
+            </section>
+            <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="audience">
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Who can raise it</div>
+              <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
+                Offered only to people in these departments. Leave all unticked for everybody.
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {departments.map((d) => {
+                  const on = audience.includes(d);
+                  return (
+                    <label key={d} className="inline-flex items-center gap-1.5 rounded-md" style={{ padding: "4px 9px", fontSize: 12.5, border: `1px solid ${on ? "#C7D2FE" : "#E4E4E7"}`, background: on ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
+                      <input type="checkbox" checked={on} name={`audience-${d}`}
+                        onChange={() => setAudience((a) => on ? a.filter((x) => x !== d) : [...a, d])} />
+                      {d}
+                    </label>
+                  );
+                })}
+                {departments.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>No departments yet.</span>}
+              </div>
             </section>
           </>
         }

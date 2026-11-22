@@ -1,6 +1,9 @@
-import { Check, ChevronDown } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
-import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, UserRound } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
+import { initialsOf, useCurrentUser } from "@/contexts/CurrentUserContext";
+import { listPersonas, type Persona } from "@/lib/auth-fn";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,9 +14,59 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar } from "./Avatar";
 
+/**
+ * Who is acting.
+ *
+ * A person's own account always acts as them, so for them this is just a
+ * name and a way to their account page. An evaluation's login can act as
+ * anybody in the organisation: switching is a request to the server,
+ * which checks it, records it in the activity log, and reissues the
+ * session — the browser never decides who it is.
+ */
 export function RoleSwitcher() {
-  const { currentUser, setCurrentUser, users } = useCurrentUser();
+  const { currentUser, setCurrentUser, users, session } = useCurrentUser();
   const navigate = useNavigate();
+  const [people, setPeople] = useState<Persona[] | null>(null);
+  const [filter, setFilter] = useState("");
+
+  const canSwitch = session?.canSwitch === true;
+
+  useEffect(() => {
+    if (canSwitch && people === null) void listPersonas().then(setPeople);
+  }, [canSwitch, people]);
+
+  // The demonstration's cast first, in its own order; everybody else after.
+  const ordered = useMemo(() => {
+    const all = people ?? users.map((u) => ({ ...u, department: null, roles: [] as string[] }));
+    const rank = new Map(users.map((u, i) => [u.employee_id, i]));
+    const q = filter.trim().toLowerCase();
+    return [...all]
+      .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.designation ?? "").toLowerCase().includes(q) || p.employee_id.toLowerCase().includes(q))
+      .sort((a, b) => (rank.get(a.employee_id) ?? 999) - (rank.get(b.employee_id) ?? 999) || a.name.localeCompare(b.name));
+  }, [people, users, filter]);
+
+  const face = (
+    <>
+      <Avatar initials={currentUser.initials} size={32} brand />
+      <div className="text-left leading-tight hidden sm:block">
+        <div className="text-[12.5px] font-medium text-zinc-900" data-testid="acting-as">{currentUser.name}</div>
+        <div className="text-[10.5px] text-zinc-500">{currentUser.designation}</div>
+      </div>
+    </>
+  );
+
+  if (!canSwitch) {
+    return (
+      <Link
+        to="/account"
+        className="flex items-center gap-2 rounded-lg transition-colors hover:bg-zinc-100"
+        style={{ padding: "4px 8px 4px 4px", textDecoration: "none" }}
+        title="Your account"
+      >
+        {face}
+      </Link>
+    );
+  }
 
   return (
     <DropdownMenu>
@@ -21,37 +74,55 @@ export function RoleSwitcher() {
         <button
           className="flex items-center gap-2 rounded-lg cursor-pointer transition-colors hover:bg-zinc-100"
           style={{ padding: "4px 8px 4px 4px" }}
+          aria-label="Switch persona"
         >
-          <Avatar initials={currentUser.initials} size={32} brand />
-          <div className="text-left leading-tight hidden sm:block">
-            <div className="text-[12.5px] font-medium text-zinc-900">{currentUser.name}</div>
-            <div className="text-[10.5px] text-zinc-500">{currentUser.designation}</div>
-          </div>
+          {face}
           <ChevronDown size={14} className="text-zinc-500" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="text-[10.5px] uppercase tracking-wider text-zinc-500 font-semibold">
-          Switch role
+          Act as
         </DropdownMenuLabel>
+        <div style={{ padding: "2px 8px 6px" }} onKeyDown={(e) => e.stopPropagation()}>
+          <input
+            placeholder="Find somebody"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{ width: "100%", padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
+          />
+        </div>
         <DropdownMenuSeparator />
-        {users.map((u) => {
-          const active = u.employee_id === currentUser.employee_id;
-          return (
-            <DropdownMenuItem
-              key={u.employee_id}
-              onSelect={() => { setCurrentUser(u); void navigate({ to: "/" }); }}
-              className="flex items-center gap-3 py-2 cursor-pointer"
-            >
-              <Avatar initials={u.initials} size={28} brand={active} />
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-zinc-900 truncate">{u.name}</div>
-                <div className="text-[11px] text-zinc-500 truncate">{u.designation}</div>
-              </div>
-              {active && <Check size={14} className="text-brand-500" style={{ color: "var(--color-brand-500)" }} />}
-            </DropdownMenuItem>
-          );
-        })}
+        <div style={{ maxHeight: 380, overflowY: "auto" }}>
+          {ordered.map((u) => {
+            const active = u.employee_id === currentUser.employee_id;
+            return (
+              <DropdownMenuItem
+                key={u.employee_id}
+                onSelect={async () => {
+                  const r = await setCurrentUser(u);
+                  if (!r.ok) { toast.error(r.error ?? "Could not switch."); return; }
+                  void navigate({ to: "/" });
+                }}
+                className="flex items-center gap-3 py-2 cursor-pointer"
+              >
+                <Avatar initials={initialsOf(u.name)} size={28} brand={active} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium text-zinc-900 truncate">{u.name}</div>
+                  <div className="text-[11px] text-zinc-500 truncate">{u.designation}</div>
+                  {u.roles.length > 0 && (
+                    <div className="text-[10.5px] truncate" style={{ color: "#4338CA" }}>{u.roles.join(" · ")}</div>
+                  )}
+                </div>
+                {active && <Check size={14} style={{ color: "var(--color-brand-500)" }} />}
+              </DropdownMenuItem>
+            );
+          })}
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/account" })} className="flex items-center gap-2 cursor-pointer">
+          <UserRound size={14} /> <span className="text-[13px]">Account and two-step sign-in</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

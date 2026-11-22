@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   DndContext,
@@ -13,6 +13,7 @@ import { Code2, Download, Eye, Upload } from "lucide-react";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { AccessBanner, useBuilderAccess, type BuilderAccess } from "@/components/builder/access";
 import { FieldPalette } from "@/components/builder/FieldPalette";
 import { Canvas } from "@/components/builder/Canvas";
 import { ConfigPanel } from "@/components/builder/ConfigPanel";
@@ -69,9 +70,56 @@ function InitOverlay({ active, children }: { active: boolean; children: ReactNod
 }
 
 function BuilderPage() {
+  const access = useBuilderAccess();
+  const search = Route.useSearch();
+  // Somebody who cannot design does not get a new draft made for them —
+  // the database would refuse it — but a choice of forms to look at, or
+  // to change the task settings of.
+  if (!search.templateId && access !== "full") return <FormPicker access={access} />;
+  return <BuilderEditor />;
+}
+
+function FormPicker({ access }: { access: BuilderAccess }) {
+  const [forms, setForms] = useState<{ id: string; name: string; status: string | null }[] | null>(null);
+  useEffect(() => {
+    void db.from("form_templates").select("id, name, status").order("name").then(({ data }) => setForms((data ?? []) as never));
+  }, []);
+  return (
+    <div className="h-full flex flex-col bg-white overflow-auto">
+      <AccessBanner access={access} />
+      <div className="max-w-2xl w-full mx-auto" style={{ padding: "28px 24px" }}>
+        <h1 style={{ fontSize: 20, fontWeight: 650, color: "#18181B", margin: "0 0 4px" }}>Workflows</h1>
+        <p style={{ fontSize: 13, color: "#71717A", margin: "0 0 16px" }}>
+          {access === "settings" ? "Choose a workflow to change its task settings." : "Choose a workflow to look at."}
+        </p>
+        <div className="flex flex-col gap-2" data-testid="workflow-picker">
+          {(forms ?? []).map((f) => (
+            <Link
+              key={f.id}
+              to="/builder"
+              search={{ templateId: f.id }}
+              className="flex items-center justify-between rounded-lg"
+              style={{ padding: "11px 14px", border: "1px solid #E4E4E7", textDecoration: "none", color: "#18181B", fontSize: 13.5 }}
+            >
+              <span>{f.name}</span>
+              <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>{f.status}</span>
+            </Link>
+          ))}
+          {forms === null && <div style={{ fontSize: 13, color: "#A1A1AA" }}>Loading…</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BuilderEditor() {
   const { currentUser } = useCurrentUser();
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const access = useBuilderAccess();
+  // Without forms.build nothing here is saved; the database would refuse
+  // it, and an edit that silently goes nowhere is worse than none.
+  const readOnly = access !== "full";
 
   const [templateId, setTemplateId] = useState<string | null>(search.templateId ?? null);
   const [formName, setFormName] = useState(DEFAULT_FORM_NAME);
@@ -153,7 +201,7 @@ function BuilderPage() {
   const selectedField = fields.find((f) => f.id === selectedId) ?? null;
 
   async function persistInsert(field: PlacedField) {
-    if (!templateId) return;
+    if (!templateId || readOnly) return;
     const { error } = await db.from("form_fields").insert({
       id: field.id,
       form_template_id: templateId,
@@ -168,7 +216,7 @@ function BuilderPage() {
   }
 
   async function persistUpdate(field: PlacedField) {
-    if (!templateId) return;
+    if (!templateId || readOnly) return;
     const { error } = await db
       .from("form_fields")
       .update({
@@ -182,6 +230,7 @@ function BuilderPage() {
   }
 
   async function persistDelete(id: string) {
+    if (readOnly) return;
     await db.from("form_fields").delete().eq("id", id);
   }
 
@@ -193,7 +242,7 @@ function BuilderPage() {
    * nobody above it, silently.
    */
   async function dropSlabsIfNoMoneyField(remaining: PlacedField[]) {
-    if (!templateId) return;
+    if (!templateId || readOnly) return;
     if (remaining.some((f) => f.kind === "money")) return;
 
     const { data: slabs } = await db
@@ -217,7 +266,7 @@ function BuilderPage() {
   }
 
   async function persistReorder(next: PlacedField[]) {
-    if (!templateId) return;
+    if (!templateId || readOnly) return;
     await Promise.all(
       next.map((f, i) => db.from("form_fields").update({ order_index: i }).eq("id", f.id)),
     );
@@ -226,6 +275,10 @@ function BuilderPage() {
   function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (!over) return;
+    if (readOnly) {
+      toast.info("Changing the form needs the Workflow designer role.");
+      return;
+    }
 
     const fromPalette = active.data.current?.from === "palette";
     if (fromPalette) {
@@ -354,7 +407,7 @@ function BuilderPage() {
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file || !templateId) return;
+    if (!file || !templateId || readOnly) return;
 
     let parsed: { version: number; formName?: string; fields: Omit<PlacedField, "id" | "order_index">[] };
     try {
@@ -419,7 +472,7 @@ function BuilderPage() {
       formName={formName}
       onFormNameChange={setFormName}
       onFormNameBlur={async () => {
-        if (!templateId) return;
+        if (!templateId || readOnly) return;
         await db.from("form_templates").update({ name: formName }).eq("id", templateId);
         setSavedAgo("just now");
       }}

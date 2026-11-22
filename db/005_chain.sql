@@ -1054,6 +1054,8 @@ declare
   v_next   record;
   v_open   text;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select * into v_req from public.approval_requests where id = p_request_id for update;
   if not found then
     raise exception 'no such approval step';
@@ -1249,6 +1251,8 @@ declare
   v_req record;
   v_tgt record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select * into v_req from public.approval_requests where id = p_request_id for update;
   if not found then
     raise exception 'no such approval step';
@@ -1340,6 +1344,8 @@ as $$
 declare
   v_req record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select * into v_req from public.approval_requests where id = p_request_id for update;
   if not found then
     raise exception 'no such approval step';
@@ -1405,6 +1411,8 @@ declare
   v_req record;
   v_new uuid;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select * into v_req from public.approval_requests where id = p_request_id for update;
   if not found then
     raise exception 'no such approval step';
@@ -1511,6 +1519,8 @@ as $$
 declare
   r record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   perform app.assert_requester_may_withdraw(p_submission_id, p_actor);
 
   for r in
@@ -1544,6 +1554,8 @@ as $$
 declare
   r record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   perform app.assert_requester_may_withdraw(p_submission_id, p_actor);
 
   for r in
@@ -1591,6 +1603,8 @@ declare
   v_type text;
   v_id   uuid;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select subject_type into v_type
     from public.approval_requests where subject_id = p_subject_id limit 1;
   if v_type is null then
@@ -1637,6 +1651,8 @@ as $$
 declare
   v_q record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select * into v_q from public.approval_queries where id = p_query_id for update;
   if not found then
     raise exception 'no such question';
@@ -1695,10 +1711,13 @@ begin
     return null;
   end if;
 
+  -- In the requester's name, whoever approved: see app.stamp_actor().
+  perform set_config('app.on_behalf', 'true', true);
   insert into public.form_submissions
     (form_template_id, submitted_by, status, parent_submission_id)
   values (v_parent.followup_template_id, v_parent.submitted_by, 'draft', p_submission)
   returning id into v_new;
+  perform set_config('app.on_behalf', 'false', true);
 
   insert into public.submission_values (submission_id, field_name, value)
   select distinct on (f.field_name) v_new, f.field_name, pv.value
@@ -1777,6 +1796,8 @@ declare
   v_id uuid;
   r    record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   if p_body is null or trim(p_body) = '' then
     raise exception 'a note needs something in it';
   end if;
@@ -1825,6 +1846,8 @@ declare
   v_status text;
   n        int := 0;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   select submitted_by, status into v_sub from public.form_submissions where id = p_submission_id;
   if not found then
     raise exception 'no such submission';
@@ -1877,6 +1900,8 @@ declare
   v_other uuid;
   v_id    uuid;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   if not app.involved_in(p_submission_id, p_actor) then
     raise exception 'only somebody on this request can link it to another';
   end if;
@@ -1920,6 +1945,8 @@ security invoker
 set search_path = public, pg_temp
 as $$
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   if not app.involved_in(p_submission_id, p_actor) then
     raise exception 'only somebody on this request can unlink it';
   end if;
@@ -1950,6 +1977,8 @@ declare
   v_src record;
   v_new uuid;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
   if p_actor is null or not exists (select 1 from public.employees where employee_id = p_actor) then
     raise exception 'say who is copying it';
   end if;
@@ -1992,7 +2021,10 @@ create or replace function public.hand_over(
   p_actor     text default null
 ) returns int
 language plpgsql
-security invoker
+-- Definer: it rewrites workflow configuration and the org chart, which
+-- members cannot write directly. It checks org.manage itself, and every
+-- statement in it names the tenant.
+security definer
 set search_path = public, pg_temp
 as $$
 declare
@@ -2000,6 +2032,9 @@ declare
   k   int;
   r   record;
 begin
+  -- Who is acting is the session's to say, when there is a session.
+  p_actor := app.acting(p_actor);
+  perform app.require_permission('org.manage');
   if p_leaver is null or p_successor is null or p_leaver = p_successor then
     raise exception 'name somebody leaving and somebody else to take over';
   end if;
