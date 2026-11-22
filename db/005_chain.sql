@@ -1881,9 +1881,13 @@ begin
     raise exception 'only somebody on this request can link it to another';
   end if;
 
+  -- In this tenant. Policies would say so under the application, but the
+  -- seed runs as the owner, and every evaluation is a clone carrying the
+  -- same references — so a reference alone names one request in every
+  -- tenant at once.
   select id into v_other from public.form_submissions
-   where upper(ref_number) = upper(trim(p_other))
-      or id::text = lower(trim(p_other))
+   where tenant_id = app.current_tenant()
+     and (upper(ref_number) = upper(trim(p_other)) or id::text = lower(trim(p_other)))
    limit 1;
   if v_other is null then
     raise exception 'there is no request %', trim(p_other);
@@ -1999,10 +2003,11 @@ begin
   if p_leaver is null or p_successor is null or p_leaver = p_successor then
     raise exception 'name somebody leaving and somebody else to take over';
   end if;
-  if not exists (select 1 from public.employees where employee_id = p_leaver) then
+  if not exists (select 1 from public.employees where employee_id = p_leaver and tenant_id = app.current_tenant()) then
     raise exception 'no employee with id %', p_leaver;
   end if;
-  if not exists (select 1 from public.employees where employee_id = p_successor and active) then
+  if not exists (select 1 from public.employees
+                  where employee_id = p_successor and active and tenant_id = app.current_tenant()) then
     raise exception '% is not an active employee', p_successor;
   end if;
 
@@ -2012,6 +2017,7 @@ begin
        set approver_user_id = p_successor,
            reassigned_from  = coalesce(reassigned_from, p_leaver)
      where approver_user_id = p_leaver
+       and tenant_id = app.current_tenant()
        and status in ('pending', 'waiting', 'clarification')
     returning id, subject_type, subject_id, status
   loop
@@ -2025,29 +2031,35 @@ begin
   end loop;
 
   -- Everywhere the configuration names them.
-  update public.approval_rules     set approver_user_id = p_successor where approver_user_id = p_leaver;
-  update public.approval_slabs     set approver_user_id = p_successor where approver_user_id = p_leaver;
-  update public.notification_rules set notifyee_user_id = p_successor where notifyee_user_id = p_leaver;
-  update public.departments set head_employee_id = p_successor where head_employee_id = p_leaver;
-  update public.departments set hrbp_employee_id = p_successor where hrbp_employee_id = p_leaver;
-  update public.departments set cxo_employee_id  = p_successor where cxo_employee_id  = p_leaver;
+  -- Everything below names the tenant as well as the person: employee
+  -- ids repeat in every evaluation, and run as the owner a bare id would
+  -- reach into all of them.
+  update public.approval_rules     set approver_user_id = p_successor where approver_user_id = p_leaver and tenant_id = app.current_tenant();
+  update public.approval_slabs     set approver_user_id = p_successor where approver_user_id = p_leaver and tenant_id = app.current_tenant();
+  update public.notification_rules set notifyee_user_id = p_successor where notifyee_user_id = p_leaver and tenant_id = app.current_tenant();
+  update public.departments set head_employee_id = p_successor where head_employee_id = p_leaver and tenant_id = app.current_tenant();
+  update public.departments set hrbp_employee_id = p_successor where hrbp_employee_id = p_leaver and tenant_id = app.current_tenant();
+  update public.departments set cxo_employee_id  = p_successor where cxo_employee_id  = p_leaver and tenant_id = app.current_tenant();
   update public.employees   set line_manager_id  = p_successor
-   where line_manager_id = p_leaver and employee_id <> p_successor;
+   where line_manager_id = p_leaver and employee_id <> p_successor and tenant_id = app.current_tenant();
 
   -- Their own delegations end with them.
-  delete from public.delegation_rules where delegator_id = p_leaver or delegate_id = p_leaver;
+  delete from public.delegation_rules
+   where (delegator_id = p_leaver or delegate_id = p_leaver) and tenant_id = app.current_tenant();
 
   update public.employees set active = false, left_on = (now() at time zone 'Asia/Dhaka')::date
-   where employee_id = p_leaver;
+   where employee_id = p_leaver and tenant_id = app.current_tenant();
 
   insert into public.activity_log (actor_id, action, entity_type, entity_id, detail)
   select p_actor, 'handed_over', 'employee', e.id,
          'Handed everything of ' || e.name || ' over to '
-           || coalesce((select name from public.employees where employee_id = p_successor), p_successor)
-    from public.employees e where e.employee_id = p_leaver;
+           || coalesce((select name from public.employees
+                         where employee_id = p_successor and tenant_id = app.current_tenant()), p_successor)
+    from public.employees e where e.employee_id = p_leaver and e.tenant_id = app.current_tenant();
 
   perform app.notify(p_successor, 'handover.received', 'You have taken over from a leaver',
-    coalesce((select name from public.employees where employee_id = p_leaver), p_leaver)
+    coalesce((select name from public.employees
+               where employee_id = p_leaver and tenant_id = app.current_tenant()), p_leaver)
       || ' has left; their approvals and responsibilities are now yours (' || n || ' open or upcoming steps).');
   return n;
 end $$;

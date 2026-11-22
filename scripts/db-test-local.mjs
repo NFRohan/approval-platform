@@ -35,7 +35,7 @@ const suites = readdirSync('db/tests')
   .filter((f) => !only || f.includes(only))
   .sort();
 
-if (!suites.length) {
+if (!suites.length && !(only && 'reapply'.includes(only))) {
   console.error(only ? `no suite matching "${only}"` : 'no suites found');
   process.exit(1);
 }
@@ -76,6 +76,38 @@ for (const file of suites) {
   } catch (err) {
     passes.forEach((m) => console.log('  ' + m));
     console.log('  FAIL: ' + err.message);
+    failed += 1;
+  } finally {
+    await db.close();
+  }
+}
+
+// ---------------------------------------------------------------------
+// Re-applying over a database that is in use.
+//
+// `db:apply` runs every file again against the deployed database, which
+// has evaluations in it — clones of the template, carrying the same
+// employee ids and reference numbers. The seed runs as the owner, which
+// bypasses the policies, so anything it looks up by such a key reaches
+// into every clone at once. A fresh database has no clones and cannot
+// show that; this does. It is the failure that stopped a Stage 2 deploy.
+// ---------------------------------------------------------------------
+if (!only || 'reapply'.includes(only)) {
+  console.log(NL + 'reapply');
+  const db = await freshDatabase();
+  try {
+    await db.exec(`select set_config('app.is_staff', 'true', false)`);
+    await db.query(`select * from app.provision_demo('Reapply A', 'reapply.a', 'x', interval '1 day')`);
+    await db.query(`select * from app.provision_demo('Reapply B', 'reapply.b', 'x', interval '1 day')`);
+    await db.exec(`select set_config('app.is_staff', 'false', false)`);
+    for (const f of migrations) await db.exec(readFileSync(`db/${f}`, 'utf8'));
+    const { rows } = await db.query(
+      `select count(*)::int as n from public.tenants where kind = 'demo'`);
+    if (rows[0].n !== 2) throw new Error(`re-applying left ${rows[0].n} evaluations, not 2`);
+    console.log('  pass: every migration re-applies over a database with evaluations in it');
+    total += 1;
+  } catch (err) {
+    console.log('  FAIL: re-applying over evaluations: ' + err.message);
     failed += 1;
   } finally {
     await db.close();
