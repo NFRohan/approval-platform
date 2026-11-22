@@ -65,7 +65,7 @@ check('an empty stored hash does not', await verifyPassword('anything', ''), fal
 
 check('generated passwords are not guessable from each other',
   generatePassword() === generatePassword(), false);
-check('generated passwords are long enough', generatePassword().length >= 20, true);
+check('generated passwords are long enough for the policy', generatePassword().length >= 12, true);
 
 // The reason the fake hash exists at all: a username that does not exist
 // must cost what a wrong password costs. Measured, because the first

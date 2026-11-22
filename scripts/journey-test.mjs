@@ -113,12 +113,14 @@ try {
   }
   const chainOf = (submissionId) =>
     all(
-      `select id, approver_user_id, step_index, status
+      `select id, approver_user_id, step_index, lane, lane_step, status, require_signature
          from public.approval_requests
-        where submission_id = $1 order by step_index`,
+        where submission_id = $1 order by step_index, lane nulls first, lane_step`,
       [submissionId],
     );
   const liveStep = (steps) => steps.find((s) => s.status === 'pending') ?? null;
+  // A one-pixel PNG, for steps that require a signature.
+  const SIGNATURE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
   // -------------------------------------------------------------
   console.log('\nreachable');
@@ -161,21 +163,20 @@ try {
       continue;
     }
 
-    const pendingCount = steps.filter((s) => s.status === 'pending').length;
+    // Since Stage 1 a phase can run several tracks at once, so the start
+    // has one live step per track of the first phase — and nothing later.
+    const pending = steps.filter((s) => s.status === 'pending');
+    const tracks = new Set(steps.filter((s) => s.step_index === steps[0].step_index).map((s) => s.lane ?? `solo:${s.id}`));
     ok(
-      `${t.name}: exactly one step is live at the start`,
-      pendingCount === 1,
-      `${pendingCount} pending of ${steps.length}`,
-    );
-    ok(
-      `${t.name}: the live step is the lowest one`,
-      liveStep(steps)?.step_index === steps[0].step_index,
+      `${t.name}: only the first phase is live at the start, one step per track`,
+      pending.length >= 1 && pending.length <= tracks.size && pending.every((s) => s.step_index === steps[0].step_index),
+      `${pending.length} pending of ${steps.length}, ${tracks.size} track(s)`,
     );
 
     // Walk it to the end, checking each hand-off.
     let guard = 0;
     let walked = 0;
-    while (guard++ < 20) {
+    while (guard++ < 40) {
       steps = await chainOf(sub);
       const live = liveStep(steps);
       if (!live) break;
@@ -187,14 +188,17 @@ try {
         );
         break;
       }
-      await q(`select public.act_on_approval($1, 'approve', null, $2)`, [live.id, live.approver_user_id]);
+      // A step can require a drawn signature (Stage 2).
+      await q(`select public.act_on_approval($1, 'approve', null, $2, $3)`,
+        [live.id, live.approver_user_id, live.require_signature ? SIGNATURE : null]);
       walked++;
     }
 
     steps = await chainOf(sub);
     ok(
       `${t.name}: reaches fully approved in ${walked} step${walked === 1 ? '' : 's'}`,
-      steps.length > 0 && steps.every((s) => s.status === 'approved'),
+      // A quorum stage leaves the tracks it no longer needs as skipped.
+      steps.length > 0 && steps.every((s) => s.status === 'approved' || s.status === 'skipped'),
       steps.map((s) => `${s.step_index}:${s.status}`).join(' '),
     );
     const finalStatus = (await one(`select status from public.form_submissions where id = $1`, [sub]))
