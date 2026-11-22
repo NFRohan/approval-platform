@@ -34,6 +34,9 @@ const TEXTUAL = new Set(["text", "textarea", "email", "phone"]);
 export function isEmpty(field: ValidatableField, value: unknown): boolean {
   if (value === undefined || value === null || value === "") return true;
   if (Array.isArray(value)) return value.length === 0;
+  // A chosen file is an answer. It has no own properties, so the
+  // compound-field test below would read it as blank.
+  if (typeof File !== "undefined" && value instanceof File) return false;
   if (typeof value === "object") {
     const parts = Object.values(value as Record<string, unknown>);
     // A date range is two halves and needs both. Asking whether *every*

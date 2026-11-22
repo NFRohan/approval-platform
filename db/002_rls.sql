@@ -124,7 +124,7 @@ create policy staff_audit_insert on public.staff_audit
 -- =====================================================================
 -- Everything else — the demo's own data.
 --
--- Generated in a loop, as before, because 22 tables genuinely share one
+-- Generated in a loop, as before, because 23 tables genuinely share one
 -- rule. The difference is the rule.
 -- =====================================================================
 do $$
@@ -133,7 +133,7 @@ declare
   data_tables text[] := array[
     'employees','form_templates','form_fields','approval_rules','approval_slabs',
     'notification_rules','delegation_rules','form_submissions','submission_values',
-    'approval_requests','items','venues','item_stock','movement_orders',
+    'attachments','approval_requests','items','venues','item_stock','movement_orders',
     'notices','notice_comments','stationery_requests','maintenance_items',
     'maintenance_requests','maintenance_request_items','activity_log','notifications'
   ];

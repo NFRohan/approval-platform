@@ -5,6 +5,8 @@ import type { FieldKind, PlacedField } from "./types";
 import { PALETTE, isEmbedded, isSmart, isLayout } from "./palette";
 import { inputBounds } from "@/lib/validateField";
 import { evaluateFormula } from "@/lib/formula";
+import { MAX_ATTACHMENT_BYTES } from "@/lib/attachment-fn";
+import { toast } from "sonner";
 
 function iconForKind(kind: FieldKind) {
   for (const sec of PALETTE) {
@@ -376,7 +378,10 @@ function FieldInput({
     );
   }
   if (k === "file") {
-    const fileName = (value as string) ?? "";
+    // The chosen File itself is handed up, so the form can upload it once
+    // the submission exists; a resumed draft carries only the name of the
+    // file already attached.
+    const fileName = typeof value === "string" ? value : value instanceof File ? value.name : "";
     return (
       <label
         className="flex items-center gap-3 rounded-lg cursor-pointer"
@@ -393,13 +398,24 @@ function FieldInput({
             {fileName || "Click to choose a file"}
           </div>
           <div style={{ fontSize: 11.5, color: "#71717A", marginTop: 2 }}>
-            PDF, DOCX, JPG · max 10 MB
+            PDF, DOCX, JPG · max {MAX_ATTACHMENT_BYTES / 1024 / 1024} MB
           </div>
         </div>
         <input
           type="file"
           style={{ display: "none" }}
-          onChange={(e) => onChange(e.target.files?.[0]?.name ?? "")}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file) return;
+            // Refused here rather than by the server, which would refuse
+            // it only after the whole file had been sent.
+            if (file.size > MAX_ATTACHMENT_BYTES) {
+              toast.error(`${file.name} is over the ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB limit`);
+              return;
+            }
+            onChange(file);
+          }}
         />
       </label>
     );

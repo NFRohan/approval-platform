@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, Plus, Trash2, User } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { todayInOrg } from "@/lib/workdays";
 
 export const Route = createFileRoute("/approvals/delegate")({
   head: () => ({
@@ -42,7 +43,8 @@ function fmtDate(iso: string) {
 }
 
 function isActive(row: DelegationRow) {
-  const today = new Date().toISOString().slice(0, 10);
+  // Dhaka's date, not UTC's — from 18:00 local UTC is already tomorrow.
+  const today = todayInOrg();
   return row.start_date <= today && row.end_date >= today;
 }
 

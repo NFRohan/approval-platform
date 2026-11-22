@@ -10,7 +10,8 @@ export type AutoEntry = {
   reason: string;
   displayReason?: string;
   deadlineDays?: number;
-  user_id: string;
+  /** Null when the entry is a role resolved at submission, such as the line manager. */
+  user_id: string | null;
   slab?: boolean;
 };
 

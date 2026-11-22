@@ -45,7 +45,14 @@ summarise is not.
 **Fix:** `on delete restrict`, or an `archived` status instead of hard
 deletes, and drop `form_templates` from the generically-deletable set.
 
-### 2. The amount that drives finance escalation is supplied by the caller
+### 2. ~~The amount that drives finance escalation is supplied by the caller~~ — fixed
+
+`build_approval_chain` now reads the amount from the submission's own
+first money answer (`app.submission_amount`). `p_amount` is still
+accepted so a client deployed before the change resolves the function,
+and it is ignored; the chain suite routes a stored 620,000 called as 50
+and checks it still reaches the CFO. The original finding follows.
+
 
 `src/server/tables.ts` — `build_approval_chain` takes `p_amount` as a
 bare RPC parameter and never re-derives it from the submission's own
@@ -74,7 +81,20 @@ silently releasing a reservation without cancelling anything.
 **Fix:** leave only `quantity` writable, for stock-take adjustments.
 Every reservation change goes through the RPCs.
 
-### 4. Nothing checks that the caller owns the approval step
+### 4. Nothing checks that the caller owns the approval step — narrowed
+
+`act_on_approval`, `reassign_approval` and `add_reviewer` now take
+`p_actor` and refuse anybody who is neither the step's approver nor a
+current, in-scope delegate (`app.may_act`, dates on the Dhaka
+calendar). Delegation windows and form scope are therefore enforced in
+the database, not only in the interface.
+
+What remains: the actor is still asserted by the client, because one
+login stands for a whole evaluation and the persona switcher picks the
+employee. It stops being a gap when sign-in names the employee and the
+functions take the actor from the session instead. The original
+finding follows.
+
 
 `db/005_chain.sql`, `db/002_rls.sql` — `act_on_approval`,
 `reassign_approval` and `add_reviewer` verify that a step is open, not
@@ -219,7 +239,13 @@ screens is status. Invisible at demo scale.
 
 ## Correctness, quietly
 
-### 15. Failed answer writes still report success
+### 15. Failed answer writes still report success — partly fixed
+
+Submitting now checks the answer write and, if it fails, returns the
+submission to draft rather than routing it, because the chain reads the
+amount from those answers. Saving a draft still deletes and re-inserts
+without a transaction. The original finding follows.
+
 
 `src/routes/forms.$formId.tsx` — the draft-save and submit paths delete
 the existing values and then insert the new ones, discarding the insert
@@ -252,7 +278,13 @@ not corruption, because the RPC's own guards hold.
 responses are not sequenced or aborted, so a slower earlier request can
 overwrite the results of a faster later one.
 
-### 19. Delegation windows use UTC dates, not local ones
+### 19. ~~Delegation windows use UTC dates, not local ones~~ — fixed
+
+Both screens use `todayInOrg()` (src/lib/workdays.ts), and the database
+judges windows on the same Dhaka calendar in `app.may_act`. Working-day
+deadlines also moved to Dhaka's calendar and its Friday–Saturday
+weekend. The original finding follows.
+
 
 `src/routes/approvals.tsx`, `src/routes/approvals.delegate.tsx` —
 `new Date().toISOString().slice(0,10)` compared against `date` columns.

@@ -10,6 +10,8 @@ import {
   type Step,
   type StepState,
 } from "@/components/ApprovalTimeline";
+import { listAttachments, type AttachmentInfo } from "@/lib/attachment-fn";
+import { AttachmentLink } from "@/components/AttachmentLink";
 
 export const Route = createFileRoute("/status/$submissionId")({
   head: () => ({
@@ -118,6 +120,7 @@ function StatusPage() {
   const [employees, setEmployees] = useState<Record<string, EmployeeRow>>({});
   const [linkedFieldTypes, setLinkedFieldTypes] = useState<string[]>([]);
   const [gatePassCardNum, setGatePassCardNum] = useState<string | null>(null);
+  const [files, setFiles] = useState<AttachmentInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadAll = useCallback(async () => {
@@ -127,6 +130,11 @@ function StatusPage() {
       .eq("id", submissionId)
       .maybeSingle();
     setSubmission(sub as SubmissionRow | null);
+
+    // What was attached, so whoever is following the request can open it.
+    listAttachments({ data: { submissionId } })
+      .then(setFiles)
+      .catch(() => setFiles([]));
 
     if (sub?.form_template_id) {
       const { data: f } = await db
@@ -442,6 +450,23 @@ function StatusPage() {
           </div>
           <span className="text-[13px] font-medium shrink-0" style={{ color: "#15803D" }}>View Certificate →</span>
         </Link>
+      )}
+
+      {/* Attachments */}
+      {files.length > 0 && (
+        <div className="rounded-xl bg-white mb-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider mb-2.5" style={{ color: "#52525B" }}>
+            Attachments
+          </div>
+          <div className="flex flex-col gap-2">
+            {files.map((f) => (
+              <div key={f.id} className="flex items-center gap-3 flex-wrap">
+                <span className="text-[12px]" style={{ color: "#71717A", minWidth: 140 }}>{f.field_name}</span>
+                <AttachmentLink file={f} />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Timeline */}

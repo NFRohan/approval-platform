@@ -419,7 +419,7 @@ function renderPreview(field: PlacedField) {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 13, color: "#18181B", fontWeight: 500 }}>Drag &amp; drop or click to upload</div>
           <div style={{ fontSize: 11.5, color: "#71717A", marginTop: 2 }}>
-            {field.helper || "Accepts PDF, DOCX · max 10MB"}
+            {field.helper || "Accepts PDF, DOCX · max 4 MB"}
           </div>
         </div>
       </div>

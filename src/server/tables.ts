@@ -204,10 +204,16 @@ export const RPCS: Record<string, readonly string[]> = {
   // through table writes, because each one is several statements that
   // have to agree, and because whose turn it is must be decided
   // somewhere the browser cannot skip.
-  build_approval_chain: ['p_subject_type', 'p_subject_id', 'p_form_template_id', 'p_amount'],
-  act_on_approval:      ['p_request_id', 'p_action', 'p_comment'],
-  reassign_approval:    ['p_request_id', 'p_to', 'p_comment'],
-  add_reviewer:         ['p_request_id', 'p_employee', 'p_deadline_days'],
+  //
+  // No amount: how far a claim climbs is read from the submission's own
+  // money answer inside the function. It used to be a parameter here,
+  // which let a caller route a 620,000 claim as 50.
+  build_approval_chain: ['p_subject_type', 'p_subject_id', 'p_form_template_id'],
+  // p_actor names who is acting, and the database refuses anybody who is
+  // neither the step's approver nor a current, in-scope delegate of theirs.
+  act_on_approval:      ['p_request_id', 'p_action', 'p_comment', 'p_actor'],
+  reassign_approval:    ['p_request_id', 'p_to', 'p_comment', 'p_actor'],
+  add_reviewer:         ['p_request_id', 'p_employee', 'p_deadline_days', 'p_actor'],
   // No scheduler in a demo, so the approvals screen asks for this on
   // load. In a real deployment it would be a timer.
   remind_overdue:       [],

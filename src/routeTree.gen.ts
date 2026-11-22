@@ -24,6 +24,7 @@ import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as BuilderApproversRouteImport } from './routes/builder.approvers'
 import { Route as BuilderNotificationsRouteImport } from './routes/builder.notifications'
 import { Route as CertificateSubmissionIdRouteImport } from './routes/certificate.$submissionId'
+import { Route as FilesAttachmentIdRouteImport } from './routes/files.$attachmentId'
 import { Route as FormsIndexRouteImport } from './routes/forms.index'
 import { Route as FormsFormIdRouteImport } from './routes/forms.$formId'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
@@ -106,6 +107,11 @@ const CertificateSubmissionIdRoute = CertificateSubmissionIdRouteImport.update({
   path: '/certificate/$submissionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FilesAttachmentIdRoute = FilesAttachmentIdRouteImport.update({
+  id: '/files/$attachmentId',
+  path: '/files/$attachmentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FormsIndexRoute = FormsIndexRouteImport.update({
   id: '/forms/',
   path: '/forms/',
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
+  '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/notices/new': typeof NoticesNewRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
+  '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/notices/new': typeof NoticesNewRoute
@@ -199,6 +207,7 @@ export interface FileRoutesById {
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
+  '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/notices/new': typeof NoticesNewRoute
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | '/builder/approvers'
     | '/builder/notifications'
     | '/certificate/$submissionId'
+    | '/files/$attachmentId'
     | '/forms/$formId'
     | '/notices/$noticeId'
     | '/notices/new'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/builder/approvers'
     | '/builder/notifications'
     | '/certificate/$submissionId'
+    | '/files/$attachmentId'
     | '/forms/$formId'
     | '/notices/$noticeId'
     | '/notices/new'
@@ -270,6 +281,7 @@ export interface FileRouteTypes {
     | '/builder/approvers'
     | '/builder/notifications'
     | '/certificate/$submissionId'
+    | '/files/$attachmentId'
     | '/forms/$formId'
     | '/notices/$noticeId'
     | '/notices/new'
@@ -292,6 +304,7 @@ export interface RootRouteChildren {
   BuilderApproversRoute: typeof BuilderApproversRoute
   BuilderNotificationsRoute: typeof BuilderNotificationsRoute
   CertificateSubmissionIdRoute: typeof CertificateSubmissionIdRoute
+  FilesAttachmentIdRoute: typeof FilesAttachmentIdRoute
   FormsFormIdRoute: typeof FormsFormIdRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   NoticesNewRoute: typeof NoticesNewRoute
@@ -408,6 +421,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CertificateSubmissionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/files/$attachmentId': {
+      id: '/files/$attachmentId'
+      path: '/files/$attachmentId'
+      fullPath: '/files/$attachmentId'
+      preLoaderRoute: typeof FilesAttachmentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/forms/': {
       id: '/forms/'
       path: '/forms'
@@ -480,6 +500,7 @@ const rootRouteChildren: RootRouteChildren = {
   BuilderApproversRoute: BuilderApproversRoute,
   BuilderNotificationsRoute: BuilderNotificationsRoute,
   CertificateSubmissionIdRoute: CertificateSubmissionIdRoute,
+  FilesAttachmentIdRoute: FilesAttachmentIdRoute,
   FormsFormIdRoute: FormsFormIdRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   NoticesNewRoute: NoticesNewRoute,

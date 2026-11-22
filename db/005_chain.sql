@@ -19,18 +19,30 @@
 
 begin;
 
+-- The three functions that move a chain gained a p_actor parameter.
+-- `create or replace` with a different argument list makes a second
+-- function beside the first rather than replacing it, and a three-
+-- argument call would then go on resolving to the old one, unchecked.
+drop function if exists public.act_on_approval(uuid, text, text);
+drop function if exists public.reassign_approval(uuid, text, text);
+drop function if exists public.add_reviewer(uuid, text, int);
+
 -- ---------------------------------------------------------------------
 -- Targets land on working days.
 --
--- "Three days" meaning Friday to Monday is the kind of detail that makes
--- a deadline useless: a third of every target used to fall on a weekend
--- nobody was working, so requests arrived already overdue. Saturday and
--- Sunday are skipped.
+-- "Three days" meaning Thursday to Sunday is the kind of detail that
+-- makes a deadline useless: a third of every target used to fall on a
+-- weekend nobody was working, so requests arrived already overdue.
+--
+-- The weekend is Friday and Saturday, and the day is the one on the wall
+-- in Dhaka. It was Saturday and Sunday in UTC, which in Bangladesh meant
+-- every Friday counted as a working day, every Sunday did not, and from
+-- 18:00 local the server was already deciding about tomorrow.
 -- ---------------------------------------------------------------------
 create or replace function app.add_working_days(p_from timestamptz, p_days int)
 returns timestamptz
 language plpgsql
-immutable
+stable
 as $$
 declare
   d timestamptz := p_from;
@@ -41,13 +53,153 @@ begin
   end if;
   while n < p_days loop
     d := d + interval '1 day';
-    -- isodow: 1 = Monday … 6 = Saturday, 7 = Sunday
-    if extract(isodow from d) < 6 then
+    -- isodow: 1 = Monday … 5 = Friday, 6 = Saturday, 7 = Sunday
+    if extract(isodow from (d at time zone 'Asia/Dhaka')) not in (5, 6) then
       n := n + 1;
     end if;
   end loop;
   return d;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- Whose manager is this?
+--
+-- Scoped to the current tenant explicitly. Under the application the
+-- policies would do it anyway, but the seed runs as the owner, which
+-- bypasses them — and every evaluation is a clone, so an employee id
+-- alone names one person in every tenant at once.
+-- ---------------------------------------------------------------------
+create or replace function app.line_manager_of(p_employee text)
+returns text
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select e.line_manager_id
+    from public.employees e
+   where e.employee_id = p_employee
+     and e.tenant_id = app.current_tenant()
+$$;
+
+-- ---------------------------------------------------------------------
+-- How much is this submission for?
+--
+-- Read from the submission's own money answer rather than taken from the
+-- caller. The amount decides how far a claim climbs, and when it was a
+-- parameter a claim could display 620,000 to everybody who opened it
+-- while being routed as 50 — the CFO and the Head of Finance never asked.
+--
+-- The first money field on the form, by position, is the one that
+-- routes. Answers are stored as text and may carry separators or a
+-- currency mark, so only the leading number survives.
+-- ---------------------------------------------------------------------
+create or replace function app.submission_amount(p_submission uuid)
+returns numeric
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select coalesce((
+    select nullif(substring(regexp_replace(v.value, '[^0-9.]', '', 'g')
+                            from '^[0-9]*(?:\.[0-9]+)?'), '')::numeric
+      from public.form_submissions s
+      join public.form_fields f
+        on f.form_template_id = s.form_template_id and f.field_type = 'money'
+      join public.submission_values v
+        on v.submission_id = s.id and v.field_name = f.field_name
+     where s.id = p_submission
+     order by f.order_index nulls last, f.id
+     limit 1), 0)
+$$;
+
+-- ---------------------------------------------------------------------
+-- May this person act on this step?
+--
+-- The step's own approver may, and so may somebody they have delegated
+-- to — but only inside the delegation's dates, judged on the Dhaka
+-- calendar, and only for the forms it names. A delegation scoped to
+-- particular forms does not carry a notice or a maintenance request
+-- with it. This is the same rule the approvals queue applies when it
+-- decides what to show; until now it was applied nowhere else, so a
+-- delegate could act outside their window by calling the endpoint.
+--
+-- Who is acting is still asserted by the client while one login stands
+-- for a whole evaluation and the persona switcher picks the employee.
+-- What this buys today is that the chain cannot be moved by the wrong
+-- person through any screen; once sign-in names the employee, the same
+-- check becomes the access control.
+-- ---------------------------------------------------------------------
+create or replace function app.may_act(
+  p_approver     text,
+  p_subject_type text,
+  p_subject_id   uuid,
+  p_actor        text
+) returns boolean
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select p_actor is not null and p_approver is not null and (
+    p_actor = p_approver
+    or exists (
+      select 1
+        from public.delegation_rules d
+       where d.tenant_id = app.current_tenant()
+         and d.delegator_id = p_approver
+         and d.delegate_id  = p_actor
+         and (now() at time zone 'Asia/Dhaka')::date between d.start_date and d.end_date
+         and (d.form_template_ids is null
+              or (p_subject_type = 'form_submission'
+                  and (select s.form_template_id
+                         from public.form_submissions s
+                        where s.id = p_subject_id) = any (d.form_template_ids)))))
+$$;
+
+create or replace function app.assert_may_act(
+  p_approver     text,
+  p_subject_type text,
+  p_subject_id   uuid,
+  p_actor        text
+) returns void
+language plpgsql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if p_actor is null or p_actor = '' then
+    raise exception 'say who is acting on this step';
+  end if;
+  if not app.may_act(p_approver, p_subject_type, p_subject_id, p_actor) then
+    raise exception '% cannot act on this step: it is with %, and % holds no delegation from them that covers it today',
+      p_actor, coalesce(p_approver, 'nobody'), p_actor;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- Which kind of rule is this?
+--
+-- The builder used to save the reason it showed on screen as the label,
+-- so forms built before the labels were fixed carry "Added: Employee
+-- field" where the seed says line_manager. Both mean the same thing, and
+-- reading both is what lets every evaluation already issued pick up the
+-- new routing without its data being rewritten.
+-- ---------------------------------------------------------------------
+create or replace function app.rule_role(p_label text)
+returns text
+language sql
+immutable
+as $$
+  select case p_label
+           when 'Added: Employee field' then 'line_manager'
+           when 'Added: Submitter'      then 'submitter'
+           when 'Added: Form creator'   then 'creator'
+           else p_label
+         end
+$$;
 
 -- ---------------------------------------------------------------------
 -- Who asked for this, and what is it called?
@@ -245,23 +397,42 @@ end $$;
 --
 -- A rule labelled slab_finance is not one step. It expands into one step
 -- per threshold the amount has crossed, which is where escalation
--- actually happens.
+-- actually happens. The amount is the submission's own, read here; the
+-- p_amount parameter is accepted and ignored, so that a client deployed
+-- before this change still resolves the function.
+--
+-- A rule labelled line_manager means the requester's own line manager,
+-- whoever raised it. The approver stored on the rule is only the
+-- fallback for somebody with no manager on record. It used to be the
+-- whole answer, so every request in the organisation went to one person.
+--
+-- Two rules then shape the ladder, both of which the HR clearance flow
+-- in the scope of work asks for in as many words ("layers may be the
+-- same person"):
+--   * nobody approves their own request — a step that would land on the
+--     requester is left out, and the chain goes on to the next level;
+--   * the same person twice in a row is one step, not two.
 -- ---------------------------------------------------------------------
 create or replace function public.build_approval_chain(
   p_subject_type text,
   p_subject_id uuid,
   p_form_template_id uuid default null,
-  p_amount numeric default 0
+  p_amount numeric default null
 ) returns int
 language plpgsql
 security invoker
 set search_path = public, pg_temp
 as $$
 declare
-  r          record;
-  v_step     int := 0;
-  v_approver text;
-  v_deadline timestamptz;
+  r           record;
+  v_step      int := 0;
+  v_approver  text;
+  v_last      text;
+  v_requester text;
+  v_amount    numeric := 0;
+  v_cands     text[] := '{}';
+  v_days      int[]  := '{}';
+  i           int;
 begin
   if p_subject_type not in ('form_submission', 'notice',
                             'stationery_request', 'maintenance_request') then
@@ -272,6 +443,12 @@ begin
     raise exception 'this already has an approval chain';
   end if;
 
+  v_requester := app.subject_requester(p_subject_type, p_subject_id);
+  if p_subject_type = 'form_submission' then
+    v_amount := app.submission_amount(p_subject_id);
+  end if;
+
+  -- First, who would be asked, in order.
   for r in
     select ar.approver_user_id, ar.deadline_days, ar.label, ar.step_index
       from public.approval_rules ar
@@ -280,38 +457,47 @@ begin
             or ar.form_template_id = p_form_template_id)
      order by ar.step_index, ar.id
   loop
-    v_deadline := app.add_working_days(now(), coalesce(r.deadline_days, 7));
-
     if r.label = 'slab_finance' and p_subject_type = 'form_submission' then
       -- Every threshold crossed, in order, each its own step.
       for v_approver in
-        select sa.approver_user_id from app.slab_approvers(p_form_template_id, p_amount) sa
+        select sa.approver_user_id from app.slab_approvers(p_form_template_id, v_amount) sa
       loop
-        insert into public.approval_requests
-          (submission_id, approver_user_id, step_index, status, deadline_at)
-        values (p_subject_id, v_approver, v_step,
-                case when v_step = 0 then 'pending' else 'waiting' end, v_deadline);
-        v_step := v_step + 1;
+        v_cands := array_append(v_cands, v_approver);
+        v_days  := array_append(v_days, coalesce(r.deadline_days, 7));
       end loop;
-
+    elsif app.rule_role(r.label) = 'line_manager' then
+      v_cands := array_append(v_cands,
+                   coalesce(app.line_manager_of(v_requester), r.approver_user_id));
+      v_days  := array_append(v_days, coalesce(r.deadline_days, 7));
     else
-      -- A rule with no approver is configuration that was never
-      -- finished. Skipping it is better than creating a step nobody
-      -- can act on, which would stall the chain forever.
-      continue when r.approver_user_id is null;
-
-      insert into public.approval_requests
-        (submission_id, notice_id, stationery_request_id, maintenance_request_id,
-         approver_user_id, step_index, status, deadline_at)
-      values (
-        case when p_subject_type = 'form_submission'     then p_subject_id end,
-        case when p_subject_type = 'notice'              then p_subject_id end,
-        case when p_subject_type = 'stationery_request'  then p_subject_id end,
-        case when p_subject_type = 'maintenance_request' then p_subject_id end,
-        r.approver_user_id, v_step,
-        case when v_step = 0 then 'pending' else 'waiting' end, v_deadline);
-      v_step := v_step + 1;
+      v_cands := array_append(v_cands, r.approver_user_id);
+      v_days  := array_append(v_days, coalesce(r.deadline_days, 7));
     end if;
+  end loop;
+
+  -- Then the steps.
+  for i in 1 .. coalesce(array_length(v_cands, 1), 0) loop
+    v_approver := v_cands[i];
+    -- A rule with no approver is configuration that was never finished.
+    -- Skipping it is better than creating a step nobody can act on,
+    -- which would stall the chain forever.
+    continue when v_approver is null;
+    continue when v_approver = v_requester;
+    continue when v_approver = v_last;
+
+    insert into public.approval_requests
+      (submission_id, notice_id, stationery_request_id, maintenance_request_id,
+       approver_user_id, step_index, status, deadline_at)
+    values (
+      case when p_subject_type = 'form_submission'     then p_subject_id end,
+      case when p_subject_type = 'notice'              then p_subject_id end,
+      case when p_subject_type = 'stationery_request'  then p_subject_id end,
+      case when p_subject_type = 'maintenance_request' then p_subject_id end,
+      v_approver, v_step,
+      case when v_step = 0 then 'pending' else 'waiting' end,
+      app.add_working_days(now(), v_days[i]));
+    v_last := v_approver;
+    v_step := v_step + 1;
   end loop;
 
   if v_step > 0 then
@@ -330,16 +516,31 @@ begin
       p_subject_type, p_subject_id);
 
     -- Watchers configured against the form want to know it was raised.
+    -- Like approvers, some are roles rather than people: the requester's
+    -- line manager, the requester, the form's creator.
     if p_subject_type = 'form_submission' then
       for r in
-        select distinct nr.notifyee_user_id
-          from public.notification_rules nr
-         where nr.form_template_id = p_form_template_id
-           and nr.notifyee_user_id is not null
-           and nr.notifyee_user_id <> coalesce(v_approver, '')
+        select distinct w.who
+          from (
+            select case app.rule_role(nr.label)
+                     when 'line_manager' then coalesce(app.line_manager_of(v_requester),
+                                                       nr.notifyee_user_id)
+                     when 'submitter'    then v_requester
+                     when 'creator'      then coalesce(
+                                                (select ft.created_by
+                                                   from public.form_templates ft
+                                                  where ft.id = p_form_template_id),
+                                                nr.notifyee_user_id)
+                     else nr.notifyee_user_id
+                   end as who
+              from public.notification_rules nr
+             where nr.form_template_id = p_form_template_id
+          ) w
+         where w.who is not null
+           and w.who <> coalesce(v_approver, '')
       loop
         perform app.notify(
-          r.notifyee_user_id, 'submission.raised',
+          r.who, 'submission.raised',
           'New submission',
           app.subject_label(p_subject_type, p_subject_id) || ' was submitted.',
           p_subject_type, p_subject_id);
@@ -361,7 +562,8 @@ end $$;
 create or replace function public.act_on_approval(
   p_request_id uuid,
   p_action     text,
-  p_comment    text default null
+  p_comment    text default null,
+  p_actor      text default null
 ) returns text
 language plpgsql
 security invoker
@@ -375,6 +577,9 @@ begin
   if not found then
     raise exception 'no such approval step';
   end if;
+
+  perform app.assert_may_act(v_req.approver_user_id, v_req.subject_type,
+                             v_req.subject_id, p_actor);
 
   if p_action = 'resume' then
     if v_req.status <> 'clarification' then
@@ -485,7 +690,8 @@ end $$;
 create or replace function public.reassign_approval(
   p_request_id  uuid,
   p_to          text,
-  p_comment     text default null
+  p_comment     text default null,
+  p_actor       text default null
 ) returns text
 language plpgsql
 security invoker
@@ -498,6 +704,8 @@ begin
   if not found then
     raise exception 'no such approval step';
   end if;
+  perform app.assert_may_act(v_req.approver_user_id, v_req.subject_type,
+                             v_req.subject_id, p_actor);
   if v_req.status not in ('pending', 'clarification') then
     raise exception 'only an open step can be forwarded: it is %', v_req.status;
   end if;
@@ -541,7 +749,8 @@ end $$;
 create or replace function public.add_reviewer(
   p_request_id    uuid,
   p_employee      text,
-  p_deadline_days int default 7
+  p_deadline_days int default 7,
+  p_actor         text default null
 ) returns uuid
 language plpgsql
 security invoker
@@ -555,6 +764,8 @@ begin
   if not found then
     raise exception 'no such approval step';
   end if;
+  perform app.assert_may_act(v_req.approver_user_id, v_req.subject_type,
+                             v_req.subject_id, p_actor);
   if v_req.status not in ('pending', 'clarification') then
     raise exception 'a reviewer can only be added to an open step';
   end if;
@@ -637,11 +848,16 @@ to app_api;
 
 grant execute on function
   public.build_approval_chain(text, uuid, uuid, numeric),
-  public.act_on_approval(uuid, text, text),
-  public.reassign_approval(uuid, text, text),
-  public.add_reviewer(uuid, text, int),
+  public.act_on_approval(uuid, text, text, text),
+  public.reassign_approval(uuid, text, text, text),
+  public.add_reviewer(uuid, text, int, text),
   app.slab_approvers(uuid, numeric),
-  app.set_subject_status(text, uuid, text, text)
+  app.set_subject_status(text, uuid, text, text),
+  app.line_manager_of(text),
+  app.submission_amount(uuid),
+  app.may_act(text, text, uuid, text),
+  app.assert_may_act(text, text, uuid, text),
+  app.rule_role(text)
 to app_api;
 
 commit;

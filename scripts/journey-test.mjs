@@ -87,12 +87,28 @@ try {
 
   const requester = 'EMP-2847';
 
-  async function newSubmission(templateId) {
+  // The amount is an answer, the way the form stores it. The chain reads
+  // it from there; it is no longer a parameter anybody can set.
+  async function newSubmission(templateId, amount = null) {
     const row = await one(
       `insert into public.form_submissions (form_template_id, submitted_by, status)
        values ($1, $2, 'submitted') returning id`,
       [templateId, requester],
     );
+    if (amount !== null) {
+      const field = await one(
+        `select field_name from public.form_fields
+          where form_template_id = $1 and field_type = 'money'
+          order by order_index limit 1`,
+        [templateId],
+      );
+      if (field) {
+        await q(
+          `insert into public.submission_values (submission_id, field_name, value) values ($1, $2, $3)`,
+          [row.id, field.field_name, String(amount)],
+        );
+      }
+    }
     return row.id;
   }
   const chainOf = (submissionId) =>
@@ -137,7 +153,7 @@ try {
 
   for (const t of templates) {
     const sub = await newSubmission(t.id);
-    await q(`select public.build_approval_chain('form_submission', $1, $2, 0)`, [sub, t.id]);
+    await q(`select public.build_approval_chain('form_submission', $1, $2)`, [sub, t.id]);
     let steps = await chainOf(sub);
 
     if (steps.length === 0) {
@@ -171,7 +187,7 @@ try {
         );
         break;
       }
-      await q(`select public.act_on_approval($1, 'approve', null)`, [live.id]);
+      await q(`select public.act_on_approval($1, 'approve', null, $2)`, [live.id, live.approver_user_id]);
       walked++;
     }
 
@@ -205,8 +221,8 @@ try {
         where form_template_id = $1 order by order_index`,
       [money.id],
     );
-    const big = await newSubmission(money.id);
-    await q(`select public.build_approval_chain('form_submission', $1, $2, 620000)`, [big, money.id]);
+    const big = await newSubmission(money.id, 620000);
+    await q(`select public.build_approval_chain('form_submission', $1, $2)`, [big, money.id]);
     const steps = await chainOf(big);
     const chainIds = steps.map((s) => s.approver_user_id);
 
@@ -224,8 +240,8 @@ try {
       positions.join(' < '),
     );
 
-    const small = await newSubmission(money.id);
-    await q(`select public.build_approval_chain('form_submission', $1, $2, 5000)`, [small, money.id]);
+    const small = await newSubmission(money.id, 5000);
+    await q(`select public.build_approval_chain('form_submission', $1, $2)`, [small, money.id]);
     const smallIds = (await chainOf(small)).map((s) => s.approver_user_id);
     ok(
       'a small claim stops at the lowest band',
@@ -240,10 +256,10 @@ try {
   {
     const t = templates[0];
     const sub = await newSubmission(t.id);
-    await q(`select public.build_approval_chain('form_submission', $1, $2, 0)`, [sub, t.id]);
+    await q(`select public.build_approval_chain('form_submission', $1, $2)`, [sub, t.id]);
     const live = liveStep(await chainOf(sub));
 
-    await q(`select public.act_on_approval($1, 'clarification', 'which cost centre?')`, [live.id]);
+    await q(`select public.act_on_approval($1, 'clarification', 'which cost centre?', $2)`, [live.id, live.approver_user_id]);
     let step = (await chainOf(sub)).find((s) => s.id === live.id);
     ok('asking for clarification pauses the step', step.status === 'clarification', step.status);
 
@@ -261,11 +277,11 @@ try {
     );
     ok('and the queue query actually returns it', held.length === 1, `${held.length} rows`);
 
-    await q(`select public.act_on_approval($1, 'resume', null)`, [live.id]);
+    await q(`select public.act_on_approval($1, 'resume', null, $2)`, [live.id, live.approver_user_id]);
     step = (await chainOf(sub)).find((s) => s.id === live.id);
     ok('resuming puts it back with its approver', step.status === 'pending', step.status);
 
-    await q(`select public.act_on_approval($1, 'approve', null)`, [live.id]);
+    await q(`select public.act_on_approval($1, 'approve', null, $2)`, [live.id, live.approver_user_id]);
     step = (await chainOf(sub)).find((s) => s.id === live.id);
     ok('and it can then be approved normally', step.status === 'approved', step.status);
   }
@@ -274,15 +290,14 @@ try {
   console.log('\nrejected');
   // -------------------------------------------------------------
   {
-    const many = templates.find(async (t) => true) ?? templates[0];
-    const sub = await newSubmission(many.id);
-    await q(`select public.build_approval_chain('form_submission', $1, $2, 620000)`, [
-      sub,
-      money ? money.id : many.id,
-    ]);
+    // A claim large enough to have approvers above the first, so there
+    // is somebody left to be recorded as never asked.
+    const target = money ?? templates[0];
+    const sub = await newSubmission(target.id, 620000);
+    await q(`select public.build_approval_chain('form_submission', $1, $2)`, [sub, target.id]);
     const steps = await chainOf(sub);
     const live = liveStep(steps);
-    await q(`select public.act_on_approval($1, 'reject', 'not this time')`, [live.id]);
+    await q(`select public.act_on_approval($1, 'reject', 'not this time', $2)`, [live.id, live.approver_user_id]);
 
     const after = await chainOf(sub);
     ok('a rejection leaves nothing live', after.every((s) => s.status !== 'pending'));

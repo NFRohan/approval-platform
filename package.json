@@ -17,6 +17,7 @@
     "test:render": "node --env-file=.env scripts/render-test.mjs",
     "db:apply": "node --env-file=.env scripts/db-apply.mjs",
     "db:test": "node --env-file=.env scripts/db-test.mjs",
+    "db:test:local": "node scripts/db-test-local.mjs",
     "test:journey": "node --env-file=.env scripts/journey-test.mjs",
     "qa": "node scripts/qa.mjs"
   },
@@ -82,6 +83,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.16",
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "^1.4.0",
     "@types/node": "^22.16.5",

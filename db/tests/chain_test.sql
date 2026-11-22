@@ -34,15 +34,27 @@ values (current_setting('t.c')::uuid, 'c.eval', 'x', 'C Evaluator');
 
 select set_config('u.c', (select id::text from public.app_users where username = 'c.eval'), false);
 
+-- Managers before their reports: line_manager_id references an employee
+-- of the same tenant.
 insert into public.employees (tenant_id, employee_id, name) values
   (current_setting('t.c')::uuid, 'EMP-LM', 'Line Manager'),
-  (current_setting('t.c')::uuid, 'EMP-C1', 'Controller'),
-  (current_setting('t.c')::uuid, 'EMP-C2', 'Head of Finance'),
-  (current_setting('t.c')::uuid, 'EMP-C3', 'Chief Financial Officer'),
-  (current_setting('t.c')::uuid, 'EMP-EX', 'Extra Reviewer');
+  (current_setting('t.c')::uuid, 'EMP-C3', 'Chief Financial Officer');
+
+insert into public.employees (tenant_id, employee_id, name, line_manager_id) values
+  (current_setting('t.c')::uuid, 'EMP-C2', 'Head of Finance', 'EMP-C3'),
+  (current_setting('t.c')::uuid, 'EMP-EX', 'Extra Reviewer',  'EMP-LM'),
+  (current_setting('t.c')::uuid, 'EMP-RQ', 'Requester',       'EMP-LM');
+
+insert into public.employees (tenant_id, employee_id, name, line_manager_id) values
+  (current_setting('t.c')::uuid, 'EMP-C1', 'Controller',          'EMP-C2'),
+  (current_setting('t.c')::uuid, 'EMP-R2', 'Finance Analyst',     'EMP-C2');
 
 insert into public.form_templates (id, tenant_id, name, status)
 values ('33333333-0000-4000-8000-000000000001', current_setting('t.c')::uuid, 'Claim', 'published');
+
+-- The field whose answer decides how far a claim climbs.
+insert into public.form_fields (tenant_id, form_template_id, field_type, field_name, order_index)
+values (current_setting('t.c')::uuid, '33333333-0000-4000-8000-000000000001', 'money', 'Amount', 0);
 
 -- Line manager first, then however many finance levels the amount reaches.
 insert into public.approval_rules
@@ -58,21 +70,50 @@ insert into public.approval_slabs
   (current_setting('t.c')::uuid, '33333333-0000-4000-8000-000000000001', 100000.01, 500000, 'EMP-C2', 1),
   (current_setting('t.c')::uuid, '33333333-0000-4000-8000-000000000001', 500000.01, null,   'EMP-C3', 2);
 
+-- Raised by EMP-RQ, whose line manager is EMP-LM, unless noted. The rule
+-- above names EMP-LM too, but only as a fallback: the engine asks the
+-- requester's own manager.
 insert into public.form_submissions (id, tenant_id, form_template_id, submitted_by, status) values
   ('44444444-0000-4000-8000-000000000001', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress'),
   ('44444444-0000-4000-8000-000000000002', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress'),
   ('44444444-0000-4000-8000-000000000003', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress'),
   ('44444444-0000-4000-8000-000000000004', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress'),
   ('44444444-0000-4000-8000-000000000005', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-LM', 'in_progress'),
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress'),
   ('44444444-0000-4000-8000-000000000006', current_setting('t.c')::uuid,
    '33333333-0000-4000-8000-000000000001', 'EMP-EX', 'in_progress'),
   ('44444444-0000-4000-8000-000000000007', current_setting('t.c')::uuid,
-   '33333333-0000-4000-8000-000000000001', 'EMP-EX', 'in_progress');
+   '33333333-0000-4000-8000-000000000001', 'EMP-EX', 'in_progress'),
+  -- 8: a claim whose caller lies about the amount
+  ('44444444-0000-4000-8000-000000000008', current_setting('t.c')::uuid,
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress'),
+  -- 9: raised by somebody with a different manager
+  ('44444444-0000-4000-8000-000000000009', current_setting('t.c')::uuid,
+   '33333333-0000-4000-8000-000000000001', 'EMP-R2', 'in_progress'),
+  -- 10: raised by an approver on its own ladder
+  ('44444444-0000-4000-8000-000000000010', current_setting('t.c')::uuid,
+   '33333333-0000-4000-8000-000000000001', 'EMP-C1', 'in_progress'),
+  -- 11: for who may act
+  ('44444444-0000-4000-8000-000000000011', current_setting('t.c')::uuid,
+   '33333333-0000-4000-8000-000000000001', 'EMP-RQ', 'in_progress');
+
+-- The amounts, as the form stores them: text, sometimes with separators.
+insert into public.submission_values (tenant_id, submission_id, field_name, value) values
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000001', 'Amount', '620,000'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000002', 'Amount', '84500'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000003', 'Amount', 'BDT 620000'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000004', 'Amount', '84500'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000005', 'Amount', '620000'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000006', 'Amount', '84500'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000007', 'Amount', '84500'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000008', 'Amount', '620000'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000009', 'Amount', '84500.50'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000010', 'Amount', '620000'),
+  (current_setting('t.c')::uuid, '44444444-0000-4000-8000-000000000011', 'Amount', '84500');
 
 create or replace function pg_temp.check(label text, got anyelement, want anyelement)
 returns void language plpgsql as $$
@@ -82,6 +123,13 @@ begin
   end if;
   raise notice 'pass: %', label;
 end $$;
+
+-- Whoever a step is with: every action names who is acting, and in the
+-- ordinary case that is the step's own approver.
+create or replace function pg_temp.owner(p_step uuid) returns text
+language sql as $$
+  select approver_user_id from public.approval_requests where id = p_step
+$$;
 
 -- Every block below runs as app_api with a signed-in member's context.
 create or replace function pg_temp.ctx() returns void language plpgsql as $$
@@ -102,7 +150,7 @@ begin;
   select pg_temp.check('620,000 builds four steps',
     public.build_approval_chain('form_submission',
       '44444444-0000-4000-8000-000000000001',
-      '33333333-0000-4000-8000-000000000001', 620000), 4);
+      '33333333-0000-4000-8000-000000000001'), 4);
 
   select pg_temp.check('the order is line manager, controller, head, CFO',
     (select string_agg(approver_user_id, ',' order by step_index)
@@ -136,7 +184,7 @@ begin;
   select pg_temp.check('84,500 builds two steps',
     public.build_approval_chain('form_submission',
       '44444444-0000-4000-8000-000000000002',
-      '33333333-0000-4000-8000-000000000001', 84500), 2);
+      '33333333-0000-4000-8000-000000000001'), 2);
 
   select pg_temp.check('and stops at the controller',
     (select string_agg(approver_user_id, ',' order by step_index)
@@ -159,7 +207,7 @@ begin
    where submission_id = '44444444-0000-4000-8000-000000000001' and step_index = 3;
 
   begin
-    perform public.act_on_approval(v_id, 'approve', 'jumping the queue');
+    perform public.act_on_approval(v_id, 'approve', 'jumping the queue', pg_temp.owner(v_id));
   exception when others then ok := true;
   end;
 
@@ -179,7 +227,7 @@ begin
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000001' and step_index = 0;
-  perform public.act_on_approval(v_id, 'approve', 'Checked');
+  perform public.act_on_approval(v_id, 'approve', 'Checked', pg_temp.owner(v_id));
 
   select count(*)::int into v_open from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000001' and status = 'pending';
@@ -210,7 +258,7 @@ begin
     select id into v_id from public.approval_requests
      where submission_id = '44444444-0000-4000-8000-000000000001' and status = 'pending';
     exit when v_id is null;
-    perform public.act_on_approval(v_id, 'approve', 'Approved');
+    perform public.act_on_approval(v_id, 'approve', 'Approved', pg_temp.owner(v_id));
     n := n + 1;
     if n > 10 then raise exception 'FAIL: the chain does not terminate'; end if;
   end loop;
@@ -234,15 +282,15 @@ begin
 
   perform public.build_approval_chain('form_submission',
     '44444444-0000-4000-8000-000000000003',
-    '33333333-0000-4000-8000-000000000001', 620000);
+    '33333333-0000-4000-8000-000000000001');
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000003' and step_index = 0;
-  perform public.act_on_approval(v_id, 'approve', null);
+  perform public.act_on_approval(v_id, 'approve', null, pg_temp.owner(v_id));
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000003' and step_index = 1;
-  perform public.act_on_approval(v_id, 'reject', 'Outside policy');
+  perform public.act_on_approval(v_id, 'reject', 'Outside policy', pg_temp.owner(v_id));
 
   select count(*)::int into v_skipped from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000003' and status = 'skipped';
@@ -273,17 +321,17 @@ begin
 
   perform public.build_approval_chain('form_submission',
     '44444444-0000-4000-8000-000000000004',
-    '33333333-0000-4000-8000-000000000001', 84500);
+    '33333333-0000-4000-8000-000000000001');
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000004' and step_index = 0;
 
-  perform public.act_on_approval(v_id, 'clarification', 'Which cost centre?');
+  perform public.act_on_approval(v_id, 'clarification', 'Which cost centre?', pg_temp.owner(v_id));
   select status into v_status from public.form_submissions
    where id = '44444444-0000-4000-8000-000000000004';
   if v_status <> 'on_hold' then raise exception 'FAIL: submission is % not on_hold', v_status; end if;
 
-  perform public.act_on_approval(v_id, 'resume', null);
+  perform public.act_on_approval(v_id, 'resume', null, pg_temp.owner(v_id));
   select step_index into v_step from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000004' and status = 'pending';
   if v_step <> 0 then raise exception 'FAIL: resumed at step % not 0', v_step; end if;
@@ -304,7 +352,7 @@ begin
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000004' and step_index = 0;
 
-  perform public.reassign_approval(v_id, 'EMP-EX', 'Away this week');
+  perform public.reassign_approval(v_id, 'EMP-EX', 'Away this week', pg_temp.owner(v_id));
 
   select approver_user_id, reassigned_from into v_now, v_from
     from public.approval_requests where id = v_id;
@@ -313,7 +361,7 @@ begin
   if v_from <> 'EMP-LM' then raise exception 'FAIL: trail says % not EMP-LM', v_from; end if;
 
   -- Forwarded twice, the trail still names who it was originally asked of.
-  perform public.reassign_approval(v_id, 'EMP-C1', 'Also away');
+  perform public.reassign_approval(v_id, 'EMP-C1', 'Also away', pg_temp.owner(v_id));
   select reassigned_from into v_from from public.approval_requests where id = v_id;
   if v_from <> 'EMP-LM' then raise exception 'FAIL: second forward lost the original, says %', v_from; end if;
 
@@ -332,12 +380,12 @@ begin
 
   perform public.build_approval_chain('form_submission',
     '44444444-0000-4000-8000-000000000005',
-    '33333333-0000-4000-8000-000000000001', 620000);
+    '33333333-0000-4000-8000-000000000001');
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000005' and step_index = 0;
 
-  perform public.add_reviewer(v_id, 'EMP-EX', 3);
+  perform public.add_reviewer(v_id, 'EMP-EX', 3, pg_temp.owner(v_id));
 
   select count(*)::int into v_total from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000005';
@@ -374,7 +422,7 @@ begin
     select id into v_id from public.approval_requests
      where submission_id = '44444444-0000-4000-8000-000000000005' and status = 'pending';
     exit when v_id is null;
-    perform public.act_on_approval(v_id, 'approve', null);
+    perform public.act_on_approval(v_id, 'approve', null, pg_temp.owner(v_id));
     n := n + 1;
     if n > 10 then raise exception 'FAIL: the chain does not terminate'; end if;
   end loop;
@@ -399,7 +447,7 @@ begin
   perform pg_temp.ctx();
 
   insert into public.notices (tenant_id, title, content, category, status, created_by)
-  values (current_setting('app.tenant_id')::uuid, 'Test notice', 'Body', 'General', 'draft', 'EMP-LM')
+  values (current_setting('app.tenant_id')::uuid, 'Test notice', 'Body', 'General', 'draft', 'EMP-RQ')
   returning id into v_notice;
 
   insert into public.approval_rules
@@ -416,14 +464,14 @@ begin
 
   select id into v_id from public.approval_requests
    where notice_id = v_notice and status = 'pending';
-  perform public.act_on_approval(v_id, 'approve', null);
+  perform public.act_on_approval(v_id, 'approve', null, pg_temp.owner(v_id));
 
   select current_approver_id into v_current from public.notices where id = v_notice;
   if v_current <> 'EMP-C1' then raise exception 'FAIL: notice did not move on, it is with %', v_current; end if;
 
   select id into v_id from public.approval_requests
    where notice_id = v_notice and status = 'pending';
-  perform public.act_on_approval(v_id, 'approve', null);
+  perform public.act_on_approval(v_id, 'approve', null, pg_temp.owner(v_id));
 
   select status, current_approver_id into v_status, v_current
     from public.notices where id = v_notice;
@@ -455,21 +503,31 @@ begin
 end $$;
 
 -- =====================================================================
--- 12. Targets fall on working days
+-- 12. Targets fall on working days — Bangladesh's, on Dhaka's calendar
 -- =====================================================================
 begin;
   set local role app_api;
-  set local timezone = 'UTC';
+  set local timezone = 'Asia/Dhaka';
   select pg_temp.ctx();
 
-  -- 21 August 2026 is a Friday. Three working days is the following
-  -- Wednesday, not the following Monday.
-  select pg_temp.check('three working days from a Friday lands on Wednesday',
-    to_char(app.add_working_days(timestamptz '2026-08-21 09:00+00', 3), 'Dy'), 'Wed'::text);
+  -- 20 August 2026 is a Thursday. Friday and Saturday are the weekend,
+  -- so three working days is Sunday, Monday, Tuesday.
+  select pg_temp.check('three working days from a Thursday lands on Tuesday',
+    to_char(app.add_working_days(timestamptz '2026-08-20 09:00+06', 3), 'Dy'), 'Tue'::text);
 
-  select pg_temp.check('no target ever lands on a weekend',
+  select pg_temp.check('a Sunday counts as a working day',
+    to_char(app.add_working_days(timestamptz '2026-08-20 09:00+06', 1), 'Dy'), 'Sun'::text);
+
+  select pg_temp.check('no target ever lands on a Friday or a Saturday',
     (select count(*)::int from generate_series(1, 20) g
-      where extract(isodow from app.add_working_days(timestamptz '2026-08-21 09:00+00', g)) >= 6), 0);
+      where extract(isodow from app.add_working_days(timestamptz '2026-08-20 09:00+06', g))
+            in (5, 6)), 0);
+
+  -- 02:00 on Saturday in Dhaka is 20:00 on Friday in UTC. One working
+  -- day on is Sunday 02:00 in Dhaka. Judged in UTC it would skip the UTC
+  -- Saturday and land on Sunday 20:00 UTC — Monday in Dhaka.
+  select pg_temp.check('the day is the one in Dhaka, not in UTC',
+    to_char(app.add_working_days(timestamptz '2026-08-22 02:00+06', 1), 'Dy'), 'Sun'::text);
 commit;
 
 -- =====================================================================
@@ -487,7 +545,7 @@ begin
 
   perform public.build_approval_chain('form_submission',
     '44444444-0000-4000-8000-000000000006',
-    '33333333-0000-4000-8000-000000000001', 84500);
+    '33333333-0000-4000-8000-000000000001');
 
   select count(*)::int into n from public.notifications
    where recipient_id = 'EMP-LM' and kind = 'approval.turn'
@@ -510,7 +568,7 @@ begin
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000006' and status = 'pending';
-  perform public.act_on_approval(v_id, 'approve', null);
+  perform public.act_on_approval(v_id, 'approve', null, pg_temp.owner(v_id));
 
   select count(*)::int into n from public.notifications
    where recipient_id = 'EMP-C1' and kind = 'approval.turn';
@@ -528,7 +586,7 @@ begin
 
   select id into v_id from public.approval_requests
    where submission_id = '44444444-0000-4000-8000-000000000006' and status = 'pending';
-  perform public.act_on_approval(v_id, 'approve', null);
+  perform public.act_on_approval(v_id, 'approve', null, pg_temp.owner(v_id));
 
   -- EMP-EX raised this one, so EMP-EX hears that it finished
   select count(*)::int into n from public.notifications
@@ -552,7 +610,7 @@ begin
 
   perform public.build_approval_chain('form_submission',
     '44444444-0000-4000-8000-000000000007',
-    '33333333-0000-4000-8000-000000000001', 84500);
+    '33333333-0000-4000-8000-000000000001');
 
   -- backdate the live step so it is genuinely overdue
   update public.approval_requests
@@ -572,6 +630,165 @@ begin
 
   reset role;
   raise notice 'pass: overdue reminders fire once per day, not once per page load';
+end $$;
+
+-- =====================================================================
+-- 15. The amount is the submission's own, not the caller's
+-- =====================================================================
+begin;
+  set local role app_api;
+  select pg_temp.ctx();
+
+  select pg_temp.check('a stored 620,000 called as 50 still climbs to the CFO',
+    public.build_approval_chain('form_submission',
+      '44444444-0000-4000-8000-000000000008',
+      '33333333-0000-4000-8000-000000000001', 50), 4);
+
+  select pg_temp.check('separators and a currency mark are read through',
+    app.submission_amount('44444444-0000-4000-8000-000000000003'), 620000::numeric);
+commit;
+
+-- =====================================================================
+-- 16. "Line manager" means the requester's own
+-- =====================================================================
+begin;
+  set local role app_api;
+  select pg_temp.ctx();
+
+  -- EMP-R2 reports to EMP-C2, so the first step is EMP-C2 — not the
+  -- EMP-LM named on the rule, which is only a fallback.
+  select pg_temp.check('an 84,500.50 claim from EMP-R2 is two steps',
+    public.build_approval_chain('form_submission',
+      '44444444-0000-4000-8000-000000000009',
+      '33333333-0000-4000-8000-000000000001'), 2);
+
+  select pg_temp.check('the requester''s own line manager first, then finance',
+    (select string_agg(approver_user_id, ',' order by step_index)
+       from public.approval_requests
+      where submission_id = '44444444-0000-4000-8000-000000000009'),
+    'EMP-C2,EMP-C1'::text);
+commit;
+
+-- =====================================================================
+-- 17. Nobody approves their own request, and one person is one step
+-- =====================================================================
+begin;
+  set local role app_api;
+  select pg_temp.ctx();
+
+  -- EMP-C1 raises a 620,000 claim. The candidates are their manager
+  -- EMP-C2, then the ladder C1, C2, C3. C1 is the requester and drops
+  -- out; that leaves C2 twice in a row, which is one step.
+  select public.build_approval_chain('form_submission',
+    '44444444-0000-4000-8000-000000000010',
+    '33333333-0000-4000-8000-000000000001');
+
+  select pg_temp.check('the requester is never one of the approvers',
+    (select count(*)::int from public.approval_requests
+      where submission_id = '44444444-0000-4000-8000-000000000010'
+        and approver_user_id = 'EMP-C1'), 0);
+
+  select pg_temp.check('the same person twice in a row is one step',
+    (select string_agg(approver_user_id, ',' order by step_index)
+       from public.approval_requests
+      where submission_id = '44444444-0000-4000-8000-000000000010'),
+    'EMP-C2,EMP-C3'::text);
+
+  select pg_temp.check('...numbered without gaps',
+    (select string_agg(step_index::text, ',' order by step_index)
+       from public.approval_requests
+      where submission_id = '44444444-0000-4000-8000-000000000010'),
+    '0,1'::text);
+commit;
+
+-- =====================================================================
+-- 18. Only the approver, or somebody they delegated to, may act
+-- =====================================================================
+do $$
+declare v_id uuid; refused boolean;
+begin
+  set local role app_api;
+  perform pg_temp.ctx();
+
+  perform public.build_approval_chain('form_submission',
+    '44444444-0000-4000-8000-000000000011',
+    '33333333-0000-4000-8000-000000000001');
+  select id into v_id from public.approval_requests
+   where submission_id = '44444444-0000-4000-8000-000000000011' and status = 'pending';
+  if pg_temp.owner(v_id) <> 'EMP-LM' then
+    raise exception 'FAIL: fixture assumption — the open step is with %', pg_temp.owner(v_id);
+  end if;
+
+  refused := false;
+  begin
+    perform public.act_on_approval(v_id, 'approve', null, null);
+  exception when others then refused := true;
+  end;
+  if not refused then raise exception 'FAIL: a step moved with nobody named as acting'; end if;
+
+  refused := false;
+  begin
+    perform public.act_on_approval(v_id, 'approve', null, 'EMP-C3');
+  exception when others then refused := true;
+  end;
+  if not refused then raise exception 'FAIL: a stranger approved somebody else''s step'; end if;
+
+  refused := false;
+  begin
+    perform public.reassign_approval(v_id, 'EMP-C1', null, 'EMP-C3');
+  exception when others then refused := true;
+  end;
+  if not refused then raise exception 'FAIL: a stranger forwarded somebody else''s step'; end if;
+
+  refused := false;
+  begin
+    perform public.add_reviewer(v_id, 'EMP-C1', 3, 'EMP-C3');
+  exception when others then refused := true;
+  end;
+  if not refused then raise exception 'FAIL: a stranger added a reviewer to somebody else''s step'; end if;
+
+  -- A delegation that ended yesterday does not count.
+  insert into public.delegation_rules (delegator_id, delegate_id, start_date, end_date, reason)
+  values ('EMP-LM', 'EMP-C3',
+          (now() at time zone 'Asia/Dhaka')::date - 10,
+          (now() at time zone 'Asia/Dhaka')::date - 1, 'Leave, over');
+  refused := false;
+  begin
+    perform public.act_on_approval(v_id, 'approve', null, 'EMP-C3');
+  exception when others then refused := true;
+  end;
+  if not refused then raise exception 'FAIL: an expired delegation was honoured'; end if;
+
+  -- A delegation scoped to another form does not carry this one.
+  insert into public.delegation_rules
+    (delegator_id, delegate_id, start_date, end_date, reason, form_template_ids)
+  values ('EMP-LM', 'EMP-C2',
+          (now() at time zone 'Asia/Dhaka')::date - 1,
+          (now() at time zone 'Asia/Dhaka')::date + 1, 'Leave, other forms',
+          array[gen_random_uuid()]);
+  refused := false;
+  begin
+    perform public.act_on_approval(v_id, 'approve', null, 'EMP-C2');
+  exception when others then refused := true;
+  end;
+  if not refused then raise exception 'FAIL: a delegation for another form was honoured'; end if;
+
+  -- One that is current and covers this form does.
+  insert into public.delegation_rules
+    (delegator_id, delegate_id, start_date, end_date, reason, form_template_ids)
+  values ('EMP-LM', 'EMP-EX',
+          (now() at time zone 'Asia/Dhaka')::date,
+          (now() at time zone 'Asia/Dhaka')::date, 'Out today',
+          array['33333333-0000-4000-8000-000000000001'::uuid]);
+  perform public.act_on_approval(v_id, 'approve', 'On EMP-LM''s behalf', 'EMP-EX');
+
+  if (select status from public.approval_requests where id = v_id) <> 'approved' then
+    raise exception 'FAIL: a current, in-scope delegate could not approve';
+  end if;
+
+  reset role;
+  raise notice 'pass: nobody unnamed, no stranger, no expired or out-of-scope delegate may act';
+  raise notice 'pass: a current delegate covering the form may';
 end $$;
 
 delete from public.tenants where slug = 'chain-t';

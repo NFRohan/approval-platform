@@ -304,7 +304,7 @@ begin
     select id into v_step from public.approval_requests
      where notice_id = '55555555-0000-4000-8000-000000000001' and status = 'pending';
     exit when v_step is null;
-    perform public.act_on_approval(v_step, 'approve', 'Cleared for publication');
+    perform public.act_on_approval(v_step, 'approve', 'Cleared for publication', (select approver_user_id from public.approval_requests where id = v_step));
   end loop;
 
   -- Stationery: a business card waiting on the line manager, a stamp
@@ -318,7 +318,7 @@ begin
     select id into v_step from public.approval_requests
      where stationery_request_id = v_id and status = 'pending';
     exit when v_step is null;
-    perform public.act_on_approval(v_step, 'approve', 'Approved');
+    perform public.act_on_approval(v_step, 'approve', 'Approved', (select approver_user_id from public.approval_requests where id = v_step));
   end loop;
 
   -- Maintenance: one at the first tier, one that has cleared the first
@@ -328,7 +328,7 @@ begin
   perform public.build_approval_chain('maintenance_request', '77777777-0000-4000-8000-000000000001');
   select id into v_step from public.approval_requests
    where maintenance_request_id = '77777777-0000-4000-8000-000000000001' and status = 'pending';
-  perform public.act_on_approval(v_step, 'approve', 'Confirmed the unit is out of service');
+  perform public.act_on_approval(v_step, 'approve', 'Confirmed the unit is out of service', (select approver_user_id from public.approval_requests where id = v_step));
 end $chains$;
 
 commit;

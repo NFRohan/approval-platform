@@ -119,7 +119,7 @@ function StationeryPage() {
   }
 
   async function handleApprove(req: Req) {
-    const { error } = await actOnSubject("stationery_request", req.id, "approve");
+    const { error } = await actOnSubject("stationery_request", req.id, "approve", currentUser.employee_id);
     if (error) { toast.error("Failed: " + error.message); return; }
     const isLastStep = !(await openStep("stationery_request", req.id));
     await db.from("activity_log").insert({
@@ -131,7 +131,7 @@ function StationeryPage() {
   }
 
   async function handleReject(req: Req) {
-    const { error } = await actOnSubject("stationery_request", req.id, "reject");
+    const { error } = await actOnSubject("stationery_request", req.id, "reject", currentUser.employee_id);
     if (error) { toast.error("Failed: " + error.message); return; }
     await db.from("activity_log").insert({
       actor_id: currentUser.employee_id, action: "rejected", entity_type: "stationery_request", entity_id: req.id,

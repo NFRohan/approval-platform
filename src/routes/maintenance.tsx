@@ -160,7 +160,7 @@ function RequestCard({ req, isAdmin, expanded, onToggle, onRefresh }: { req: Req
         .update({ assigned_to: assignedTo.trim() || null, admin_comment: comment.trim() || null })
         .eq("id", req.id);
     }
-    const { error } = await actOnSubject("maintenance_request", req.id, action, comment);
+    const { error } = await actOnSubject("maintenance_request", req.id, action, currentUser.employee_id, comment);
     setActioning(false);
     if (error) { toast.error(error.message); return; }
 

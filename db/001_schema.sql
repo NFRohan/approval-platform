@@ -330,6 +330,41 @@ create index if not exists submission_values_submission_idx
   on public.submission_values(tenant_id, submission_id);
 
 -- ---------------------------------------------------------------------
+-- attachments — the file behind a file field.
+--
+-- The file field used to keep only the name a browser reported, so a
+-- submission "with an attachment" had nothing attached. The bytes live
+-- here, keyed by the submission and the field they answer, which is how
+-- submission_values is keyed too: the answer row still carries the file
+-- name, so every screen that already shows answers keeps working, and
+-- the screens that can offer a download look the file up by the pair.
+--
+-- In the database rather than an object store because it is the one
+-- store this deployment already has, and it puts files behind the same
+-- tenant boundary and policies as everything else. Size is capped by the
+-- server function that writes here, below what a serverless request body
+-- can carry.
+-- ---------------------------------------------------------------------
+create table if not exists public.attachments (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  submission_id uuid not null,
+  field_name    text not null,
+  file_name     text not null,
+  content_type  text not null default 'application/octet-stream',
+  size_bytes    integer not null check (size_bytes >= 0),
+  data          bytea not null,
+  uploaded_by   text,
+  created_at    timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (submission_id, tenant_id)
+    references public.form_submissions(id, tenant_id) on delete cascade
+);
+create index if not exists attachments_submission_idx
+  on public.attachments(tenant_id, submission_id);
+
+-- ---------------------------------------------------------------------
 -- approval_requests — one row per step, in order.
 --
 -- `waiting` is the new state and the reason this table changed. A

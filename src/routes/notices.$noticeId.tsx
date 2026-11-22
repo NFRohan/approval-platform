@@ -66,7 +66,7 @@ function NoticeDetailPage() {
       // Where this goes next is the chain's business, not this screen's.
       // What used to be here was a two-element array of employee ids that
       // had stopped existing, walked by index.
-      const { error } = await actOnSubject("notice", notice.id, "approve");
+      const { error } = await actOnSubject("notice", notice.id, "approve", currentUser.employee_id);
       if (error) { toast.error("Failed to approve: " + error.message); return; }
       const isLastStep = !(await openStep("notice", notice.id));
       await db.from("activity_log").insert({
@@ -86,7 +86,7 @@ function NoticeDetailPage() {
     if (!notice || !rejectReason.trim()) { toast.error("Please provide a reason"); return; }
     setBusy(true);
     try {
-      const { error } = await actOnSubject("notice", notice.id, "reject", rejectReason);
+      const { error } = await actOnSubject("notice", notice.id, "reject", currentUser.employee_id, rejectReason);
       if (error) { toast.error("Failed to reject: " + error.message); return; }
       await db.from("activity_log").insert({
         actor_id: currentUser.employee_id,

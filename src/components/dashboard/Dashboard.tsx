@@ -467,6 +467,7 @@ function QuickSubmit() {
 
 
 function PendingRow({ p, onDone }: { p: PendingItem; onDone: () => void }) {
+  const { currentUser } = useCurrentUser();
   const [busy, setBusy] = useState(false);
   // Reject and clarify both need a reason, so the row opens an input in
   // place rather than acting blind — the same inline-confirm shape the
@@ -476,7 +477,7 @@ function PendingRow({ p, onDone }: { p: PendingItem; onDone: () => void }) {
 
   async function act(action: ChainAction, comment?: string) {
     setBusy(true);
-    const { error } = await actOnStep(p.id, action, comment);
+    const { error } = await actOnStep(p.id, action, currentUser.employee_id, comment);
     setBusy(false);
     if (error) {
       toast.error(error.message);

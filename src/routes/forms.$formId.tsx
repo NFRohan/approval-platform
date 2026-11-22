@@ -9,7 +9,10 @@ import { toast } from "sonner";
 import { FieldRenderer } from "@/components/builder/FieldRenderer";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { DEFAULT_LABELS, isEmbedded, isPermission } from "@/components/builder/palette";
-import { resolveSlabChain, type ApprovalSlab } from "@/lib/approvalSlabs";
+import { type ApprovalSlab } from "@/lib/approvalSlabs";
+import { resolveLadder, resolveWatcher } from "@/lib/routing";
+import { addWorkingDays } from "@/lib/workdays";
+import { uploadAttachment } from "@/lib/attachment-fn";
 
 export const Route = createFileRoute("/forms/$formId")({
   // Resuming a draft is the same screen with something already in it.
@@ -74,6 +77,10 @@ function FillFormPage() {
   const [notifRules, setNotifRules] = useState<NotifRule[]>([]);
   const [slabs, setSlabs] = useState<ApprovalSlab[]>([]);
   const [empMap, setEmpMap] = useState<Record<string, { name: string; designation: string | null }>>({});
+  // Who the request will actually go to depends on who is raising it:
+  // "line manager" is their own, and the form's creator may be watching.
+  const [lineManager, setLineManager] = useState<string | null>(null);
+  const [formCreator, setFormCreator] = useState<string | null>(null);
 
   useEffect(() => {
     let cancel = false;
@@ -81,15 +88,17 @@ function FillFormPage() {
       setLoading(true);
       const [{ data: tpl }, { data: rows }, { data: aRules }, { data: nRules }, { data: slabRows }] =
         await Promise.all([
-          db.from("form_templates").select("name").eq("id", formId).maybeSingle(),
+          db.from("form_templates").select("name, created_by").eq("id", formId).maybeSingle(),
           db.from("form_fields").select("*").eq("form_template_id", formId).order("order_index"),
-          db.from("approval_rules").select("*").eq("form_template_id", formId),
+          // In chain order — the engine walks rules by step_index.
+          db.from("approval_rules").select("*").eq("form_template_id", formId).order("step_index"),
           db.from("notification_rules").select("*").eq("form_template_id", formId),
           db.from("approval_slabs").select("*").eq("form_template_id", formId).order("order_index"),
         ]);
       if (cancel) return;
 
       if (tpl?.name) setFormName(tpl.name);
+      setFormCreator((tpl as { created_by?: string | null } | null)?.created_by ?? null);
       setSlabs((slabRows ?? []) as ApprovalSlab[]);
 
       const placed: PlacedField[] = (rows ?? []).map((row) => {
@@ -113,7 +122,8 @@ function FillFormPage() {
       const approverIds = (aRules ?? []).map((r) => r.approver_user_id).filter(Boolean) as string[];
       const notifIds = (nRules ?? []).map((r) => r.notifyee_user_id).filter(Boolean) as string[];
       const slabIds = (slabRows ?? []).map((s) => s.approver_user_id).filter(Boolean) as string[];
-      const allIds = Array.from(new Set([...approverIds, ...notifIds, ...slabIds]));
+      const creatorId = (tpl as { created_by?: string | null } | null)?.created_by ?? null;
+      const allIds = Array.from(new Set([...approverIds, ...notifIds, ...slabIds, ...(creatorId ? [creatorId] : [])]));
       let empMap: Record<string, { name: string; designation: string | null }> = {};
       if (allIds.length > 0) {
         const { data: emps } = await db
@@ -168,6 +178,33 @@ function FillFormPage() {
       // A picker on the form still wins: it is asking about somebody
       // else, which is the whole point of having one.
       if (!cancelled && data) setEmployeeData((prev) => prev ?? (data as EmployeeRow));
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser.employee_id]);
+
+  // The requester's own line manager, and their name for the preview.
+  useEffect(() => {
+    if (!currentUser.employee_id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: me } = await db
+        .from("employees")
+        .select("line_manager_id")
+        .eq("employee_id", currentUser.employee_id)
+        .maybeSingle();
+      const managerId = (me as { line_manager_id?: string | null } | null)?.line_manager_id ?? null;
+      if (cancelled) return;
+      setLineManager(managerId);
+      if (managerId) {
+        const { data: mgr } = await db
+          .from("employees")
+          .select("employee_id, name, designation")
+          .eq("employee_id", managerId)
+          .maybeSingle();
+        if (!cancelled && mgr) {
+          setEmpMap((prev) => ({ ...prev, [mgr.employee_id]: { name: mgr.name, designation: mgr.designation } }));
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [currentUser.employee_id]);
@@ -257,6 +294,8 @@ function FillFormPage() {
           if (typeof v === "string") return v;
           if (typeof v === "boolean") return v ? "Yes" : "No";
           if (typeof v === "number") return String(v);
+          // The answer records which file; the bytes go to attachments.
+          if (v instanceof File) return v.name;
           return JSON.stringify(v);
         })();
         return { submission_id: submissionId, field_name: f.label, value: str };
@@ -271,6 +310,32 @@ function FillFormPage() {
    * notified. Values are replaced rather than merged, so the draft is
    * always exactly what is on screen.
    */
+  /**
+   * Send every newly chosen file to the submission. Returns an error
+   * message, or null when there was nothing to send or it all arrived.
+   *
+   * A file already attached to a resumed draft is held as its name, not
+   * as a File, so it is not sent again.
+   */
+  async function uploadPendingFiles(submissionId: string): Promise<string | null> {
+    for (const f of fields) {
+      const v = values[f.id];
+      if (f.kind !== "file" || !(v instanceof File)) continue;
+      const body = new FormData();
+      body.set("submissionId", submissionId);
+      body.set("fieldName", f.label);
+      body.set("uploadedBy", currentUser.employee_id);
+      body.set("file", v);
+      const result = await uploadAttachment({ data: body }).catch((e: unknown) => ({
+        ok: false as const,
+        error: e instanceof Error ? e.message : "the upload failed",
+      }));
+      if (!result.ok) return `${f.label}: ${result.error}`;
+      setValues((prev) => ({ ...prev, [f.id]: v.name }));
+    }
+    return null;
+  }
+
   async function handleSaveDraft() {
     setSavingDraft(true);
     try {
@@ -290,6 +355,12 @@ function FillFormPage() {
       await db.from("submission_values").delete().eq("submission_id", id);
       const rows = answerRows(id).filter((r) => r.value !== "");
       if (rows.length) await db.from("submission_values").insert(rows);
+
+      const uploadErr = await uploadPendingFiles(id);
+      if (uploadErr) {
+        toast.error("Draft saved, but a file did not attach — " + uploadErr);
+        return;
+      }
 
       toast.success("Draft saved — it is in My Submissions");
     } finally {
@@ -348,26 +419,46 @@ function FillFormPage() {
             if (typeof v === "string") return v;
             if (typeof v === "boolean") return v ? "Yes" : "No";
             if (typeof v === "number") return String(v);
+            // The answer records which file; the bytes go to attachments.
+            if (v instanceof File) return v.name;
             return JSON.stringify(v);
           })();
           return { submission_id: sub.id, field_name: f.label, value: str };
         });
-      if (valueRows.length > 0) await db.from("submission_values").insert(valueRows);
+      if (valueRows.length > 0) {
+        // The chain reads the amount from these rows, so a failed write
+        // here would route a 620,000 claim as nothing at all. Stop
+        // rather than build a chain on answers that are not there.
+        const { error: valuesErr } = await db.from("submission_values").insert(valueRows);
+        if (valuesErr) {
+          // Back to a draft, so it is in My Submissions to submit again
+          // rather than "submitted" with nobody asked.
+          await db.from("form_submissions").update({ status: "draft" }).eq("id", sub.id);
+          setOpenDraft(sub.id);
+          toast.error("Your answers could not be saved, so it was kept as a draft: " + valuesErr.message);
+          return;
+        }
+      }
 
-      // How far a claim climbs depends on the amount, so the amount is
-      // what gets sent. Which approvers that means, in what order, and
-      // which of them is live is decided in the database — it is several
-      // rows that have to agree, and it must not be a client's opinion.
-      const moneyField = fields.find((f) => f.kind === "money");
-      const moneyAmount = moneyField
-        ? parseFloat(String(values[moneyField.id] ?? "0").replace(/[^0-9.]/g, "")) || 0
-        : 0;
+      // Files before the chain: once it exists, the evidence it was
+      // routed on is fixed and cannot be attached any more.
+      const uploadErr = await uploadPendingFiles(sub.id);
+      if (uploadErr) {
+        await db.from("form_submissions").update({ status: "draft" }).eq("id", sub.id);
+        setOpenDraft(sub.id);
+        toast.error("A file did not attach, so it was kept as a draft — " + uploadErr);
+        return;
+      }
 
+      // How far a claim climbs depends on the amount, and the database
+      // reads that from the answers just written rather than taking it
+      // from here. Which approvers that means, in what order, and which
+      // of them is live is decided there too — it is several rows that
+      // have to agree, and it must not be a client's opinion.
       const { error: chainErr } = await db.rpc("build_approval_chain", {
         p_subject_type: "form_submission",
         p_subject_id: sub.id,
         p_form_template_id: formId,
-        p_amount: moneyAmount,
       });
       if (chainErr) {
         // The submission exists; only its routing failed. Saying
@@ -449,7 +540,7 @@ function FillFormPage() {
           </div>
 
           {isLastStep ? (
-            <SummaryStep fields={fields} values={values} genValue={genValue} approvalRules={approvalRules} notifRules={notifRules} employeeData={employeeData} slabs={slabs} empMap={empMap} />
+            <SummaryStep fields={fields} values={values} genValue={genValue} approvalRules={approvalRules} notifRules={notifRules} employeeData={employeeData} slabs={slabs} empMap={empMap} requester={currentUser.employee_id} lineManager={lineManager} formCreator={formCreator} />
           ) : (
             <div className="flex flex-col gap-3.5">
               {current.fields.map((f) =>
@@ -535,7 +626,7 @@ function GenFieldDisplay({ field, value }: { field: PlacedField; value: string }
   );
 }
 
-function SummaryStep({ fields, values, genValue, approvalRules, notifRules, employeeData, slabs, empMap }: {
+function SummaryStep({ fields, values, genValue, approvalRules, notifRules, employeeData, slabs, empMap, requester, lineManager, formCreator }: {
   fields: PlacedField[];
   values: Record<string, unknown>;
   genValue: (kind: FieldKind) => string;
@@ -544,6 +635,9 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
   employeeData: EmployeeRow | null;
   slabs: ApprovalSlab[];
   empMap: Record<string, { name: string; designation: string | null }>;
+  requester: string | null;
+  lineManager: string | null;
+  formCreator: string | null;
 }) {
   const displayFields = fields.filter((f) => !isPermission(f.kind) && !isEmbedded(f.kind));
   const hasLinked = fields.some((f) => isEmbedded(f.kind));
@@ -554,23 +648,29 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
   const moneyAmount = moneyField
     ? parseFloat(String(values[moneyField.id] ?? "0").replace(/[^0-9.]/g, "")) || 0
     : 0;
-  // One rule labelled slab_finance becomes as many steps as the amount
-  // has thresholds, so the person submitting sees the whole ladder
-  // before they commit to it rather than the top of it afterwards.
-  const financeChain = resolveSlabChain(moneyAmount, slabs);
-  const inChain = new Set(financeChain);
-  const slabApproverIds = new Set(slabs.map((s) => s.approver_user_id));
+  // The ladder exactly as the database will build it: the requester's
+  // own line manager, every finance threshold the amount crosses, nobody
+  // approving their own request, and nobody asked twice in a row — so
+  // the person submitting sees the whole ladder before they commit to
+  // it rather than finding out afterwards.
+  const ladder = resolveLadder(approvalRules, { requester, lineManager, amount: moneyAmount, slabs });
+  const resolvedApprovalRules: ApproverRule[] = ladder.map((st) => ({
+    approver_user_id: st.approver,
+    deadline_days: st.deadlineDays,
+    label: st.rule.label,
+    is_auto_added: null,
+    employee: empMap[st.approver],
+  }));
 
-  const resolvedApprovalRules: ApproverRule[] = approvalRules.flatMap((r) => {
-    if (r.label !== "slab_finance") return [r];
-    return financeChain.map((id) => ({ ...r, approver_user_id: id, employee: empMap[id] }));
-  });
-
-  const resolvedNotifRules: NotifRule[] = notifRules.filter((r) => {
-    if (r.notifyee_user_id && slabApproverIds.has(r.notifyee_user_id)) {
-      return inChain.has(r.notifyee_user_id);
-    }
-    return true;
+  // Watchers as the engine resolves them: roles become people, the first
+  // approver is told by their own notification instead, and nobody twice.
+  const firstApprover = ladder[0]?.approver ?? null;
+  const seen = new Set<string>();
+  const resolvedNotifRules: NotifRule[] = notifRules.flatMap((r) => {
+    const who = resolveWatcher(r, { requester, lineManager, formCreator });
+    if (!who || who === firstApprover || seen.has(who)) return [];
+    seen.add(who);
+    return [{ ...r, notifyee_user_id: who, employee: empMap[who] }];
   });
 
   function displayValue(f: PlacedField): string {
@@ -586,9 +686,9 @@ function SummaryStep({ fields, values, genValue, approvalRules, notifRules, empl
     return String(v);
   }
 
+  // Working days, as the database will count them when the step opens.
   function deadline(days: number | null) {
-    const d = new Date();
-    d.setDate(d.getDate() + (days ?? 7));
+    const d = addWorkingDays(new Date(), days ?? 7);
     return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   }
 

@@ -76,23 +76,31 @@ export async function chainOf(type: SubjectType, subjectId: string): Promise<Ste
   return (data ?? []) as Step[];
 }
 
-/** Start a chain. Returns the number of steps it created. */
+/**
+ * Start a chain. Returns the number of steps it created.
+ *
+ * There is no amount to pass: for a form submission the database reads
+ * it from the submission's own money answer, so the answers have to be
+ * written before this is called.
+ */
 export async function startChain(
   type: SubjectType,
   subjectId: string,
   formTemplateId: string | null = null,
-  amount = 0,
 ) {
   return db.rpc('build_approval_chain', {
     p_subject_type: type,
     p_subject_id: subjectId,
     p_form_template_id: formTemplateId,
-    p_amount: amount,
   });
 }
 
 /**
  * Act on whatever step the subject is waiting on.
+ *
+ * `actor` is the employee doing it. The database refuses anybody who is
+ * neither the step's approver nor a current delegate of theirs whose
+ * delegation covers this subject.
  *
  * The screens for notices, stationery and maintenance work on the
  * subject rather than the step — there is one button on the thing
@@ -102,6 +110,7 @@ export async function actOnSubject(
   type: SubjectType,
   subjectId: string,
   action: ChainAction,
+  actor: string,
   comment?: string,
 ): Promise<{ error: { message: string } | null }> {
   const step = await openStep(type, subjectId);
@@ -112,6 +121,7 @@ export async function actOnSubject(
     p_request_id: step.id,
     p_action: action,
     p_comment: comment?.trim() || null,
+    p_actor: actor,
   });
 }
 
@@ -125,12 +135,14 @@ export async function actOnSubject(
 export async function actOnStep(
   requestId: string,
   action: ChainAction,
+  actor: string,
   comment?: string,
 ): Promise<{ error: { message: string } | null }> {
   return db.rpc('act_on_approval', {
     p_request_id: requestId,
     p_action: action,
     p_comment: comment?.trim() || null,
+    p_actor: actor,
   });
 }
 

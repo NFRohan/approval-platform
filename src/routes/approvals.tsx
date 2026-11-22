@@ -13,6 +13,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { todayInOrg } from "@/lib/workdays";
+import { listAttachments, type AttachmentInfo } from "@/lib/attachment-fn";
+import { AttachmentLink } from "@/components/AttachmentLink";
 
 export const Route = createFileRoute("/approvals")({
   // A notification that says your approval is needed can name which
@@ -157,6 +160,7 @@ function ApprovalsInbox() {
   const { focus } = Route.useSearch();
   const [focused, setFocused] = useState(false);
   const [values, setValues] = useState<Record<string, SubVal[]>>({});
+  const [attachments, setAttachments] = useState<Record<string, AttachmentInfo[]>>({});
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
   const [modal, setModal] = useState<
@@ -178,7 +182,9 @@ function ApprovalsInbox() {
     // on every visit is harmless.
     await db.rpc("remind_overdue", {});
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Dhaka's date, not UTC's: the database judges delegation windows on
+    // the same calendar, so the queue and the check agree.
+    const today = todayInOrg();
 
     // Load active delegations TO the current user (with optional form scope)
     const { data: delegations } = await db
@@ -415,11 +421,13 @@ function ApprovalsInbox() {
     }
     setExpanded(row.id);
     if (row.submission_id && !values[row.submission_id]) {
-      const { data } = await db
-        .from("submission_values")
-        .select("field_name, value")
-        .eq("submission_id", row.submission_id);
-      setValues((v) => ({ ...v, [row.submission_id!]: (data || []) as SubVal[] }));
+      const subId = row.submission_id;
+      const [{ data }, files] = await Promise.all([
+        db.from("submission_values").select("field_name, value").eq("submission_id", subId),
+        listAttachments({ data: { submissionId: subId } }).catch(() => [] as AttachmentInfo[]),
+      ]);
+      setAttachments((a) => ({ ...a, [subId]: files }));
+      setValues((v) => ({ ...v, [subId]: (data || []) as SubVal[] }));
     }
   };
 
@@ -473,6 +481,9 @@ function ApprovalsInbox() {
       p_request_id: row.id,
       p_action: action,
       p_comment: note?.trim() || null,
+      // Acting for a delegator is still acting as yourself: the database
+      // checks that this person holds a delegation covering the step.
+      p_actor: currentUser.employee_id,
     });
     if (error) {
       toast.error(error.message);
@@ -530,9 +541,11 @@ function ApprovalsInbox() {
     const { error } = modal.kind === "forward"
       ? await db.rpc("reassign_approval", {
           p_request_id: modal.row.id, p_to: to, p_comment: comment.trim() || null,
+          p_actor: currentUser.employee_id,
         })
       : await db.rpc("add_reviewer", {
           p_request_id: modal.row.id, p_employee: to, p_deadline_days: 7,
+          p_actor: currentUser.employee_id,
         });
     if (error) {
       toast.error(error.message);
@@ -864,7 +877,14 @@ function ApprovalsInbox() {
                                 {v.field_name}
                               </div>
                               <div style={{ flex: 1, fontSize: 13, color: "#18181B", lineHeight: 1.5 }}>
-                                {formatValue(v.value)}
+                                {(() => {
+                                  // A file question answers with the file,
+                                  // not just the name it was uploaded as.
+                                  const file = r.submission_id
+                                    ? attachments[r.submission_id]?.find((a) => a.field_name === v.field_name)
+                                    : undefined;
+                                  return file ? <AttachmentLink file={file} /> : formatValue(v.value);
+                                })()}
                               </div>
                             </div>
                           );

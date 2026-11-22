@@ -111,7 +111,8 @@ npm test          # all six, cheapest first
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 75 checks: tenant isolation, the security policies, provisioning, and the approval chain |
+| `db:test` | 86 checks: tenant isolation, the security policies, provisioning, and the approval chain |
+| `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
 
 `db:test` and `test:journey` refuse a pooled connection string. The suites carry fixture ids in

@@ -8,6 +8,7 @@ import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/build
 import { toast } from "sonner";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Trash2, Plus } from "lucide-react";
+import { ruleRole } from "@/lib/routing";
 
 const search = z.object({ templateId: z.string() });
 
@@ -19,29 +20,43 @@ export const Route = createFileRoute("/builder/approvers")({
   component: ApproversStep,
 });
 
-const ALL_AUTO_APPROVERS: AutoEntry[] = [
+// The approvers a form gets from its own fields.
+//
+// The line manager is a role, not a person: the engine resolves it to
+// whoever raised the request's own manager when it is submitted. It was
+// one employee, fixed here for every requester in the organisation, and
+// labelled with a name that employee no longer had.
+//
+// `label` is what is saved on the rule and what the engine reads;
+// app.rule_role in db/005_chain.sql is the list of roles it knows.
+type AutoApprover = AutoEntry & { label: string; _requires?: string };
+
+const ALL_AUTO_APPROVERS: AutoApprover[] = [
   {
     id: "auto-line-mgr",
-    user_id: "EMP-1134",
-    name: "Sara Khan",
-    designation: "Line Manager",
+    user_id: null,
+    label: "line_manager",
+    name: "Requester's line manager",
+    designation: "From the org chart, when submitted",
     displayReason: "Added: Employee field",
     reason: "Added: Employee field",
     deadlineDays: 7,
     _requires: "employee",
-  } as AutoEntry & { _requires: string },
+  },
   {
     id: "auto-admin",
     user_id: "EMP-0445",
-    name: "Farzana Islam",
-    designation: "Admin Officer",
+    label: "admin",
+    name: "Admin Officer",
+    designation: "Admin",
     displayReason: "Added: Default",
     reason: "Added: Default",
     deadlineDays: 7,
   },
   {
     id: "auto-finance",
-    user_id: "EMP-0312",
+    user_id: null,
+    label: "slab_finance",
     name: "Finance Approver",
     designation: "Resolved at submission",
     displayReason: "Amount-based routing",
@@ -49,11 +64,13 @@ const ALL_AUTO_APPROVERS: AutoEntry[] = [
     slab: true,
     deadlineDays: 7,
     _requires: "money",
-  } as AutoEntry & { _requires: string },
+  },
 ];
 
+type SavedRule = { label: string; user_id: string | null; deadlineDays: number };
+
 type SlabRow = { id?: string; min_amount: string; max_amount: string; approver_user_id: string };
-type EmployeeOption = { employee_id: string; name: string };
+type EmployeeOption = { employee_id: string; name: string; designation: string | null };
 
 function ApproversStep() {
   const { templateId } = Route.useSearch();
@@ -65,19 +82,53 @@ function ApproversStep() {
   const [fieldTypes, setFieldTypes] = useState<Set<string>>(new Set());
   const [slabs, setSlabs] = useState<SlabRow[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [names, setNames] = useState<Record<string, { name: string; designation: string | null }>>({});
+  // The automatic rules this form was saved with, or null for a form that
+  // has never had approvers. An existing form keeps what it has; only a
+  // new one is given the defaults.
+  const [savedAuto, setSavedAuto] = useState<SavedRule[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }] = await Promise.all([
+      const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }] = await Promise.all([
         db.from("form_templates").select("name").eq("id", templateId).maybeSingle(),
         db.from("form_fields").select("field_type").eq("form_template_id", templateId),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
-        db.from("employees").select("employee_id, name").order("name"),
+        db.from("employees").select("employee_id, name, designation").order("name"),
+        db.from("approval_rules")
+          .select("approver_user_id, deadline_days, is_auto_added, label, step_index")
+          .eq("form_template_id", templateId)
+          .order("step_index"),
       ]);
       if (tpl?.name) setFormName(tpl.name);
       setFieldTypes(new Set((fields ?? []).map((f) => f.field_type ?? "").filter(Boolean)));
       setEmployees((emps ?? []) as EmployeeOption[]);
+      const byId: Record<string, { name: string; designation: string | null }> = {};
+      (emps ?? []).forEach((e) => { byId[e.employee_id] = { name: e.name, designation: e.designation }; });
+      setNames(byId);
+      // The approvers added by hand last time. This step used to start
+      // from an empty list and then replace every rule on save, so
+      // opening a form's approvers and pressing Next deleted the ones
+      // added before.
+      setManual(
+        (rules ?? [])
+          .filter((r) => !r.is_auto_added && r.approver_user_id)
+          .map((r, i) => ({
+            id: `saved-${i}`,
+            user_id: r.approver_user_id as string,
+            name: byId[r.approver_user_id as string]?.name ?? (r.approver_user_id as string),
+            designation: byId[r.approver_user_id as string]?.designation ?? "",
+            deadlineDays: r.deadline_days ?? 7,
+          })),
+      );
+      setSavedAuto(
+        rules && rules.length > 0
+          ? rules
+              .filter((r) => r.is_auto_added)
+              .map((r) => ({ label: r.label ?? "", user_id: r.approver_user_id, deadlineDays: r.deadline_days ?? 7 }))
+          : null,
+      );
       setLoading(false);
       if (existingSlabs && existingSlabs.length > 0) {
         setSlabs(
@@ -108,22 +159,62 @@ function ApproversStep() {
     setSlabs((prev) => prev.filter((_, i) => i !== index));
   }
 
-  const autoApprovers = ALL_AUTO_APPROVERS.filter((a) => {
-    const req = (a as AutoEntry & { _requires?: string })._requires;
-    return !req || fieldTypes.has(req);
-  });
+  // A fixed person shows under their name as the org chart has it now,
+  // not as it was when this file was written.
+  const named = (a: AutoApprover): AutoApprover =>
+    a.user_id && names[a.user_id] && ruleRole(a.label) !== "line_manager"
+      ? { ...a, name: names[a.user_id].name, designation: names[a.user_id].designation ?? a.designation }
+      : a;
+
+  // What the form gets automatically.
+  //
+  // A new form gets the defaults its fields imply. A form that already
+  // has approvers keeps the automatic ones it was saved with: this step
+  // used to recompute the defaults every time, so opening a seeded form
+  // and pressing Next quietly dropped its line manager (none of the
+  // seeded forms has an Employee field) and added an Admin Officer it
+  // had never had. Fields added since still bring their rule with them.
+  const autoApprovers: AutoApprover[] = (() => {
+    const defaults = ALL_AUTO_APPROVERS.filter((a) => !a._requires || fieldTypes.has(a._requires));
+    if (savedAuto === null) return defaults.map(named);
+
+    const kept: AutoApprover[] = savedAuto.map((r, i) => {
+      const role = ruleRole(r.label);
+      const def = ALL_AUTO_APPROVERS.find((a) => a.label === role && (role === "line_manager" || role === "slab_finance"));
+      // The person on a line-manager rule is the fallback for somebody
+      // with no manager on record, so it is kept.
+      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays };
+      return named({
+        id: `saved-auto-${i}`,
+        user_id: r.user_id,
+        label: r.label,
+        name: r.user_id ?? "Unassigned",
+        designation: "",
+        displayReason: "Saved with this form",
+        reason: r.label,
+        deadlineDays: r.deadlineDays,
+      });
+    });
+    const roles = new Set(kept.map((k) => ruleRole(k.label)));
+    const added = defaults.filter((d) => d._requires && !roles.has(d.label));
+    return [...kept, ...added];
+  })();
 
   async function handleNext() {
     // Replace existing approval_rules for this template
     await db.from("approval_rules").delete().eq("form_template_id", templateId);
 
+    // In the order the screen shows them, numbered. The engine walks
+    // rules by step_index, and these were saved without one — every rule
+    // at 0, so the tie fell to random ids and a form built here asked
+    // its approvers in an order nobody chose.
     const rows = [
       ...autoApprovers.map((a) => ({
         form_template_id: templateId,
         approver_user_id: a.user_id,
         deadline_days: a.deadlineDays ?? 7,
         is_auto_added: true,
-        label: a.reason,
+        label: a.label,
       })),
       ...manual.map((m) => ({
         form_template_id: templateId,
@@ -132,7 +223,7 @@ function ApproversStep() {
         is_auto_added: false,
         label: "Manually added",
       })),
-    ];
+    ].map((r, i) => ({ ...r, step_index: i }));
 
     const { error } = await db.from("approval_rules").insert(rows);
     if (error) {
