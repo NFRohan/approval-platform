@@ -34,6 +34,7 @@ import { runReport } from './reports';
 import { exportReport, fileName, CONTENT_TYPES, type ExportFormat } from './export';
 import { loadRecord, recordPdf } from './record';
 import { kickWebhooks } from './webhooks';
+import { kickServicedesk } from './servicedesk';
 
 export function appUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
@@ -237,6 +238,7 @@ export async function kickMailer(tenantId: string | null | undefined): Promise<v
   if (!tenantId) return;
   // Whatever told somebody may also have told another system.
   await kickWebhooks(tenantId);
+  await kickServicedesk(tenantId);
   try {
     const { rows } = await getPool().query(
       `select exists (select 1 from public.email_outbox where tenant_id = $1 and status = 'queued') as any`, [tenantId]);

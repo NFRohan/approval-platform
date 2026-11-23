@@ -82,6 +82,7 @@ const EVENT_TEXT: Record<string, string> = {
   raised_in_legacy: "raised it in the old service desk",
   closed_in_legacy: "— closed in the old service desk",
   migrated: "— brought over and archived",
+  raised_from_servicedesk: "— raised from ServiceDesk Plus",
   email_received: "— an email was added",
 };
 

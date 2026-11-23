@@ -56,6 +56,7 @@ import { Route as WebhooksEchoRouteImport } from './routes/webhooks.echo'
 import { Route as ApiV1SplatRouteImport } from './routes/api.v1.$'
 import { Route as ExportsReportReportIdRouteImport } from './routes/exports.report.$reportId'
 import { Route as InboundEmailTenantRouteImport } from './routes/inbound.email.$tenant'
+import { Route as IntegrationsServicedeskTenantRouteImport } from './routes/integrations.servicedesk.$tenant'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -292,6 +293,12 @@ const InboundEmailTenantRoute = InboundEmailTenantRouteImport.update({
   path: '/inbound/email/$tenant',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntegrationsServicedeskTenantRoute =
+  IntegrationsServicedeskTenantRouteImport.update({
+    id: '/integrations/servicedesk/$tenant',
+    path: '/integrations/servicedesk/$tenant',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -341,6 +348,7 @@ export interface FileRoutesByFullPath {
   '/api/v1/$': typeof ApiV1SplatRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
   '/inbound/email/$tenant': typeof InboundEmailTenantRoute
+  '/integrations/servicedesk/$tenant': typeof IntegrationsServicedeskTenantRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -390,6 +398,7 @@ export interface FileRoutesByTo {
   '/api/v1/$': typeof ApiV1SplatRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
   '/inbound/email/$tenant': typeof InboundEmailTenantRoute
+  '/integrations/servicedesk/$tenant': typeof IntegrationsServicedeskTenantRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -440,6 +449,7 @@ export interface FileRoutesById {
   '/api/v1/$': typeof ApiV1SplatRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
   '/inbound/email/$tenant': typeof InboundEmailTenantRoute
+  '/integrations/servicedesk/$tenant': typeof IntegrationsServicedeskTenantRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -491,6 +501,7 @@ export interface FileRouteTypes {
     | '/api/v1/$'
     | '/exports/report/$reportId'
     | '/inbound/email/$tenant'
+    | '/integrations/servicedesk/$tenant'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -540,6 +551,7 @@ export interface FileRouteTypes {
     | '/api/v1/$'
     | '/exports/report/$reportId'
     | '/inbound/email/$tenant'
+    | '/integrations/servicedesk/$tenant'
   id:
     | '__root__'
     | '/'
@@ -589,6 +601,7 @@ export interface FileRouteTypes {
     | '/api/v1/$'
     | '/exports/report/$reportId'
     | '/inbound/email/$tenant'
+    | '/integrations/servicedesk/$tenant'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -637,6 +650,7 @@ export interface RootRouteChildren {
   ApiV1SplatRoute: typeof ApiV1SplatRoute
   ExportsReportReportIdRoute: typeof ExportsReportReportIdRoute
   InboundEmailTenantRoute: typeof InboundEmailTenantRoute
+  IntegrationsServicedeskTenantRoute: typeof IntegrationsServicedeskTenantRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -970,6 +984,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InboundEmailTenantRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/integrations/servicedesk/$tenant': {
+      id: '/integrations/servicedesk/$tenant'
+      path: '/integrations/servicedesk/$tenant'
+      fullPath: '/integrations/servicedesk/$tenant'
+      preLoaderRoute: typeof IntegrationsServicedeskTenantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -1033,6 +1054,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1SplatRoute: ApiV1SplatRoute,
   ExportsReportReportIdRoute: ExportsReportReportIdRoute,
   InboundEmailTenantRoute: InboundEmailTenantRoute,
+  IntegrationsServicedeskTenantRoute: IntegrationsServicedeskTenantRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,0 +1,179 @@
+// =====================================================================
+// The ServiceDesk Plus link, for the Integrations screen: its settings,
+// a connection test, fetching new tickets now, a ticket typed in by hand
+// to try it, and every exchange both ways.
+//
+// Reading needs integrations.manage or audit.view; changing anything
+// needs integrations.manage, checked in the database. The technician key
+// is sealed before it is stored and never sent back to the browser.
+// =====================================================================
+
+import { createServerFn } from '@tanstack/react-start';
+import { randomBytes } from 'node:crypto';
+import type pg from 'pg';
+import { withContext, resolveContext } from '@/server/db';
+import { sealSecret } from '@/server/totp';
+import { appUrl, kickMailer } from '@/server/mailer';
+import { drainServicedesk, normaliseTicket, pollServicedesk, sdpCall, sdpOk, type Link } from '@/server/servicedesk';
+
+type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+
+function refusal(err: unknown): { ok: false; error: string } {
+  const e = err as { code?: string; message?: string };
+  if (e?.code === 'P0001' && e.message) return { ok: false, error: e.message.charAt(0).toUpperCase() + e.message.slice(1) + '.' };
+  if (e?.code === '28000') return { ok: false, error: 'Sign in again.' };
+  console.error('[servicedesk]', e?.message || err);
+  return { ok: false, error: 'That did not work. Try again.' };
+}
+
+async function run<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  return withContext(await resolveContext(), fn);
+}
+
+async function needManage(c: pg.PoolClient) {
+  const { rows: [m] } = await c.query(`select app.has_permission('integrations.manage') as ok`);
+  if (!m.ok) throw Object.assign(new Error('you need the integrations.manage permission for that'), { code: 'P0001' });
+}
+
+const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
+
+export type FormMapRow = { match: string; form: string };
+export type ServicedeskSettings = {
+  enabled: boolean; base_url: string | null; has_token: boolean; allow_self_signed: boolean;
+  default_form: string | null; form_map: FormMapRow[]; approved_closure: string; rejected_closure: string;
+  inbound_url: string; inbound_secret: string | null; last_poll_at: string | null;
+  last_poll_result: { seen: number; raised: number; ignored: number; refused: number; error?: string } | null;
+};
+export type ServicedeskEvent = {
+  id: string; direction: 'in' | 'out'; kind: string; ticket_id: string | null; submission_id: string | null; reference: string | null;
+  status: string; attempts: number; http_status: number | null; error: string | null; payload: string; response: string | null;
+  created_at: string; done_at: string | null;
+};
+
+export const loadServicedesk = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<Result<{ settings: ServicedeskSettings; events: ServicedeskEvent[]; forms: string[]; canManage: boolean; slug: string }>> => {
+    try {
+      return await run(async (c) => {
+        await c.query('select app.seed_servicedesk(app.current_tenant())').catch(() => {});
+        const { rows: [l] } = await c.query(`select * from public.servicedesk_links where tenant_id = app.current_tenant()`);
+        const { rows: [t] } = await c.query(`select slug from public.tenants where id = app.current_tenant()`);
+        const { rows: [m] } = await c.query(`select app.has_permission('integrations.manage') as ok`);
+        const { rows: forms } = await c.query(`select name from public.form_templates where status = 'published' order by name`);
+        const { rows: ev } = await c.query(
+          `select e.id, e.direction, e.kind, e.ticket_id, e.submission_id, s.ref_number as reference, e.status, e.attempts,
+                  e.http_status, e.error, e.payload::text as payload, e.response, e.created_at, e.done_at
+             from public.servicedesk_events e left join public.form_submissions s on s.id = e.submission_id
+            order by e.seq desc limit 150`);
+        if (!l) throw Object.assign(new Error('the ServiceDesk link is not readable with your permissions'), { code: 'P0001' });
+        return {
+          ok: true as const,
+          slug: t.slug,
+          canManage: m.ok === true,
+          forms: forms.map((f) => f.name),
+          settings: {
+            enabled: l.enabled, base_url: l.base_url, has_token: !!l.token_sealed, allow_self_signed: l.allow_self_signed,
+            default_form: l.default_form, form_map: l.form_map, approved_closure: l.approved_closure, rejected_closure: l.rejected_closure,
+            inbound_url: `${appUrl()}/integrations/servicedesk/${t.slug}`,
+            // The secret is the caller's to give ServiceDesk: shown to whoever may change the link.
+            inbound_secret: m.ok ? l.inbound_secret : null,
+            last_poll_at: iso(l.last_poll_at), last_poll_result: l.last_poll_result,
+          },
+          events: ev.map((e) => ({ ...e, created_at: iso(e.created_at)!, done_at: iso(e.done_at) })) as ServicedeskEvent[],
+        };
+      });
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+export const saveServicedesk = createServerFn({ method: 'POST' })
+  .inputValidator((input: {
+    enabled: boolean; base_url: string; token?: string | null; allow_self_signed: boolean; default_form: string | null;
+    form_map: FormMapRow[]; approved_closure: string; rejected_closure: string; rotate_secret?: boolean;
+  }) => input)
+  .handler(async ({ data }): Promise<Result> => {
+    try {
+      const token = typeof data.token === 'string' && data.token.trim() ? sealSecret(data.token.trim()) : null;
+      const secret = data.rotate_secret ? randomBytes(24).toString('hex') : null;
+      await run((c) => c.query('select public.save_servicedesk($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)', [
+        !!data.enabled, data.base_url ?? '', token, !!data.allow_self_signed, data.default_form ?? null,
+        JSON.stringify((data.form_map ?? []).filter((r) => r.match?.trim() || r.form)), data.approved_closure ?? '', data.rejected_closure ?? '', secret,
+      ]));
+      return { ok: true };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+/** Can we reach ServiceDesk with this address and key? Asks for one ticket. */
+export const testServicedesk = createServerFn({ method: 'POST' })
+  .inputValidator((input: { base_url: string; token?: string | null; allow_self_signed: boolean }) => input)
+  .handler(async ({ data }): Promise<Result<{ connected: boolean; message: string; ms: number | null; tickets: number | null }>> => {
+    try {
+      const link = await run(async (c) => {
+        await needManage(c);
+        return (await c.query<Link>(`select * from public.servicedesk_links where tenant_id = app.current_tenant()`)).rows[0];
+      });
+      const trial = {
+        base_url: (data.base_url ?? '').trim().replace(/\/$/, '') || link?.base_url || null,
+        token_sealed: data.token?.trim() ? sealSecret(data.token.trim()) : link?.token_sealed ?? null,
+        allow_self_signed: !!data.allow_self_signed,
+      };
+      try {
+        const r = await sdpCall(trial, 'GET', '/api/v3/requests', { list_info: { row_count: 1, start_index: 1, get_total_count: true } });
+        const ok = sdpOk(r);
+        const total = Number((r.json?.list_info as { total_count?: unknown } | undefined)?.total_count);
+        return { ok: true, connected: ok.ok, message: ok.ok ? 'Connected.' : ok.message, ms: r.ms, tickets: Number.isFinite(total) ? total : null };
+      } catch (err) {
+        return { ok: true, connected: false, message: err instanceof Error ? err.message : String(err), ms: null, tickets: null };
+      }
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+export const fetchServicedeskNow = createServerFn({ method: 'POST' })
+  .handler(async (): Promise<Result<{ seen: number; raised: number; ignored: number; refused: number; error?: string }>> => {
+    try {
+      const ctx = await resolveContext();
+      await withContext(ctx, needManage);
+      const r = await pollServicedesk(ctx.tenantId!);
+      await kickMailer(ctx.tenantId);
+      return { ok: true, ...r };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+/** A ticket typed in, as ServiceDesk would send it. */
+export const simulateServicedeskTicket = createServerFn({ method: 'POST' })
+  .inputValidator((input: { id: string; subject: string; description: string; requester_email: string; category: string; priority: string }) => input)
+  .handler(async ({ data }): Promise<Result<{ outcome: string; reference?: string; submission_id?: string; reason?: string }>> => {
+    try {
+      const ctx = await resolveContext();
+      const t = normaliseTicket({
+        id: data.id, subject: data.subject, description: data.description, requester: { email_id: data.requester_email },
+        category: { name: data.category }, priority: { name: data.priority },
+      });
+      if (!t) throw Object.assign(new Error('a ticket needs an id of letters and digits'), { code: 'P0001' });
+      const r = await withContext(ctx, async (c) => (await c.query('select public.receive_servicedesk_ticket($1::jsonb) as r', [JSON.stringify(t)])).rows[0].r);
+      await kickMailer(ctx.tenantId);
+      return { ok: true, ...r };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+export const retryServicedeskEvent = createServerFn({ method: 'POST' })
+  .inputValidator((input: { id: string }) => input)
+  .handler(async ({ data }): Promise<Result<{ status: string; error: string | null }>> => {
+    try {
+      const ctx = await resolveContext();
+      await withContext(ctx, (c) => c.query('select public.retry_servicedesk_event($1)', [data.id]));
+      await drainServicedesk({ tenantId: ctx.tenantId, only: data.id });
+      const { rows: [e] } = await withContext(ctx, (c) => c.query('select status, error from public.servicedesk_events where id = $1', [data.id]));
+      return { ok: true, status: e.status, error: e.error };
+    } catch (err) {
+      return refusal(err);
+    }
+  });

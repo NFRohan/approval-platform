@@ -473,6 +473,7 @@ begin
   -- Its own API keys, webhook and their history: keys are never shared
   -- between organisations, so these are made rather than copied.
   perform app.seed_integration(v_new);
+  perform app.seed_servicedesk(v_new);
 
   -- Mail goes out again for whatever this transaction does next.
   perform set_config('app.no_mail', 'false', true);

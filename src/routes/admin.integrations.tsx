@@ -18,6 +18,7 @@ import { legacyCsv, readLegacyFile, type LegacyParse } from "@/lib/legacy-file";
 import { downloadCsv } from "@/lib/csv";
 import { Button, Card, Field, NoPermission, Notice, OneTimeSecret, Page, Pill, fmtWhen, inputStyle } from "@/components/admin/kit";
 import { control } from "@/components/reports/ReportParts";
+import { ServicedeskTab } from "@/components/admin/ServicedeskTab";
 import { ChartCard, SimpleTable, Tip, SERIES_1, SERIES_2, GRID, AXIS, INK, MUTED } from "@/components/viz";
 
 export const Route = createFileRoute("/admin/integrations")({
@@ -68,12 +69,14 @@ function IntegrationsPage() {
           <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
           <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
           <TabsTrigger value="traffic">API traffic</TabsTrigger>
+          <TabsTrigger value="servicedesk">ServiceDesk Plus</TabsTrigger>
           <TabsTrigger value="migration">Migration</TabsTrigger>
         </TabsList>
         <TabsContent value="keys">{data && <Keys data={data} reload={load} />}</TabsContent>
         <TabsContent value="webhooks">{data && <Webhooks data={data} reload={load} onDeliveries={() => setTab("deliveries")} />}</TabsContent>
         <TabsContent value="deliveries"><Deliveries hooks={data?.webhooks ?? []} canManage={!!data?.canManage} /></TabsContent>
         <TabsContent value="traffic">{data && <Traffic data={data} reload={load} />}</TabsContent>
+        <TabsContent value="servicedesk"><ServicedeskTab /></TabsContent>
         <TabsContent value="migration"><Migration /></TabsContent>
       </Tabs>
     </div>

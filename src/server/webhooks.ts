@@ -66,15 +66,15 @@ export function isPrivateAddress(ip: string): boolean {
   return v === '::' || v === '::1' || /^f[cd]/.test(v) || /^fe[89ab]/.test(v);
 }
 
-async function assertReachable(target: string): Promise<void> {
-  if (process.env.WEBHOOK_ALLOW_PRIVATE === '1') return;
+export async function assertReachable(target: string, what = 'webhooks'): Promise<void> {
+  if (process.env.WEBHOOK_ALLOW_PRIVATE === '1' || process.env.OUTBOUND_ALLOW_PRIVATE === '1') return;
   const u = new URL(target);
   if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('only http and https addresses are called');
   if (target.startsWith(appUrl())) return;
   const host = u.hostname.replace(/^\[|\]$/g, '');
   const addresses = isIP(host) ? [host] : (await lookup(host, { all: true })).map((a) => a.address);
   if (!addresses.length || addresses.some(isPrivateAddress)) {
-    throw new Error('that address is on a private network, which webhooks may not call');
+    throw new Error(`that address is on a private network, which ${what} may not call (OUTBOUND_ALLOW_PRIVATE=1 allows it)`);
   }
 }
 

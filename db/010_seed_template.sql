@@ -824,6 +824,10 @@ update public.approval_requests r
 -- the service desk's settled tickets, migrated from ManageEngine and
 -- archived. Both are cloned into every evaluation.
 select app.seed_sign_ins(app.current_tenant());
+-- A ServiceDesk Plus link, not yet connected, mapped for access and
+-- purchase tickets.
+select app.seed_servicedesk(app.current_tenant());
+select app.seed_servicedesk(d.id) from public.tenants d where d.kind = 'demo';
 select public.import_legacy_tickets('ManageEngine', app.sample_legacy_tickets(48));
 
 -- Evaluations issued before this: the two new permissions, the same

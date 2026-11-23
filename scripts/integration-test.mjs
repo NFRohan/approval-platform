@@ -31,6 +31,9 @@ const api = await vite.ssrLoadModule('/src/server/api.ts');
 const cat = await vite.ssrLoadModule('/src/lib/api-catalogue.ts');
 const legacy = await vite.ssrLoadModule('/src/lib/legacy-file.ts');
 const work = await vite.ssrLoadModule('/src/lib/workdays.ts');
+const sd = await vite.ssrLoadModule('/src/server/servicedesk.ts');
+const totp = await vite.ssrLoadModule('/src/server/totp.ts');
+const { startMock } = await import('./servicedesk-mock.mjs');
 
 console.log(NL + 'integration' + NL);
 
@@ -147,6 +150,47 @@ console.log(NL + 'integration' + NL);
   work.setOrgHolidays(['2027-12-16']);
   check('the loaded calendar is the default', day(work.addWorkingDays(at('2027-12-15'), 1)), '2027-12-19');
   work.setOrgHolidays([]);
+}
+
+// ------------------------------------------------------------ ServiceDesk Plus
+{
+  const t = sd.normaliseTicket({ request: {
+    id: '4812', subject: 'Ledger access', description: '<div>Need <b>read</b> access.<br>Thanks &amp; regards</div>',
+    requester: { name: 'Tom Bexley', email_id: 'tom.bexley@example.com' }, category: { name: 'Access' },
+    template: { name: 'Access Request' }, priority: { name: 'High' }, status: { name: 'Open' },
+    created_time: { value: '1795423272000', display_value: 'Nov 23, 2026 08:41 AM' },
+  } });
+  check('a v3 request object is read', [t.id, t.requester_email, t.category, t.template, t.priority, t.created_ms],
+    ['4812', 'tom.bexley@example.com', 'Access', 'Access Request', 'High', 1795423272000]);
+  check('its HTML description becomes text', t.description, 'Need read access.' + NL + 'Thanks & regards');
+  check('a webhook sending only the id is read', sd.normaliseTicket({ id: 4813 })?.id, '4813');
+  check('a flat webhook body is read', sd.normaliseTicket({ id: '9', requester_email: 'a@b.c', category: 'Access' })?.requester_email, 'a@b.c');
+  check('no id, or one that could carry a path, is no ticket', [sd.normaliseTicket({ subject: 'x' }), sd.normaliseTicket({ id: '../admin' })], [null, null]);
+  check('success is read from either shape of response_status',
+    [sd.sdpOk({ status: 200, json: { response_status: { status: 'success' } } }).ok, sd.sdpOk({ status: 200, json: { response_status: [{ status: 'success' }] } }).ok,
+     sd.sdpOk({ status: 401, json: { response_status: { status: 'failed', messages: [{ message: 'UNAUTHORISED' }] } } })],
+    [true, true, { ok: false, message: 'UNAUTHORISED' }]);
+
+  process.env.OUTBOUND_ALLOW_PRIVATE = '1';
+  const mock = await startMock({ tickets: [{ id: '7001', subject: 'Ledger', requester_email: 'tom.bexley@example.com', category: 'Access' }] });
+  const link = { base_url: mock.url, token_sealed: totp.sealSecret(mock.key), allow_self_signed: false };
+  let r = await sd.sdpCall(link, 'GET', '/api/v3/requests', { list_info: { row_count: 5 } });
+  check('the list is fetched with the technician key', [sd.sdpOk(r).ok, r.json.requests[0].id], [true, '7001']);
+  check('...input_data on a GET is a query parameter', mock.calls.at(-1).input, { list_info: { row_count: 5 } });
+  r = await sd.sdpCall(link, 'POST', '/api/v3/requests/7001/notes', { note: { description: 'Approved by Sam', show_to_requester: true } });
+  check('a note is added, input_data as a form field', [sd.sdpOk(r).ok, mock.store.get('7001').notes[0].description], [true, 'Approved by Sam']);
+  r = await sd.sdpCall(link, 'PUT', '/api/v3/requests/7001/close', { request: { closure_info: { closure_code: { name: 'Success' } } } });
+  check('a ticket is closed', [sd.sdpOk(r).ok, mock.store.get('7001').status.name], [true, 'Closed']);
+  r = await sd.sdpCall({ ...link, token_sealed: totp.sealSecret('wrong') }, 'GET', '/api/v3/requests');
+  check('a wrong key is refused, and says so', sd.sdpOk(r), { ok: false, message: 'UNAUTHORISED' });
+  let threw = null;
+  try { await sd.sdpCall({ ...link, token_sealed: null }, 'GET', '/api/v3/requests'); } catch (e) { threw = e.message; }
+  check('without a key nothing is sent', /not connected/.test(threw ?? ''), true);
+  delete process.env.OUTBOUND_ALLOW_PRIVATE;
+  threw = null;
+  try { await sd.sdpCall(link, 'GET', '/api/v3/requests'); } catch (e) { threw = e.message; }
+  check('a private address is refused unless the deployment allows it', /private network/.test(threw ?? ''), true);
+  await mock.close();
 }
 
 await vite.close();

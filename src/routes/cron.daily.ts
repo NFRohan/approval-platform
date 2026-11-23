@@ -15,6 +15,7 @@ import { timingSafeEqual } from "node:crypto";
 import { getPool } from "@/server/db";
 import { drainOutbox } from "@/server/mailer";
 import { drainWebhooks } from "@/server/webhooks";
+import { drainServicedesk, pollServicedesk } from "@/server/servicedesk";
 import { logAppError } from "@/server/logs";
 
 function reply(status: number, body: unknown) {
@@ -75,13 +76,26 @@ export async function dailyRound() {
     delivered = { sent: delivered.sent + d.sent, captured: delivered.captured + d.captured, failed: delivered.failed + d.failed };
     if (d.sent + d.captured + d.failed === 0) break;
   }
+  // ServiceDesk Plus: new tickets fetched where the link is connected,
+  // then everything queued for it written back.
+  let tickets = 0;
+  const { rows: linked } = await pool.query(
+    "select l.tenant_id from public.servicedesk_links l join public.tenants t on t.id = l.tenant_id where l.enabled and app.tenant_status(t.id) = 'active'");
+  for (const l of linked) {
+    const p = await pollServicedesk(l.tenant_id);
+    tickets += p.raised;
+    await pool.query(
+      "insert into public.system_runs (tenant_id, job, finished_at, result, error) values ($1, 'servicedesk_fetch', now(), $2, $3)",
+      [l.tenant_id, JSON.stringify(p), p.error ?? null]).catch(() => {});
+  }
+  const servicedesk = await drainServicedesk();
   let hooks = { delivered: 0, failed: 0, retrying: 0 };
   for (let i = 0; i < 20; i++) {
     const d = await drainWebhooks({ limit: 25 });
     hooks = { delivered: hooks.delivered + d.delivered, failed: hooks.failed + d.failed, retrying: hooks.retrying + d.retrying };
     if (d.delivered + d.failed + d.retrying === 0) break;
   }
-  return { tenants: tenants.length, dueSoon, escalated, overdue, archived, purged, reportsQueued: q.n, ...delivered, webhooks: hooks };
+  return { tenants: tenants.length, dueSoon, escalated, overdue, archived, purged, reportsQueued: q.n, ...delivered, webhooks: hooks, servicedesk: { tickets, ...servicedesk } };
 }
 
 export const Route = createFileRoute("/cron/daily")({

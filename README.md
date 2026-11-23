@@ -147,7 +147,12 @@ out of working lists, still searchable — logs are purged after ten years,
 records kept for twelve and listed for disposal past that, by the daily round
 or on demand. Closed tickets from ManageEngine ServiceDesk Plus come in from
 its CSV export as archived records under their old references, matched to
-the org chart.
+the org chart. And ServiceDesk Plus is linked live: a ticket whose template
+or category needs approval — an access request, a purchase — becomes a
+request on the mapped form, raised as its requester and answered from the
+ticket, whether ServiceDesk's webhook sends it or this side fetches it; each
+decision is written back to the ticket as a note, and at the end the ticket
+is resolved and closed, or closed as rejected with the reason.
 
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
@@ -260,6 +265,22 @@ Webhook deliveries go out after every write and in the daily round; a
 webhook's address may be a path on this server (`/webhooks/echo`), resolved
 against `APP_URL`.
 
+### ServiceDesk Plus
+
+Administration → Integrations → ServiceDesk Plus: the server's address, a
+technician's API key (sealed at rest), and which templates or categories
+become which forms. Tickets arrive by ServiceDesk's webhook (Developer Space
+→ Webhooks, run by a custom trigger on new requests, posting `{"id": …}` to
+`/integrations/servicedesk/<organisation>` with the link's secret in
+`X-AMS-Secret`), or are fetched — on demand and in the daily round — for an
+edition without webhooks. Write-backs go out after every decision.
+
+ServiceDesk is usually on a private network, which outbound calls refuse;
+run with `OUTBOUND_ALLOW_PRIVATE=1` where the server can reach it directly,
+or give it a public address (a tunnel). A self-signed certificate can be
+allowed per link. Without a server, `node scripts/servicedesk-mock.mjs`
+answers the same API on port 8085.
+
 ### Tests
 
 ```bash
@@ -273,10 +294,10 @@ npm test          # all ten, cheapest first
 | `test:identity` | 35 checks with no database: two-step codes against the RFC 6238 vectors, sealing their secrets, the password policy and a generator that always meets it, the idle timeout and the 12-hour limit, reading the HR file |
 | `test:reports` | 35 checks with no database: the report query builder builds only from its catalogue and binds every value, the CSV cannot carry a formula, the Excel file is a real workbook, the PDFs open, and emails fill and escape their templates |
 | `test:commercial` | 29 checks with no database: reading Word NFAs — business cases, labels as people write them, lakh and crore, dates in words — the top sheet's amounts in words and wrapped PO lines, and both shapes of inbound mail |
-| `test:integration` | 48 checks with no database: webhook signatures as a receiver checks them — tampered, replayed and unsigned deliveries refused — the API's answers before a key is looked up, the OpenAPI document and its agreement with the database's scopes and events, and ManageEngine exports read whichever way they spell their columns and dates, and deadlines counted over the Eid break as the browser previews them |
+| `test:integration` | 61 checks with no database: webhook signatures as a receiver checks them — tampered, replayed and unsigned deliveries refused — the API's answers before a key is looked up, the OpenAPI document and its agreement with the database's scopes and events, and ManageEngine exports read whichever way they spell their columns and dates, deadlines counted over the Eid break as the browser previews them, and ServiceDesk Plus tickets read in every shape it sends them, and its API called — key, input_data, notes, close — against the stand-in |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 36 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 186 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation — and commercial: the reviewer the requester chooses, the team copied, campaigns from approved NFAs, budget alerts, extensions, coupons, merging divisions, partner mail to tickets, and older evaluations brought up to the template — and integration: keys of an evaluation's own, who may make and revoke them and a revoked key refused at once, webhooks queued for exactly what they listen for, one audit trail over every source and who may read it, retention archiving and purging by the policy without deleting a record, and migrated tickets imported once — and the working calendar: deadlines stepping over holidays, and who may keep it |
+| `db:test` | 189 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation — and commercial: the reviewer the requester chooses, the team copied, campaigns from approved NFAs, budget alerts, extensions, coupons, merging divisions, partner mail to tickets, and older evaluations brought up to the template — and integration: keys of an evaluation's own, who may make and revoke them and a revoked key refused at once, webhooks queued for exactly what they listen for, one audit trail over every source and who may read it, retention archiving and purging by the policy without deleting a record, and migrated tickets imported once — and the working calendar: deadlines stepping over holidays, and who may keep it — and ServiceDesk Plus: mapped tickets raised once as their requester, others left alone or refused with the desk told why, every decision queued back in order, and who may change the link |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:ldap` | 13 checks against a real OpenLDAP in Docker: signing in with a directory password (and not with an empty one, a wildcard or an injected filter), failing closed, and reading people with their managers resolved. Needs Docker; not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
