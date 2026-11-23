@@ -32,6 +32,10 @@ const SECTION: Record<string, string> = {
   stationery: "Stationery Requests",
   status: "Submission Status",
   submissions: "My Submissions",
+  analytics: "Analytics",
+  reports: "Reports",
+  admin: "Administration",
+  account: "Your account",
 };
 
 const LEAF: Record<string, string> = {
@@ -40,6 +44,10 @@ const LEAF: Record<string, string> = {
   approvers: "Approvers",
   notifications: "Notifications",
   new: "New",
+  users: "Users",
+  roles: "Roles",
+  people: "People & Directory",
+  email: "Email",
 };
 
 const IS_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-|^d+$/i;
@@ -54,6 +62,7 @@ const DETAIL: Record<string, string> = {
   forms: "Form",
   status: "Submission",
   certificate: "Certificate",
+  reports: "Report",
 };
 
 export function crumbsFor(pathname: string): Array<{ label: string; to?: string }> {
@@ -62,8 +71,9 @@ export function crumbsFor(pathname: string): Array<{ label: string; to?: string 
 
   if (NO_INDEX.has(parts[0])) return [{ label: SECTION[parts[0]] ?? parts[0] }];
 
+  // /admin has no page of its own; it only groups the screens under it.
   const trail: Array<{ label: string; to?: string }> = [
-    { label: SECTION[parts[0]] ?? parts[0], to: "/" + parts[0] },
+    { label: SECTION[parts[0]] ?? parts[0], to: parts[0] === "admin" ? undefined : "/" + parts[0] },
   ];
 
   for (let i = 1; i < parts.length; i++) {

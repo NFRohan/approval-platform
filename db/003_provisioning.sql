@@ -120,7 +120,7 @@ begin
 
   select id into v_tpl from public.tenants where kind = 'template' limit 1;
   if v_tpl is null then
-    raise exception 'no template tenant — run 007_seed_template.sql first';
+    raise exception 'no template tenant — run 008_seed_template.sql first';
   end if;
 
   v_slug := left(app.slugify(p_name), 40);
@@ -128,10 +128,13 @@ begin
 
   -- An evaluation's settings start as the template's: its login switches
   -- between personas, starting as the template's default one.
+  -- Cloning copies notifications; none of them is to be emailed again.
+  perform set_config('app.no_mail', 'true', true);
+
   insert into public.tenants (name, slug, kind, expires_at, notes, created_by,
-                              persona_switching, require_admin_mfa, default_persona)
+                              persona_switching, require_admin_mfa, default_persona, history_seeded)
   select p_name, v_slug || '-' || substr(gen_random_uuid()::text, 1, 6), 'demo', v_exp, p_notes, p_actor,
-         t.persona_switching, t.require_admin_mfa, t.default_persona
+         t.persona_switching, t.require_admin_mfa, t.default_persona, t.history_seeded
     from public.tenants t where t.id = v_tpl
   returning id, tenants.slug into v_new, v_slug;
 
@@ -164,6 +167,16 @@ begin
   select v_new, er.employee_id, m.new, er.assigned_by, er.created_at
     from public.employee_roles er join _m m on m.old = er.role_id
    where er.tenant_id = v_tpl;
+
+  -- Report templates and the organisation's email wording.
+  insert into public.report_templates (tenant_id, name, description, dataset, columns, filters, standard,
+                                       schedule, recipients, format, created_by, updated_by, approved_by, created_at, updated_at)
+  select v_new, rt.name, rt.description, rt.dataset, rt.columns, rt.filters, rt.standard,
+         rt.schedule, rt.recipients, rt.format, rt.created_by, rt.updated_by, rt.approved_by, rt.created_at, rt.updated_at
+    from public.report_templates rt where rt.tenant_id = v_tpl;
+  insert into public.email_templates (tenant_id, kind, subject, body, enabled, updated_by, updated_at)
+  select v_new, et.kind, et.subject, et.body, et.enabled, et.updated_by, et.updated_at
+    from public.email_templates et where et.tenant_id = v_tpl;
 
   insert into _m select id, gen_random_uuid() from public.departments where tenant_id = v_tpl;
   insert into public.departments (id, tenant_id, name, head_employee_id, hrbp_employee_id, cxo_employee_id, created_at)
@@ -345,8 +358,8 @@ begin
   -- outward: exactly one is set on any given row, so the other three
   -- resolve to null and the arc is preserved on the far side.
   insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
-  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at)
-  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at
+  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at, opened_at)
+  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at, a.opened_at
     from public.approval_requests a
     join      _m m   on m.old   = a.id
     left join _m ms  on ms.old  = a.submission_id

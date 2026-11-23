@@ -16,7 +16,7 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { currentSession, signOut } from "@/lib/auth-fn";
 
-const EVENTS = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "wheel"] as const;
+const EVENTS = ["mousedown", "mousemove", "keydown", "touchstart", "wheel"] as const;
 const WARN_BEFORE_MS = 30_000;
 
 export function IdleWatcher({ idleSeconds }: { idleSeconds: number }) {
@@ -31,7 +31,20 @@ export function IdleWatcher({ idleSeconds }: { idleSeconds: number }) {
     const pingEvery = Math.min(60_000, limit / 4);
     const warnAt = limit - Math.min(WARN_BEFORE_MS, limit / 4);
 
-    const active = () => {
+    // Chrome fires mousemove when the page changes under a cursor that has
+    // not moved — and these screens poll and redraw — so a mouse resting
+    // on the page would keep it signed in forever. Only a pointer that has
+    // actually moved counts. (Scroll is not counted for the same reason: a
+    // page can scroll itself; a person scrolling turns the wheel or drags.)
+    let px = -1, py = -1;
+    const active = (e?: Event) => {
+      if (e?.type === "mousemove") {
+        const m = e as MouseEvent;
+        if (m.screenX === px && m.screenY === py) return;
+        const first = px === -1;
+        px = m.screenX; py = m.screenY;
+        if (first) return;
+      }
       last.current = Date.now();
       if (warned.current !== null) {
         toast.dismiss(warned.current);

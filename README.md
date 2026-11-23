@@ -80,6 +80,22 @@ credential can show the difference between them — but switching is a
 request to the server, checked and written to the activity log, and the
 persona carries that person's permissions and nothing more.
 
+**Reports, analytics and email.** An analytics dashboard shows volume,
+completions, cycle time, the share of approvals decided on time and what is
+overdue now, against the previous period, with weekly trends, the busiest
+forms and departments, who is slowest to respond and where work is waiting —
+filterable by period, department and form, every chart readable as a table.
+Reports are templates of columns and filters over requests, approval steps
+and approvers' performance: seven standard ones answer the tracking questions
+(open approvals, missed deadlines, upcoming, rejected, approver KPIs), and
+administrators build more. Each exports to Excel, PDF or CSV, can be emailed
+now or on a weekly or monthly schedule, and anybody who reads reports can ask
+for a column change that an administrator approves. Every notification is
+also an email, in the organisation's own wording per kind, and every email is
+kept with what became of it; a completed request's email carries its
+approval record as a PDF. A daily round reminds approvers before a deadline,
+every day after it, and escalates to their manager two working days past it.
+
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
 orders with stock reservation and transfer between venues, delegation of
@@ -126,7 +142,7 @@ connection with no context reads nothing rather than everything.
 npm install
 cp .env.example .env          # fill in DATABASE_URL, DIRECT_URL and JWT_SECRET
 
-npm run db:apply              # 7 files, re-runnable, dependency-ordered
+npm run db:apply              # 8 files, re-runnable, dependency-ordered
 node --env-file=.env scripts/dev-tenant.mjs      # issue an evaluation
 node --env-file=.env scripts/staff-account.mjs   # and the account that issues them
 
@@ -157,6 +173,15 @@ Directory equivalents. The nightly sync is `/cron/directory-sync`, called by
 Vercel Cron with `CRON_SECRET`. `MFA_KEY` seals two-step secrets at rest and
 falls back to `JWT_SECRET`.
 
+### Email
+
+Set `SMTP_URL` (`smtp://user:pass@host:587`, or `smtps://` for 465) and
+`MAIL_FROM` to deliver email; `APP_URL` is where links in emails point. With
+no `SMTP_URL`, every email is still written in full and kept in the email log
+as *captured*, so it can be read exactly as it would have been sent. The
+daily round — reminders, escalation, scheduled reports, delivery — is
+`/cron/daily`, called by Vercel Cron at 08:00 Dhaka.
+
 Walking the demo changes it. To start over:
 
 ```bash
@@ -166,7 +191,7 @@ node --env-file=.env scripts/dev-tenant.mjs --fresh
 ### Tests
 
 ```bash
-npm test          # all seven, cheapest first
+npm test          # all eight, cheapest first
 ```
 
 | | |
@@ -174,9 +199,10 @@ npm test          # all seven, cheapest first
 | `typecheck` | TypeScript, no emit |
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
 | `test:identity` | 35 checks with no database: two-step codes against the RFC 6238 vectors, sealing their secrets, the password policy and a generator that always meets it, the idle timeout and the 12-hour limit, reading the HR file |
+| `test:reports` | 35 checks with no database: the report query builder builds only from its catalogue and binds every value, the CSV cannot carry a formula, the Excel file is a real workbook, the PDFs open, and emails fill and escape their templates |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
-| `test:render` | All 21 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 144 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences |
+| `test:render` | All 30 routes rendered once, against real ids, and every persona checked against the employee table |
+| `db:test` | 162 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:ldap` | 13 checks against a real OpenLDAP in Docker: signing in with a directory password (and not with an empty one, a wildcard or an injected filter), failing closed, and reading people with their managers resolved. Needs Docker; not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
@@ -191,12 +217,12 @@ several clients.
 
 Stated plainly, because a demo that hides its edges wastes everyone's time.
 
-- **Notifications are in-app only.** The chain writes them and the bell reads
-  them; nothing sends mail or SMS, and the interface says so rather than
-  implying a channel that does not exist.
-- **Overdue reminders need a page load.** `remind_overdue()` writes one
-  reminder per person per day, and the approvals screen asks for it — there is
-  no scheduler behind a demo. In a real deployment it would be a timer.
+- **Email, not SMS.** Notifications go to the bell and by email; there is no
+  SMS or push channel. The demo deployment has no mail server, so its emails
+  are captured in the log rather than delivered.
+- **The daily round is daily.** Vercel's free tier runs a cron job once a
+  day, so reminders and escalation are a day apart at best; the SOW's 12-hour
+  reminder for Commercial reviews needs a scheduler that runs more often.
 - **An evaluation's login can be anybody in it.** That is what lets one
   credential demonstrate every role. It is switched off per organisation
   (`persona_switching`), and a person's own account never switches.

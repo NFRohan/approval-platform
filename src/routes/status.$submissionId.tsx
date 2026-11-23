@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import { Award, Clipboard, Clock, FileText, Link2, MessageCircleQuestion, Undo2, XCircle } from "lucide-react";
+import { Award, Clipboard, Clock, FileText, Link2, MessageCircleQuestion, Undo2, XCircle, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { StatusBadge, type StatusKey } from "@/components/StatusBadge";
@@ -542,6 +542,17 @@ function StatusPage() {
           </div>
           <div className="flex flex-col items-end gap-2" style={{ flexShrink: 0 }}>
             <StatusBadge status={overall} size="lg" showIcon />
+            {/* The whole request — answers, every decision, signatures — as
+                one document to file or forward. */}
+            <a
+              href={`/records/${submission.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md"
+              style={{ padding: "5px 10px", fontSize: 12, fontWeight: 500, color: "#3F3F46", border: "1px solid #E4E4E7", background: "#fff", textDecoration: "none" }}
+            >
+              <FileDown size={13} /> Approval record (PDF)
+            </a>
             <div className="flex gap-1.5">
               {submission.flag && (
                 <span className="rounded-full text-[11.5px] font-semibold" style={{ padding: "2px 10px", background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>

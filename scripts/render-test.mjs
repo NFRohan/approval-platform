@@ -92,6 +92,10 @@ const formId = await pick(
   `select f.id from public.form_templates f
      join public.tenants t on t.id = f.tenant_id
     where t.kind = 'demo' and f.status = 'published' limit 1`);
+const reportId = await pick(
+  `select r.id from public.report_templates r
+     join public.tenants t on t.id = r.tenant_id
+    where t.kind = 'demo' limit 1`);
 const noticeId = await pick(
   `select n.id from public.notices n
      join public.tenants t on t.id = n.tenant_id
@@ -100,7 +104,7 @@ const noticeId = await pick(
 // A missing id is a broken fixture, not a reason to test less. The
 // detail screens are the ones most likely to break, so skipping them is
 // the worst possible thing to do quietly.
-const missing = Object.entries({ submissionId, formId, noticeId })
+const missing = Object.entries({ submissionId, formId, noticeId, reportId })
   .filter(([, v]) => !v)
   .map(([k]) => k);
 if (missing.length) {
@@ -118,6 +122,9 @@ const PATHS = [
   `/status/${submissionId}`,
   `/certificate/${submissionId}`,
   `/notices/${noticeId}`,
+  // Stage 3 and 4: accounts and administration, reports and analytics.
+  '/account', '/admin/users', '/admin/roles', '/admin/people', '/admin/email',
+  '/analytics', '/reports', '/reports/new', `/reports/${reportId}`,
 ];
 
 let failed = 0;

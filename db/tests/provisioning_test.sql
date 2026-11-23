@@ -44,6 +44,8 @@ end $$;
 -- 2. Mint two, and check the clone followed its own pointers
 -- =====================================================================
 select set_config('t.tpl', (select id::text from public.tenants where kind='template'), false);
+select set_config('t.tpl_subs', (select count(*)::text from public.form_submissions
+                                   where tenant_id = current_setting('t.tpl')::uuid), false);
 
 -- The slug is captured too: staff_audit outlives the tenants it
 -- describes and has no delete policy, so entries from previous runs are
@@ -105,7 +107,11 @@ select pg_temp.check('activity entries point at the clone''s own submissions',
      join public.form_submissions s on s.id = a.entity_id
     where a.tenant_id = current_setting('t.a')::uuid
       and a.entity_type = 'form_submission'
-      and s.tenant_id = current_setting('t.a')::uuid), 3);
+      and s.tenant_id = current_setting('t.a')::uuid),
+  -- as many as the template has: every one of them remapped
+  (select count(*)::int from public.activity_log a
+     join public.tenants t on t.id = a.tenant_id and t.kind = 'template'
+    where a.entity_type = 'form_submission'));
 
 select pg_temp.check('two evaluations share no rows',
   (select count(*)::int from public.form_submissions
@@ -230,7 +236,8 @@ select pg_temp.check('and moves the password timestamp',
 -- 7. The template is untouched by all of it
 -- =====================================================================
 select pg_temp.check('the template still has its submissions',
-  (select count(*)::int from public.form_submissions where tenant_id = current_setting('t.tpl')::uuid), 6);
+  (select count(*)::int from public.form_submissions where tenant_id = current_setting('t.tpl')::uuid),
+  current_setting('t.tpl_subs')::int);
 select pg_temp.check('the staff trail outlives the purged evaluation',
   (select count(*)::int from public.staff_audit
     where kind = 'tenant.purge' and tenant_ref = current_setting('s.a')), 1);

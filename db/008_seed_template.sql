@@ -22,6 +22,9 @@
 
 begin;
 
+-- Seeding writes notifications; none of them is to be emailed.
+select set_config('app.no_mail', 'true', true);
+
 -- Everything below inserts unconditionally, so clear any previous
 -- template first. The cascade takes its rows with it.
 delete from public.tenants where kind = 'template';
@@ -561,7 +564,8 @@ update public.tenants
 
 insert into public.roles (name, description, permissions, status, created_by, approved_by) values
   ('System administrator', 'Accounts, roles, the org chart and workflow design',
-   array['forms.build', 'forms.settings', 'users.manage', 'roles.manage', 'org.manage', 'audit.view', 'reports.view'],
+   array['forms.build', 'forms.settings', 'users.manage', 'roles.manage', 'org.manage', 'audit.view', 'reports.view',
+         'reports.manage', 'notifications.manage'],
    'active', 'EMP-0445', 'EMP-0700'),
   ('HR administrator', 'Approves accounts and profile changes; keeps the org chart',
    array['users.manage', 'users.approve', 'org.manage', 'audit.view', 'reports.view'],
@@ -624,5 +628,57 @@ update public.tenants d
    set default_persona = tpl.default_persona
   from public.tenants tpl
  where tpl.kind = 'template' and d.kind = 'demo' and d.default_persona is null;
+
+
+-- =====================================================================
+-- 7. Reports, and the history they report on
+--
+-- The standard reports answer the tracking questions the SOW asks:
+-- what is waiting and on whom, what missed its deadline, what is coming,
+-- what was rejected, and how each approver is doing. Two are scheduled,
+-- so a demonstration can show a report arriving by email.
+-- =====================================================================
+insert into public.report_templates (name, description, dataset, columns, filters, standard, schedule, recipients, format, created_by, approved_by) values
+  ('All requests', 'Every request raised, where it is and how long it took',
+   'requests', array['reference', 'form', 'requester', 'department', 'status', 'priority', 'submitted_at', 'decided_at', 'cycle_days', 'waiting_on'],
+   '{"period": "last_90"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445'),
+  ('Open approvals', 'Every step waiting on somebody now, across the organisation',
+   'steps', array['reference', 'form', 'requester', 'stage', 'approver', 'opened_at', 'deadline_at', 'response_days', 'overdue'],
+   '{"status": ["pending", "clarification"], "period": "all"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445'),
+  ('Missed deadlines', 'Approvals decided late, or overdue now',
+   'steps', array['reference', 'form', 'approver', 'approver_department', 'stage', 'deadline_at', 'acted_at', 'response_days', 'status'],
+   '{"on_time": false, "period": "last_90"}', true, 'weekly', array['EMP-0445'], 'xlsx', 'EMP-0445', 'EMP-0445'),
+  ('Upcoming approvals', 'Steps that will open once the ones before them clear',
+   'steps', array['reference', 'form', 'requester', 'stage', 'approver'],
+   '{"status": ["waiting"], "period": "all"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445'),
+  ('Rejected requests', 'Requests turned down, by whom and when',
+   'requests', array['reference', 'form', 'requester', 'department', 'amount', 'submitted_at', 'decided_at'],
+   '{"status": ["rejected"], "period": "last_90"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445'),
+  ('Approver performance', 'Tasks completed on time, response times and what is outstanding, per approver',
+   'approvers', array['approver', 'approver_department', 'assigned', 'completed', 'on_time_pct', 'avg_response_days', 'pending', 'overdue'],
+   '{"period": "last_90"}', true, 'monthly', array['EMP-0600', 'EMP-0700'], 'pdf', 'EMP-0445', 'EMP-0445'),
+  ('Finance requests by amount', 'Money requests with their amounts and outcomes',
+   'requests', array['reference', 'form', 'requester', 'amount', 'status', 'submitted_at', 'cycle_days'],
+   '{"category": ["Finance"], "period": "last_90"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445');
+
+select app.generate_history(app.current_tenant(), 180);
+
+-- Evaluations issued before reports existed get the standard ones and
+-- the same history; administrators get the two new permissions.
+insert into public.report_templates (tenant_id, name, description, dataset, columns, filters, standard, schedule, recipients, format, created_by, approved_by)
+select d.id, rt.name, rt.description, rt.dataset, rt.columns, rt.filters, rt.standard, rt.schedule, rt.recipients, rt.format, rt.created_by, rt.approved_by
+  from public.tenants d
+  join public.tenants tpl on tpl.kind = 'template'
+  join public.report_templates rt on rt.tenant_id = tpl.id
+ where d.kind = 'demo'
+   and not exists (select 1 from public.report_templates x where x.tenant_id = d.id);
+
+select app.generate_history(d.id, 180) from public.tenants d where d.kind = 'demo' and not d.history_seeded;
+
+update public.roles
+   set permissions = permissions || array(select p from unnest(array['reports.manage', 'notifications.manage']) p
+                                           where p <> all (permissions))
+ where name = 'System administrator'
+   and not (permissions @> array['reports.manage', 'notifications.manage']);
 
 commit;

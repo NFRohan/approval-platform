@@ -2137,7 +2137,7 @@ begin
     perform app.notify(
       r.approver_user_id, 'approval.overdue',
       'Overdue: ' || app.subject_label(r.subject_type, r.subject_id),
-      'This was due ' || to_char(r.deadline_at, 'Mon DD') || ' and is still with you.',
+      'This was due ' || to_char(r.deadline_at at time zone 'Asia/Dhaka', 'DD/MM/YYYY') || ' and is still with you.',
       r.subject_type, r.subject_id);
     n := n + 1;
   end loop;

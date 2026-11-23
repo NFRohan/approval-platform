@@ -1346,4 +1346,113 @@ create index if not exists directory_syncs_tenant_idx on public.directory_syncs(
 -- An employee's work address, from the HR master file.
 alter table public.employees add column if not exists email text;
 
+
+-- =====================================================================
+-- Stage 4 — reports, analytics and email.
+--
+-- Every notification can also go out as an email, written from a
+-- template the organisation can change, and every email is kept with
+-- what happened to it. Reports are templates of columns and filters over
+-- the requests and their approval steps; admins keep them, others ask
+-- for changes, and any of them can be sent out on a schedule.
+-- =====================================================================
+
+-- When a step became somebody's turn. Response times and the SLA are
+-- measured from here; deadline_at alone cannot say how long anybody had.
+alter table public.approval_requests add column if not exists opened_at timestamptz;
+
+-- ---------------------------------------------------------------------
+-- Email templates: the organisation's own wording for each kind of
+-- notification. A kind with no row uses the built-in wording; a row
+-- with enabled = false sends no email for that kind at all.
+-- ---------------------------------------------------------------------
+create table if not exists public.email_templates (
+  tenant_id  uuid not null default app.current_tenant()
+               references public.tenants(id) on delete cascade,
+  kind       text not null,
+  subject    text,
+  body       text,
+  enabled    boolean not null default true,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, kind)
+);
+
+-- ---------------------------------------------------------------------
+-- The outbox, which is also the delivery log.
+--
+--   queued    written, not yet handed to a mail server
+--   sent      the mail server accepted it
+--   captured  no mail server is configured; kept here, as it would
+--             have been sent, so it can be read
+--   failed    the mail server refused it, or could not be reached
+--   skipped   nothing to send it to
+-- ---------------------------------------------------------------------
+create table if not exists public.email_outbox (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null default app.current_tenant()
+                     references public.tenants(id) on delete cascade,
+  notification_id  uuid,
+  report_id        uuid,
+  kind             text not null,
+  recipient_id     text,
+  to_address       text,
+  context          jsonb not null default '{}',
+  entity_type      text,
+  entity_id        uuid,
+  subject          text,
+  body_text        text,
+  body_html        text,
+  attachment_names text[] not null default '{}',
+  status           text not null default 'queued'
+                     check (status in ('queued', 'sending', 'sent', 'captured', 'failed', 'skipped')),
+  attempts         integer not null default 0,
+  error            text,
+  sent_at          timestamptz,
+  created_at       timestamptz not null default now(),
+  unique (id, tenant_id)
+);
+create index if not exists email_outbox_tenant_idx on public.email_outbox(tenant_id, created_at desc);
+create index if not exists email_outbox_queued_idx on public.email_outbox(created_at) where status = 'queued';
+
+-- ---------------------------------------------------------------------
+-- Report templates.
+--
+-- A dataset (requests, approval steps, or approvers' performance), the
+-- columns to show in order, and the filters it starts with. Admins
+-- (reports.manage) create and change them; anybody who reads reports can
+-- ask for different columns, which waits in pending_columns until an
+-- admin other than the asker approves it. A schedule sends the report,
+-- as a file, to the people listed.
+-- ---------------------------------------------------------------------
+create table if not exists public.report_templates (
+  id                  uuid primary key default gen_random_uuid(),
+  tenant_id           uuid not null default app.current_tenant()
+                        references public.tenants(id) on delete cascade,
+  name                text not null,
+  description         text,
+  dataset             text not null check (dataset in ('requests', 'steps', 'approvers')),
+  columns             text[] not null,
+  filters             jsonb not null default '{}',
+  standard            boolean not null default false,
+  pending_columns     text[],
+  change_note         text,
+  change_requested_by text,
+  schedule            text not null default 'none' check (schedule in ('none', 'weekly', 'monthly')),
+  recipients          text[] not null default '{}',
+  format              text not null default 'xlsx' check (format in ('xlsx', 'pdf', 'csv')),
+  last_sent_at        timestamptz,
+  created_by          text,
+  updated_by          text,
+  approved_by         text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  unique (id, tenant_id),
+  unique (tenant_id, name)
+);
+
+-- A demonstration needs months of history for its charts to say
+-- anything; this marks a tenant that has had it generated.
+alter table public.tenants add column if not exists history_seeded boolean not null default false;
+
 commit;

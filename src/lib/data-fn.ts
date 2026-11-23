@@ -18,6 +18,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { withContext, resolveContext } from '@/server/db';
 import { build, type QueryBody } from '@/server/query';
 import { RPCS, HttpError } from '@/server/tables';
+import { kickMailer } from '@/server/mailer';
 
 export type DataRequest =
   | ({ kind: 'query' } & QueryBody)
@@ -100,11 +101,15 @@ export const runData = createServerFn({ method: 'POST' })
         const holes = allowed.map((_, i) => `$${i + 1}`).join(', ');
         const rows = await withContext(ctx, async (client) =>
           (await client.query(`select public.${body.fn}(${holes}) as result`, params)).rows);
+        // Approving, forwarding, noting — most of these tell somebody,
+        // and telling them is now also an email.
+        await kickMailer(ctx.tenantId);
         return { data: rows[0]?.result ?? null, error: null };
       }
 
       const { text, params, limit } = build(body);
       const result = await withContext(ctx, async (client) => client.query(text, params));
+      if (body.op !== 'select') await kickMailer(ctx.tenantId);
 
       if (body.countOnly) {
         return { data: null, count: result.rows[0]?.count ?? 0, error: null };

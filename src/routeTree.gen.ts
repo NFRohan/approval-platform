@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as ActivityRouteImport } from './routes/activity'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
@@ -19,6 +20,7 @@ import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
 import { Route as StaffRouteImport } from './routes/staff'
 import { Route as StationeryRouteImport } from './routes/stationery'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
+import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminPeopleRouteImport } from './routes/admin.people'
 import { Route as AdminRolesRouteImport } from './routes/admin.roles'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
@@ -28,6 +30,7 @@ import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as BuilderApproversRouteImport } from './routes/builder.approvers'
 import { Route as BuilderNotificationsRouteImport } from './routes/builder.notifications'
 import { Route as CertificateSubmissionIdRouteImport } from './routes/certificate.$submissionId'
+import { Route as CronDailyRouteImport } from './routes/cron.daily'
 import { Route as CronDirectorySyncRouteImport } from './routes/cron.directory-sync'
 import { Route as FilesAttachmentIdRouteImport } from './routes/files.$attachmentId'
 import { Route as FormsIndexRouteImport } from './routes/forms.index'
@@ -35,7 +38,12 @@ import { Route as FormsFormIdRouteImport } from './routes/forms.$formId'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as NoticesNewRouteImport } from './routes/notices.new'
+import { Route as RecordsSubmissionIdRouteImport } from './routes/records.$submissionId'
+import { Route as ReportsIndexRouteImport } from './routes/reports.index'
+import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
+import { Route as ReportsNewRouteImport } from './routes/reports.new'
 import { Route as StatusSubmissionIdRouteImport } from './routes/status.$submissionId'
+import { Route as ExportsReportReportIdRouteImport } from './routes/exports.report.$reportId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -50,6 +58,11 @@ const AccountRoute = AccountRouteImport.update({
 const ActivityRoute = ActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApprovalsRoute = ApprovalsRouteImport.update({
@@ -85,6 +98,11 @@ const StationeryRoute = StationeryRouteImport.update({
 const SubmissionsRoute = SubmissionsRouteImport.update({
   id: '/submissions',
   path: '/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminEmailRoute = AdminEmailRouteImport.update({
+  id: '/admin/email',
+  path: '/admin/email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminPeopleRoute = AdminPeopleRouteImport.update({
@@ -132,6 +150,11 @@ const CertificateSubmissionIdRoute = CertificateSubmissionIdRouteImport.update({
   path: '/certificate/$submissionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CronDailyRoute = CronDailyRouteImport.update({
+  id: '/cron/daily',
+  path: '/cron/daily',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CronDirectorySyncRoute = CronDirectorySyncRouteImport.update({
   id: '/cron/directory-sync',
   path: '/cron/directory-sync',
@@ -167,9 +190,34 @@ const NoticesNewRoute = NoticesNewRouteImport.update({
   path: '/notices/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RecordsSubmissionIdRoute = RecordsSubmissionIdRouteImport.update({
+  id: '/records/$submissionId',
+  path: '/records/$submissionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsIndexRoute = ReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
+  id: '/reports/$reportId',
+  path: '/reports/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsNewRoute = ReportsNewRouteImport.update({
+  id: '/reports/new',
+  path: '/reports/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StatusSubmissionIdRoute = StatusSubmissionIdRouteImport.update({
   id: '/status/$submissionId',
   path: '/status/$submissionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExportsReportReportIdRoute = ExportsReportReportIdRouteImport.update({
+  id: '/exports/report/$reportId',
+  path: '/exports/report/$reportId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -177,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/analytics': typeof AnalyticsRoute
   '/approvals': typeof ApprovalsRouteWithChildren
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
@@ -184,6 +233,7 @@ export interface FileRoutesByFullPath {
   '/staff': typeof StaffRoute
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
+  '/admin/email': typeof AdminEmailRoute
   '/admin/people': typeof AdminPeopleRoute
   '/admin/roles': typeof AdminRolesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -192,20 +242,27 @@ export interface FileRoutesByFullPath {
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
+  '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/notices/new': typeof NoticesNewRoute
+  '/records/$submissionId': typeof RecordsSubmissionIdRoute
+  '/reports/$reportId': typeof ReportsReportIdRoute
+  '/reports/new': typeof ReportsNewRoute
   '/status/$submissionId': typeof StatusSubmissionIdRoute
   '/builder/': typeof BuilderIndexRoute
   '/forms/': typeof FormsIndexRoute
   '/notices/': typeof NoticesIndexRoute
+  '/reports/': typeof ReportsIndexRoute
+  '/exports/report/$reportId': typeof ExportsReportReportIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/analytics': typeof AnalyticsRoute
   '/approvals': typeof ApprovalsRouteWithChildren
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
@@ -213,6 +270,7 @@ export interface FileRoutesByTo {
   '/staff': typeof StaffRoute
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
+  '/admin/email': typeof AdminEmailRoute
   '/admin/people': typeof AdminPeopleRoute
   '/admin/roles': typeof AdminRolesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -221,21 +279,28 @@ export interface FileRoutesByTo {
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
+  '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/notices/new': typeof NoticesNewRoute
+  '/records/$submissionId': typeof RecordsSubmissionIdRoute
+  '/reports/$reportId': typeof ReportsReportIdRoute
+  '/reports/new': typeof ReportsNewRoute
   '/status/$submissionId': typeof StatusSubmissionIdRoute
   '/builder': typeof BuilderIndexRoute
   '/forms': typeof FormsIndexRoute
   '/notices': typeof NoticesIndexRoute
+  '/reports': typeof ReportsIndexRoute
+  '/exports/report/$reportId': typeof ExportsReportReportIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
+  '/analytics': typeof AnalyticsRoute
   '/approvals': typeof ApprovalsRouteWithChildren
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
@@ -243,6 +308,7 @@ export interface FileRoutesById {
   '/staff': typeof StaffRoute
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
+  '/admin/email': typeof AdminEmailRoute
   '/admin/people': typeof AdminPeopleRoute
   '/admin/roles': typeof AdminRolesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -251,15 +317,21 @@ export interface FileRoutesById {
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
+  '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/notices/new': typeof NoticesNewRoute
+  '/records/$submissionId': typeof RecordsSubmissionIdRoute
+  '/reports/$reportId': typeof ReportsReportIdRoute
+  '/reports/new': typeof ReportsNewRoute
   '/status/$submissionId': typeof StatusSubmissionIdRoute
   '/builder/': typeof BuilderIndexRoute
   '/forms/': typeof FormsIndexRoute
   '/notices/': typeof NoticesIndexRoute
+  '/reports/': typeof ReportsIndexRoute
+  '/exports/report/$reportId': typeof ExportsReportReportIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -267,6 +339,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/activity'
+    | '/analytics'
     | '/approvals'
     | '/login'
     | '/maintenance'
@@ -274,6 +347,7 @@ export interface FileRouteTypes {
     | '/staff'
     | '/stationery'
     | '/submissions'
+    | '/admin/email'
     | '/admin/people'
     | '/admin/roles'
     | '/admin/users'
@@ -282,20 +356,27 @@ export interface FileRouteTypes {
     | '/builder/approvers'
     | '/builder/notifications'
     | '/certificate/$submissionId'
+    | '/cron/daily'
     | '/cron/directory-sync'
     | '/files/$attachmentId'
     | '/forms/$formId'
     | '/notices/$noticeId'
     | '/notices/new'
+    | '/records/$submissionId'
+    | '/reports/$reportId'
+    | '/reports/new'
     | '/status/$submissionId'
     | '/builder/'
     | '/forms/'
     | '/notices/'
+    | '/reports/'
+    | '/exports/report/$reportId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/account'
     | '/activity'
+    | '/analytics'
     | '/approvals'
     | '/login'
     | '/maintenance'
@@ -303,6 +384,7 @@ export interface FileRouteTypes {
     | '/staff'
     | '/stationery'
     | '/submissions'
+    | '/admin/email'
     | '/admin/people'
     | '/admin/roles'
     | '/admin/users'
@@ -311,20 +393,27 @@ export interface FileRouteTypes {
     | '/builder/approvers'
     | '/builder/notifications'
     | '/certificate/$submissionId'
+    | '/cron/daily'
     | '/cron/directory-sync'
     | '/files/$attachmentId'
     | '/forms/$formId'
     | '/notices/$noticeId'
     | '/notices/new'
+    | '/records/$submissionId'
+    | '/reports/$reportId'
+    | '/reports/new'
     | '/status/$submissionId'
     | '/builder'
     | '/forms'
     | '/notices'
+    | '/reports'
+    | '/exports/report/$reportId'
   id:
     | '__root__'
     | '/'
     | '/account'
     | '/activity'
+    | '/analytics'
     | '/approvals'
     | '/login'
     | '/maintenance'
@@ -332,6 +421,7 @@ export interface FileRouteTypes {
     | '/staff'
     | '/stationery'
     | '/submissions'
+    | '/admin/email'
     | '/admin/people'
     | '/admin/roles'
     | '/admin/users'
@@ -340,21 +430,28 @@ export interface FileRouteTypes {
     | '/builder/approvers'
     | '/builder/notifications'
     | '/certificate/$submissionId'
+    | '/cron/daily'
     | '/cron/directory-sync'
     | '/files/$attachmentId'
     | '/forms/$formId'
     | '/notices/$noticeId'
     | '/notices/new'
+    | '/records/$submissionId'
+    | '/reports/$reportId'
+    | '/reports/new'
     | '/status/$submissionId'
     | '/builder/'
     | '/forms/'
     | '/notices/'
+    | '/reports/'
+    | '/exports/report/$reportId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   ActivityRoute: typeof ActivityRoute
+  AnalyticsRoute: typeof AnalyticsRoute
   ApprovalsRoute: typeof ApprovalsRouteWithChildren
   LoginRoute: typeof LoginRoute
   MaintenanceRoute: typeof MaintenanceRoute
@@ -362,21 +459,28 @@ export interface RootRouteChildren {
   StaffRoute: typeof StaffRoute
   StationeryRoute: typeof StationeryRoute
   SubmissionsRoute: typeof SubmissionsRoute
+  AdminEmailRoute: typeof AdminEmailRoute
   AdminPeopleRoute: typeof AdminPeopleRoute
   AdminRolesRoute: typeof AdminRolesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   BuilderApproversRoute: typeof BuilderApproversRoute
   BuilderNotificationsRoute: typeof BuilderNotificationsRoute
   CertificateSubmissionIdRoute: typeof CertificateSubmissionIdRoute
+  CronDailyRoute: typeof CronDailyRoute
   CronDirectorySyncRoute: typeof CronDirectorySyncRoute
   FilesAttachmentIdRoute: typeof FilesAttachmentIdRoute
   FormsFormIdRoute: typeof FormsFormIdRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   NoticesNewRoute: typeof NoticesNewRoute
+  RecordsSubmissionIdRoute: typeof RecordsSubmissionIdRoute
+  ReportsReportIdRoute: typeof ReportsReportIdRoute
+  ReportsNewRoute: typeof ReportsNewRoute
   StatusSubmissionIdRoute: typeof StatusSubmissionIdRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
   FormsIndexRoute: typeof FormsIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
+  ReportsIndexRoute: typeof ReportsIndexRoute
+  ExportsReportReportIdRoute: typeof ExportsReportReportIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -400,6 +504,13 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof ActivityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/approvals': {
@@ -449,6 +560,13 @@ declare module '@tanstack/react-router' {
       path: '/submissions'
       fullPath: '/submissions'
       preLoaderRoute: typeof SubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/email': {
+      id: '/admin/email'
+      path: '/admin/email'
+      fullPath: '/admin/email'
+      preLoaderRoute: typeof AdminEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/people': {
@@ -514,6 +632,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CertificateSubmissionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cron/daily': {
+      id: '/cron/daily'
+      path: '/cron/daily'
+      fullPath: '/cron/daily'
+      preLoaderRoute: typeof CronDailyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cron/directory-sync': {
       id: '/cron/directory-sync'
       path: '/cron/directory-sync'
@@ -563,11 +688,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NoticesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/records/$submissionId': {
+      id: '/records/$submissionId'
+      path: '/records/$submissionId'
+      fullPath: '/records/$submissionId'
+      preLoaderRoute: typeof RecordsSubmissionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/': {
+      id: '/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ReportsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/$reportId': {
+      id: '/reports/$reportId'
+      path: '/reports/$reportId'
+      fullPath: '/reports/$reportId'
+      preLoaderRoute: typeof ReportsReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/new': {
+      id: '/reports/new'
+      path: '/reports/new'
+      fullPath: '/reports/new'
+      preLoaderRoute: typeof ReportsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/status/$submissionId': {
       id: '/status/$submissionId'
       path: '/status/$submissionId'
       fullPath: '/status/$submissionId'
       preLoaderRoute: typeof StatusSubmissionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exports/report/$reportId': {
+      id: '/exports/report/$reportId'
+      path: '/exports/report/$reportId'
+      fullPath: '/exports/report/$reportId'
+      preLoaderRoute: typeof ExportsReportReportIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -591,6 +751,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   ActivityRoute: ActivityRoute,
+  AnalyticsRoute: AnalyticsRoute,
   ApprovalsRoute: ApprovalsRouteWithChildren,
   LoginRoute: LoginRoute,
   MaintenanceRoute: MaintenanceRoute,
@@ -598,21 +759,28 @@ const rootRouteChildren: RootRouteChildren = {
   StaffRoute: StaffRoute,
   StationeryRoute: StationeryRoute,
   SubmissionsRoute: SubmissionsRoute,
+  AdminEmailRoute: AdminEmailRoute,
   AdminPeopleRoute: AdminPeopleRoute,
   AdminRolesRoute: AdminRolesRoute,
   AdminUsersRoute: AdminUsersRoute,
   BuilderApproversRoute: BuilderApproversRoute,
   BuilderNotificationsRoute: BuilderNotificationsRoute,
   CertificateSubmissionIdRoute: CertificateSubmissionIdRoute,
+  CronDailyRoute: CronDailyRoute,
   CronDirectorySyncRoute: CronDirectorySyncRoute,
   FilesAttachmentIdRoute: FilesAttachmentIdRoute,
   FormsFormIdRoute: FormsFormIdRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   NoticesNewRoute: NoticesNewRoute,
+  RecordsSubmissionIdRoute: RecordsSubmissionIdRoute,
+  ReportsReportIdRoute: ReportsReportIdRoute,
+  ReportsNewRoute: ReportsNewRoute,
   StatusSubmissionIdRoute: StatusSubmissionIdRoute,
   BuilderIndexRoute: BuilderIndexRoute,
   FormsIndexRoute: FormsIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
+  ReportsIndexRoute: ReportsIndexRoute,
+  ExportsReportReportIdRoute: ExportsReportReportIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

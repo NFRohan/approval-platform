@@ -60,7 +60,9 @@ as $$
     'roles.approve',    -- approve roles and role changes
     'org.manage',       -- departments, HR import, leavers
     'audit.view',       -- the audit trails
-    'reports.view'      -- reports and analytics
+    'reports.view',     -- reports and analytics
+    'reports.manage',   -- create and change report templates; approve column changes
+    'notifications.manage' -- email wording, and the delivery log
   ]
 $$;
 

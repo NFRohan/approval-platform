@@ -20,6 +20,9 @@ import {
   Users,
   ShieldCheck,
   Network,
+  BarChart3,
+  FileSpreadsheet,
+  Mail,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -146,10 +149,19 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
     sections = [{ ...first, items: [...first.items, { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder", accent: true }] }, ...rest];
   }
 
+  // Reports and analytics, for whoever reads them.
+  if (can("reports.view") || can("reports.manage")) {
+    sections = [...sections, { section: "Insights", items: [
+      { id: "analytics", label: "Analytics", Icon: BarChart3, to: "/analytics" },
+      { id: "reports", label: "Reports", Icon: FileSpreadsheet, to: "/reports" },
+    ] }];
+  }
+
   const admin: Item[] = [];
   if (can("users.manage") || can("users.approve")) admin.push({ id: "users", label: "Users", Icon: Users, to: "/admin/users" });
   if (can("roles.manage") || can("roles.approve")) admin.push({ id: "roles", label: "Roles", Icon: ShieldCheck, to: "/admin/roles" });
   if (can("org.manage")) admin.push({ id: "people", label: "People & Directory", Icon: Network, to: "/admin/people" });
+  if (can("notifications.manage") || can("audit.view")) admin.push({ id: "email", label: "Email", Icon: Mail, to: "/admin/email" });
   if (can("audit.view") && !has(sections, "/activity")) admin.push({ id: "activity", label: "Activity Log", Icon: Activity, to: "/activity" });
   if (admin.length) sections = [...sections, { section: "Administration", items: admin }];
 

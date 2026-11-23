@@ -159,7 +159,9 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "roles.approve": "Approve roles",
   "org.manage": "Org chart and HR data",
   "audit.view": "Read audit trails",
-  "reports.view": "Reports",
+  "reports.view": "Reports and analytics",
+  "reports.manage": "Manage report templates",
+  "notifications.manage": "Email templates and log",
 };
 
 export function fmtWhen(iso: string | null | undefined): string {

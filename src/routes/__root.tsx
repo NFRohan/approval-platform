@@ -10,7 +10,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { CurrentUserProvider } from "@/contexts/CurrentUserContext";
-import { currentSession, switchPersona } from "@/lib/auth-fn";
+import { currentSession, signOut, switchPersona } from "@/lib/auth-fn";
 import { IdleWatcher } from "@/components/shell/IdleWatcher";
 import { AppShell } from "@/components/shell/AppShell";
 import { Toaster } from "@/components/ui/sonner";
@@ -73,6 +73,11 @@ export const Route = createRootRoute({
   // than by somebody remembering to add a guard to it.
   beforeLoad: async ({ location, search }) => {
     const onLogin = location.pathname === "/login";
+    // Signed out for inactivity: make sure of it here, on the server,
+    // rather than trust that the sign-out's cookie landed first — a
+    // request still in flight could otherwise bounce the person straight
+    // back into the session they were timed out of.
+    if (onLogin && (location.search as { idle?: unknown }).idle) await signOut();
     let session = await currentSession();
 
     if (!session && !onLogin) {
