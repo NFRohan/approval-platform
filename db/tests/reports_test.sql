@@ -11,7 +11,15 @@
 
 \set ON_ERROR_STOP on
 
-select set_config('t.tpl', (select id::text from public.tenants where kind = 'template'), false);
+
+-- On a copy of the template, which is deleted at the end: these checks
+-- change what they check, and against a shared database the template is
+-- what every new evaluation is cloned from.
+select set_config('app.is_staff', 'true', false);
+select set_config('t.tpl', (select tenant_id::text from app.provision_demo(
+  'Reports Test', 'reports.test.' || substr(md5(random()::text), 1, 8), 'hash', interval '1 day')), false);
+select set_config('app.is_staff', 'false', false);
+select set_config('app.no_mail', 'false', false);
 -- Another organisation, to check the views keep to their own.
 delete from public.tenants where slug = 'rep-other';
 insert into public.tenants (name, slug, kind, expires_at) values ('Other', 'rep-other', 'demo', now() + interval '1 day');
@@ -175,7 +183,7 @@ begin
   perform pg_temp.as_emp('EMP-1134');
   perform app.notify('EMP-9001', 'note.added', 'A note was added', null, null, null);
   reset role;
-  if (select status from public.email_outbox where recipient_id = 'EMP-9001' order by created_at desc limit 1) <> 'skipped' then
+  if (select status from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid and recipient_id = 'EMP-9001' order by created_at desc limit 1) <> 'skipped' then
     raise exception 'FAIL: an email with nobody to send it to was not marked skipped';
   end if;
   raise notice 'pass: somebody with no work email is logged as skipped, not lost';
@@ -187,10 +195,10 @@ begin
   end if;
   perform pg_temp.as_emp('EMP-0445');
   perform public.save_email_template('note.added', 'New note on {{ref}}', 'Hello {{recipient_name}}', false);
-  select count(*) into v_before from public.email_outbox;
+  select count(*) into v_before from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid;
   perform app.notify('EMP-2847', 'note.added', 'Another note', null, null, null);
   reset role;
-  if (select count(*) from public.email_outbox) <> v_before then
+  if (select count(*) from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid) <> v_before then
     raise exception 'FAIL: a kind switched off still sent email';
   end if;
   raise notice 'pass: email wording is kept per organisation, and a kind can be switched off';
@@ -199,7 +207,7 @@ begin
   perform pg_temp.as_emp('EMP-0445');
   perform public.queue_report_email((select id from public.report_templates where name = 'Open approvals'), array['EMP-0600', 'EMP-0700']);
   reset role;
-  if (select count(*) from public.email_outbox where kind = 'report.sent' and status = 'queued') <> 2 then
+  if (select count(*) from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid and kind = 'report.sent' and status = 'queued') <> 2 then
     raise exception 'FAIL: sending a report did not queue an email per recipient';
   end if;
   raise notice 'pass: a report can be emailed to people now';
@@ -210,8 +218,8 @@ do $$
 declare n1 int; n2 int;
 begin
   update public.report_templates set last_sent_at = null where tenant_id = current_setting('t.tpl')::uuid;
-  n1 := app.queue_due_reports();
-  n2 := app.queue_due_reports();
+  n1 := app.queue_due_reports(current_setting('t.tpl')::uuid);
+  n2 := app.queue_due_reports(current_setting('t.tpl')::uuid);
   if n1 < 2 or n2 <> 0 then raise exception 'FAIL: scheduled reports queued % then %', n1, n2; end if;
   raise notice 'pass: scheduled reports are queued when due, and not again until the next period';
 end $$;
@@ -261,5 +269,7 @@ begin
 end $$;
 
 delete from public.tenants where slug = 'rep-other';
+
+delete from public.tenants where id = current_setting('t.tpl')::uuid;
 
 do $$ begin raise notice 'ALL REPORT TESTS PASSED'; end $$;

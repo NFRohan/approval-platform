@@ -12,7 +12,15 @@
 
 \set ON_ERROR_STOP on
 
-select set_config('t.tpl', (select id::text from public.tenants where kind = 'template'), false);
+
+-- On a copy of the template, which is deleted at the end: these checks
+-- change what they check, and against a shared database the template is
+-- what every new evaluation is cloned from.
+select set_config('app.is_staff', 'true', false);
+select set_config('t.tpl', (select tenant_id::text from app.provision_demo(
+  'Commercial Test', 'commercial.test.' || substr(md5(random()::text), 1, 8), 'hash', interval '1 day')), false);
+select set_config('app.is_staff', 'false', false);
+select set_config('app.no_mail', 'false', false);
 
 create or replace function pg_temp.as_emp(p_emp text) returns void language plpgsql as $$
 begin
@@ -287,5 +295,7 @@ begin
   delete from public.tenants where id = v_t;
   raise notice 'pass: an older evaluation gains the template''s people, forms, fields and campaigns, once';
 end $$;
+
+delete from public.tenants where id = current_setting('t.tpl')::uuid;
 
 do $$ begin raise notice 'ALL COMMERCIAL TESTS PASSED'; end $$;

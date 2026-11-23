@@ -338,9 +338,10 @@ begin
   return v_n;
 end $$;
 
--- The scheduled reports that are due, across every live tenant. For the
--- daily round, which runs as the owner.
-create or replace function app.queue_due_reports()
+-- The scheduled reports that are due, across every live tenant or just
+-- the one named. For the daily round, which runs as the owner.
+drop function if exists app.queue_due_reports();
+create or replace function app.queue_due_reports(p_tenant uuid default null)
 returns integer
 language plpgsql
 security definer
@@ -351,6 +352,7 @@ begin
   for r in
     select rt.* from public.report_templates rt
      where rt.schedule <> 'none' and cardinality(rt.recipients) > 0
+       and (p_tenant is null or rt.tenant_id = p_tenant)
        and app.tenant_status(rt.tenant_id) = 'active'
        and (rt.last_sent_at is null
             or rt.last_sent_at < now() - case rt.schedule when 'weekly' then interval '7 days' else interval '1 month' end
@@ -551,6 +553,12 @@ begin
     if cardinality(v_appr) = 0 then
       v_appr := array[case when v_req = 'EMP-0445' then 'EMP-0650' else 'EMP-0445' end];
     end if;
+    -- Only people who work here: an organisation shaped differently from
+    -- the template has fewer of them.
+    v_appr := array(select x from unnest(v_appr) with ordinality u(x, o)
+                     where exists (select 1 from public.employees e where e.tenant_id = p_tenant and e.employee_id = x)
+                     order by o);
+    continue when cardinality(v_appr) = 0;
     v_stop := 1 + floor(random() * cardinality(v_appr))::int;   -- the step a rejection or an open request stops at
 
     insert into public.form_submissions (tenant_id, form_template_id, submitted_by, status, submitted_at, priority)

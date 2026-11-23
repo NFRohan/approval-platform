@@ -462,6 +462,8 @@ begin
           format('Minted %s for %s, expires %s', p_username, p_name, v_exp),
           jsonb_build_object('tenant_id', v_new, 'username', p_username));
 
+  -- Mail goes out again for whatever this transaction does next.
+  perform set_config('app.no_mail', 'false', true);
   return query select v_new, v_slug, p_username, v_exp;
 end $$;
 
