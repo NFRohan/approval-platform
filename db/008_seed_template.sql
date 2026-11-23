@@ -681,4 +681,16 @@ update public.roles
  where name = 'System administrator'
    and not (permissions @> array['reports.manage', 'notifications.manage']);
 
+
+-- The seed's steps are written already decided, so the trigger that
+-- records when a step opened never saw them open; give them the same
+-- answer 007_reports.sql gives older steps.
+update public.approval_requests r
+   set opened_at = coalesce(
+         (select max(p.acted_at) from public.approval_requests p
+           where p.subject_id = r.subject_id and p.tenant_id = r.tenant_id and p.step_index < r.step_index),
+         (select s.submitted_at from public.form_submissions s where s.id = r.submission_id),
+         r.created_at)
+ where r.opened_at is null and r.status not in ('waiting', 'skipped');
+
 commit;

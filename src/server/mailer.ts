@@ -16,6 +16,11 @@
 //   MAIL_FROM   "Approvals <approvals@example.com>"
 //   APP_URL     where links in emails point; defaults to the Vercel
 //               production URL
+//   MAIL_REDIRECT_TO  for a demonstration: deliver every email to this
+//               address (or comma-separated addresses) instead of the
+//               person's own. Each says at the top who it was for. The
+//               demo's people have example.com addresses that reach
+//               nobody; this lets one real inbox watch them all.
 //
 // Runs as the connecting role and names the tenant in every statement.
 // =====================================================================
@@ -151,6 +156,15 @@ export async function buildEmail(client: pg.PoolClient, o: OutboxRow, opts: { at
   return { ...rendered, attachments };
 }
 
+/** Say at the top of a redirected email who it was really for. */
+function redirectNotice(built: BuiltEmail, to: string) {
+  const esc = (v: string) => v.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
+  const note = `Demonstration delivery — this email was addressed to ${to}.`;
+  built.text = `[${note}]\n\n${built.text}`;
+  built.html = built.html.replace(/<body([^>]*)>/,
+    `<body$1><div style="background:#FEF3C7;color:#78350F;font:12.5px Inter,Segoe UI,Arial,sans-serif;padding:8px 14px;text-align:center">${esc(note)}</div>`);
+}
+
 /**
  * Deliver what is queued, oldest first: for one tenant, or every tenant
  * when none is named. Claims rows with SKIP LOCKED, so two deliveries
@@ -173,14 +187,16 @@ export async function drainOutbox(opts: { tenantId?: string | null; limit?: numb
     await client.query('commit');
 
     const mail = mailTransport();
+    const redirect = process.env.MAIL_REDIRECT_TO?.trim() || null;
     for (const o of rows as OutboxRow[]) {
       try {
         const built = await buildEmail(client, o);
+        if (redirect && o.to_address) redirectNotice(built, o.to_address);
         let status = 'captured';
         if (mail && o.to_address) {
           await mail.sendMail({
             from: process.env.MAIL_FROM || 'Admin Services Portal <no-reply@approvals.local>',
-            to: o.to_address, subject: built.subject, text: built.text, html: built.html,
+            to: redirect ?? o.to_address, subject: built.subject, text: built.text, html: built.html,
             attachments: built.attachments,
           });
           status = 'sent';

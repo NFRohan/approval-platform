@@ -178,7 +178,10 @@ falls back to `JWT_SECRET`.
 Set `SMTP_URL` (`smtp://user:pass@host:587`, or `smtps://` for 465) and
 `MAIL_FROM` to deliver email; `APP_URL` is where links in emails point. With
 no `SMTP_URL`, every email is still written in full and kept in the email log
-as *captured*, so it can be read exactly as it would have been sent. The
+as *captured*, so it can be read exactly as it would have been sent. For a
+demonstration, `MAIL_REDIRECT_TO` delivers every email to one real inbox
+instead — the demo's people have example.com addresses — each marked with
+who it was for. The
 daily round — reminders, escalation, scheduled reports, delivery — is
 `/cron/daily`, called by Vercel Cron at 08:00 Dhaka.
 
