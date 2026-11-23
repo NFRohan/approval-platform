@@ -30,6 +30,7 @@ const hooks = await vite.ssrLoadModule('/src/server/webhooks.ts');
 const api = await vite.ssrLoadModule('/src/server/api.ts');
 const cat = await vite.ssrLoadModule('/src/lib/api-catalogue.ts');
 const legacy = await vite.ssrLoadModule('/src/lib/legacy-file.ts');
+const work = await vite.ssrLoadModule('/src/lib/workdays.ts');
 
 console.log(NL + 'integration' + NL);
 
@@ -132,6 +133,20 @@ console.log(NL + 'integration' + NL);
   const back = legacy.readLegacyFile(legacy.legacyCsv(rows)).rows[0];
   check('a sample export reads back as it was written', [back.ref, back.subject, back.created, back.closed, back.resolution],
     ['SR-1', 'Mailbox, full', '2020-01-05T04:00:00.000Z', '2020-01-06T04:00:00.000Z', 'Archived "old" mail']);
+}
+
+// ------------------------------------------------------------ the working calendar, as the browser previews it
+{
+  const day = (d) => work.todayInOrg(d);
+  const at = (s) => new Date(`${s}T12:00:00+06:00`);
+  const eid = new Set(['2027-03-05', '2027-03-07', '2027-03-08', '2027-03-09', '2027-03-10', '2027-03-11', '2027-03-12']);
+  check('three working days from Thursday 4 March 2027, over the Eid break, is Tuesday the 16th', day(work.addWorkingDays(at('2027-03-04'), 3, eid)), '2027-03-16');
+  check('without holidays, only the weekend is skipped', day(work.addWorkingDays(at('2027-03-04'), 3, new Set())), '2027-03-09');
+  check('a holiday on a weekend costs nothing extra', day(work.addWorkingDays(at('2027-03-04'), 1, new Set(['2027-03-05']))), '2027-03-07');
+  check('a working day is not Friday, Saturday or a holiday', [at('2027-03-07'), at('2027-03-05'), at('2027-03-14')].map((d) => work.isWorkingDay(d, eid)), [false, false, true]);
+  work.setOrgHolidays(['2027-12-16']);
+  check('the loaded calendar is the default', day(work.addWorkingDays(at('2027-12-15'), 1)), '2027-12-19');
+  work.setOrgHolidays([]);
 }
 
 await vite.close();

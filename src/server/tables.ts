@@ -169,6 +169,13 @@ export const TABLES: Record<string, TableDef> = {
     [],
     [],
   ),
+  // The working calendar: read here, written through save_holiday,
+  // delete_holiday and load_public_holidays, which need org.manage.
+  holidays: T(
+    ['id', 'on_date', 'name', 'kind', 'provisional', 'created_by', 'created_at', 'moved_from'],
+    [],
+    [],
+  ),
   employees: T(
     ['id', 'employee_id', 'name', 'designation', 'department',
       'line_manager_id', 'gate_pass_card_number', 'active', 'left_on', 'email'],
@@ -341,6 +348,11 @@ export const RPCS: Record<string, readonly string[]> = {
   import_coupons:             ['p_campaign', 'p_rows'],
   request_campaign_extension: ['p_campaign', 'p_new_ends_on', 'p_added_budget', 'p_business_case', 'p_route'],
   rename_department:          ['p_from', 'p_into'],
+  // The working calendar.
+  save_holiday:               ['p_on', 'p_name', 'p_kind', 'p_provisional', 'p_moved_from'],
+  delete_holiday:             ['p_on'],
+  load_public_holidays:       ['p_year'],
+  working_days_from:          ['p_from', 'p_days'],
   merge_departments:          ['p_from', 'p_into'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],

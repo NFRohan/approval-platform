@@ -12,7 +12,7 @@ import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { DEFAULT_LABELS, isEmbedded, isPermission } from "@/components/builder/palette";
 import { type ApprovalSlab } from "@/lib/approvalSlabs";
 import { resolveWatcher } from "@/lib/routing";
-import { addWorkingDays } from "@/lib/workdays";
+import { addWorkingDays, loadOrgHolidays } from "@/lib/workdays";
 import { uploadAttachment } from "@/lib/attachment-fn";
 import { setCc } from "@/lib/chain";
 import { fmtDate } from "@/lib/dates";
@@ -89,6 +89,11 @@ function FillFormPage() {
   const [priority, setPriority] = useState<"normal" | "high" | "urgent">("normal");
   const [cc, setCcList] = useState<string[]>([]);
   const [people, setPeople] = useState<{ employee_id: string; name: string; designation: string | null }[]>([]);
+  // Deadlines in the preview are counted on the working calendar, as the
+  // database will count them; re-render once it has loaded.
+  const [, setCalendarReady] = useState(false);
+  useEffect(() => { void loadOrgHolidays().then(() => setCalendarReady(true)); }, []);
+
   useEffect(() => {
     void db.from("employees").select("employee_id, name, designation").order("name")
       .then(({ data }) => setPeople((data ?? []) as typeof people));

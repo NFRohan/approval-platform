@@ -457,7 +457,7 @@ begin
   for r in
     select ar.* from public.approval_requests ar
      where ar.tenant_id = app.current_tenant() and ar.status = 'pending'
-       and app.add_working_days(ar.deadline_at, 2) < now()
+       and app.add_working_days(ar.deadline_at, 2, ar.tenant_id) < now()
   loop
     select line_manager_id into v_mgr from public.employees
      where tenant_id = r.tenant_id and employee_id = r.approver_user_id;
@@ -576,7 +576,7 @@ begin
     v_open := v_when;
     v_status := case v_fate when 'cancelled' then 'cancelled' when 'open' then 'in_progress' else 'completed' end;
     for j in 1..cardinality(v_appr) loop
-      v_dead := app.add_working_days(v_open, case v_prio when 'urgent' then 1 when 'high' then 2 else 3 end);
+      v_dead := app.add_working_days(v_open, case v_prio when 'urgent' then 1 when 'high' then 2 else 3 end, p_tenant);
       -- Some people are slower than others, consistently.
       v_hours := 2 + power(random(), 2) * 80 + (abs(hashtext(v_appr[j])) % 4) * 14;
 

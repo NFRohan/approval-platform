@@ -51,6 +51,7 @@ const LEAF: Record<string, string> = {
   people: "People & Directory",
   email: "Email",
   integrations: "Integrations",
+  calendar: "Working calendar",
   audit: "Audit centre",
 };
 

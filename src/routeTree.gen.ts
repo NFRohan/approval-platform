@@ -22,6 +22,7 @@ import { Route as StaffRouteImport } from './routes/staff'
 import { Route as StationeryRouteImport } from './routes/stationery'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as AdminAuditRouteImport } from './routes/admin.audit'
+import { Route as AdminCalendarRouteImport } from './routes/admin.calendar'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin.integrations'
 import { Route as AdminPeopleRouteImport } from './routes/admin.people'
@@ -119,6 +120,11 @@ const SubmissionsRoute = SubmissionsRouteImport.update({
 const AdminAuditRoute = AdminAuditRouteImport.update({
   id: '/admin/audit',
   path: '/admin/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminCalendarRoute = AdminCalendarRouteImport.update({
+  id: '/admin/calendar',
+  path: '/admin/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminEmailRoute = AdminEmailRouteImport.update({
@@ -301,6 +307,7 @@ export interface FileRoutesByFullPath {
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/admin/audit': typeof AdminAuditRoute
+  '/admin/calendar': typeof AdminCalendarRoute
   '/admin/email': typeof AdminEmailRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/people': typeof AdminPeopleRoute
@@ -349,6 +356,7 @@ export interface FileRoutesByTo {
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/admin/audit': typeof AdminAuditRoute
+  '/admin/calendar': typeof AdminCalendarRoute
   '/admin/email': typeof AdminEmailRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/people': typeof AdminPeopleRoute
@@ -398,6 +406,7 @@ export interface FileRoutesById {
   '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/admin/audit': typeof AdminAuditRoute
+  '/admin/calendar': typeof AdminCalendarRoute
   '/admin/email': typeof AdminEmailRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/people': typeof AdminPeopleRoute
@@ -448,6 +457,7 @@ export interface FileRouteTypes {
     | '/stationery'
     | '/submissions'
     | '/admin/audit'
+    | '/admin/calendar'
     | '/admin/email'
     | '/admin/integrations'
     | '/admin/people'
@@ -496,6 +506,7 @@ export interface FileRouteTypes {
     | '/stationery'
     | '/submissions'
     | '/admin/audit'
+    | '/admin/calendar'
     | '/admin/email'
     | '/admin/integrations'
     | '/admin/people'
@@ -544,6 +555,7 @@ export interface FileRouteTypes {
     | '/stationery'
     | '/submissions'
     | '/admin/audit'
+    | '/admin/calendar'
     | '/admin/email'
     | '/admin/integrations'
     | '/admin/people'
@@ -593,6 +605,7 @@ export interface RootRouteChildren {
   StationeryRoute: typeof StationeryRoute
   SubmissionsRoute: typeof SubmissionsRoute
   AdminAuditRoute: typeof AdminAuditRoute
+  AdminCalendarRoute: typeof AdminCalendarRoute
   AdminEmailRoute: typeof AdminEmailRoute
   AdminIntegrationsRoute: typeof AdminIntegrationsRoute
   AdminPeopleRoute: typeof AdminPeopleRoute
@@ -717,6 +730,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/audit'
       fullPath: '/admin/audit'
       preLoaderRoute: typeof AdminAuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/calendar': {
+      id: '/admin/calendar'
+      path: '/admin/calendar'
+      fullPath: '/admin/calendar'
+      preLoaderRoute: typeof AdminCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/email': {
@@ -981,6 +1001,7 @@ const rootRouteChildren: RootRouteChildren = {
   StationeryRoute: StationeryRoute,
   SubmissionsRoute: SubmissionsRoute,
   AdminAuditRoute: AdminAuditRoute,
+  AdminCalendarRoute: AdminCalendarRoute,
   AdminEmailRoute: AdminEmailRoute,
   AdminIntegrationsRoute: AdminIntegrationsRoute,
   AdminPeopleRoute: AdminPeopleRoute,

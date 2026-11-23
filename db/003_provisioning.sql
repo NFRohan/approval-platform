@@ -134,11 +134,11 @@ begin
   insert into public.tenants (name, slug, kind, expires_at, notes, created_by,
                               persona_switching, require_admin_mfa, default_persona, history_seeded,
                               inbound_domains, inbound_poc, inbound_form, campaigns_seeded,
-                              retention_years, archive_after_months, purge_logs_after_months)
+                              retention_years, archive_after_months, purge_logs_after_months, holidays_seeded)
   select p_name, v_slug || '-' || substr(gen_random_uuid()::text, 1, 6), 'demo', v_exp, p_notes, p_actor,
          t.persona_switching, t.require_admin_mfa, t.default_persona, t.history_seeded,
          t.inbound_domains, t.inbound_poc, t.inbound_form, t.campaigns_seeded,
-         t.retention_years, t.archive_after_months, t.purge_logs_after_months
+         t.retention_years, t.archive_after_months, t.purge_logs_after_months, t.holidays_seeded
     from public.tenants t where t.id = v_tpl
   returning id, tenants.slug into v_new, v_slug;
 
@@ -463,6 +463,12 @@ begin
   values (p_actor, 'tenant.mint', v_slug,
           format('Minted %s for %s, expires %s', p_username, p_name, v_exp),
           jsonb_build_object('tenant_id', v_new, 'username', p_username));
+
+  -- The working calendar, with any days the template's administrators
+  -- have moved.
+  insert into public.holidays (tenant_id, on_date, name, kind, provisional, created_by, created_at, moved_from)
+  select v_new, h.on_date, h.name, h.kind, h.provisional, h.created_by, h.created_at, h.moved_from
+    from public.holidays h where h.tenant_id = v_tpl;
 
   -- Its own API keys, webhook and their history: keys are never shared
   -- between organisations, so these are made rather than copied.

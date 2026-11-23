@@ -1749,4 +1749,27 @@ begin
   alter table public.form_templates add constraint form_templates_status_check check (status in ('draft', 'published', 'archived'));
 end $s6$;
 
+-- ---------------------------------------------------------------------
+-- The working calendar: the days, besides Friday and Saturday, that no
+-- deadline counts — public holidays, the Eid and Puja breaks, a day the
+-- office is closed. One row per day. A holiday fixed by the moon is
+-- provisional until it is sighted, and is moved here when it is.
+-- ---------------------------------------------------------------------
+create table if not exists public.holidays (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null default app.current_tenant()
+                references public.tenants(id) on delete cascade,
+  on_date     date not null,
+  name        text not null,
+  kind        text not null default 'general' check (kind in ('general', 'executive', 'office')),
+  provisional boolean not null default false,
+  created_by  text,
+  created_at  timestamptz not null default now(),
+  unique (tenant_id, on_date)
+);
+-- Where a holiday was moved from, so reloading the year's list does not
+-- put it back on the day it was moved off.
+alter table public.holidays add column if not exists moved_from date;
+alter table public.tenants add column if not exists holidays_seeded boolean not null default false;
+
 commit;

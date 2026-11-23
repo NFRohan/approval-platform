@@ -48,7 +48,24 @@ drop function if exists public.act_on_approval(uuid, text, text, text);
 -- every Friday counted as a working day, every Sunday did not, and from
 -- 18:00 local the server was already deciding about tomorrow.
 -- ---------------------------------------------------------------------
-create or replace function app.add_working_days(p_from timestamptz, p_days int)
+--
+-- And not on a holiday: the organisation's working calendar
+-- (public.holidays) — Eid, Puja, Victory Day — is skipped as the
+-- weekend is, so a three-day target set before Eid lands after it.
+-- ---------------------------------------------------------------------
+create or replace function app.is_working_day(p_tenant uuid, p_day date)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  -- isodow: 1 = Monday … 5 = Friday, 6 = Saturday, 7 = Sunday
+  select extract(isodow from p_day) not in (5, 6)
+     and not exists (select 1 from public.holidays h where h.tenant_id = p_tenant and h.on_date = p_day)
+$$;
+
+create or replace function app.add_working_days(p_from timestamptz, p_days int, p_tenant uuid)
 returns timestamptz
 language plpgsql
 stable
@@ -62,13 +79,21 @@ begin
   end if;
   while n < p_days loop
     d := d + interval '1 day';
-    -- isodow: 1 = Monday … 5 = Friday, 6 = Saturday, 7 = Sunday
-    if extract(isodow from (d at time zone 'Asia/Dhaka')) not in (5, 6) then
+    if app.is_working_day(p_tenant, (d at time zone 'Asia/Dhaka')::date) then
       n := n + 1;
     end if;
   end loop;
   return d;
 end $$;
+
+-- The organisation in context.
+create or replace function app.add_working_days(p_from timestamptz, p_days int)
+returns timestamptz
+language sql
+stable
+as $$
+  select app.add_working_days(p_from, p_days, app.current_tenant())
+$$;
 
 -- ---------------------------------------------------------------------
 -- Whose manager is this?

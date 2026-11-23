@@ -35,6 +35,9 @@ values ('Template', 'template', 'template', 'Source data cloned into every new e
 select set_config('app.tenant_id',
                   (select id::text from public.tenants where slug = 'template'), false);
 
+-- The working calendar first: every deadline below is counted on it.
+select app.seed_holidays(app.current_tenant());
+
 -- =====================================================================
 -- 1. The org chart
 --
@@ -830,6 +833,10 @@ update public.roles
                                            where p <> all (permissions))
  where name = 'System administrator'
    and not (permissions @> array['integrations.manage', 'records.manage']);
+
+-- Evaluations issued before the working calendar get the government's
+-- lists for both years.
+select app.seed_holidays(d.id) from public.tenants d where d.kind = 'demo' and not d.holidays_seeded;
 
 do $up$
 declare d record; v_tpl text := current_setting('app.tenant_id');
