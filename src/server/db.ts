@@ -53,6 +53,11 @@ export type RequestContext = {
   employeeId?: string | null;
   /** Did the session pass two-step sign-in? Administrative permissions may depend on it. */
   mfa?: boolean;
+  /**
+   * A call through the open API: the key's id, which is also userId.
+   * The database then checks the key rather than an account is live.
+   */
+  apiKeyId?: string | null;
 };
 
 const ROLES = new Set(['admin', 'creator', 'viewer', 'anon']);
@@ -81,6 +86,7 @@ function preamble(ctx: RequestContext): string {
   const employee = ctx.employeeId ?? '';
   if (employee && !EMPLOYEE.test(employee)) throw new HttpError(400, 'employee id has an unexpected shape');
   const mfa = ctx.mfa ? 'true' : 'false';
+  const apiKey = id(ctx.apiKeyId ?? null, 'api key id');
 
   // The liveness checks ride along in the same batch, so enforcing them
   // on every request costs no extra round trip. They raise 28000 when
@@ -93,7 +99,8 @@ function preamble(ctx: RequestContext): string {
                  set_config('app.role',      '${role}',   true),
                  set_config('app.is_staff',  '${staff}',  true),
                  set_config('app.employee_id', '${employee}', true),
-                 set_config('app.mfa',       '${mfa}',    true);
+                 set_config('app.mfa',       '${mfa}',    true),
+                 set_config('app.api_key',   '${apiKey}', true);
           select app.assert_tenant_live(), app.assert_account_live();`;
 }
 

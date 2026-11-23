@@ -640,7 +640,7 @@ update public.tenants
 insert into public.roles (name, description, permissions, status, created_by, approved_by) values
   ('System administrator', 'Accounts, roles, the org chart and workflow design',
    array['forms.build', 'forms.settings', 'users.manage', 'roles.manage', 'org.manage', 'audit.view', 'reports.view',
-         'reports.manage', 'notifications.manage'],
+         'reports.manage', 'notifications.manage', 'integrations.manage', 'records.manage'],
    'active', 'EMP-0445', 'EMP-0700'),
   ('HR administrator', 'Approves accounts and profile changes; keeps the org chart',
    array['users.manage', 'users.approve', 'org.manage', 'audit.view', 'reports.view'],
@@ -813,5 +813,36 @@ update public.approval_requests r
          (select s.submitted_at from public.form_submissions s where s.id = r.submission_id),
          r.created_at)
  where r.opened_at is null and r.status not in ('waiting', 'skipped');
+
+-- =====================================================================
+-- 9. Integration, audit and retention
+-- =====================================================================
+-- Sixty days of people signing in, for the audit centre's charts; and
+-- the service desk's settled tickets, migrated from ManageEngine and
+-- archived. Both are cloned into every evaluation.
+select app.seed_sign_ins(app.current_tenant());
+select public.import_legacy_tickets('ManageEngine', app.sample_legacy_tickets(48));
+
+-- Evaluations issued before this: the two new permissions, the same
+-- history and archive, and keys, a webhook and their logs of their own.
+update public.roles
+   set permissions = permissions || array(select p from unnest(array['integrations.manage', 'records.manage']) p
+                                           where p <> all (permissions))
+ where name = 'System administrator'
+   and not (permissions @> array['integrations.manage', 'records.manage']);
+
+do $up$
+declare d record; v_tpl text := current_setting('app.tenant_id');
+begin
+  for d in select id from public.tenants where kind = 'demo' and not integration_seeded loop
+    perform set_config('app.tenant_id', d.id::text, false);
+    perform app.seed_sign_ins(d.id);
+    if not exists (select 1 from public.form_submissions where tenant_id = d.id and legacy_ref is not null) then
+      perform public.import_legacy_tickets('ManageEngine', app.sample_legacy_tickets(48));
+    end if;
+    perform app.seed_integration(d.id);
+  end loop;
+  perform set_config('app.tenant_id', v_tpl, false);
+end $up$;
 
 commit;

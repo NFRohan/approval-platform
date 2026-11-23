@@ -194,7 +194,9 @@ export const TABLES: Record<string, TableDef> = {
   ),
   form_submissions: T(
     ['id', 'form_template_id', 'submitted_by', 'status', 'submitted_at',
-      'parent_submission_id', 'ref_number', 'priority', 'flag'],
+      'parent_submission_id', 'ref_number', 'priority', 'flag',
+      // Stage 6: archived by retention, or migrated in already settled.
+      'archived_at', 'legacy_ref', 'legacy_source', 'closed_at'],
     // The reference is assigned by the database and the flag by the
     // chain; priority is the requester's to set.
     ['form_template_id', 'submitted_by', 'status', 'submitted_at', 'priority'],

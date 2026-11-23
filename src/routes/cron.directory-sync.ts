@@ -59,6 +59,7 @@ async function run(request: Request) {
       await client.query("begin");
       await scope();
       await client.query("select public.record_directory_sync('scheduled', null, $1)", [message]);
+      await client.query("insert into public.system_runs (tenant_id, job, finished_at, error) values ($1, 'directory_sync', now(), $2)", [rows[0].id, message]);
       await client.query("commit");
       return reply(502, { error: message });
     }
@@ -70,6 +71,8 @@ async function run(request: Request) {
     const { rows: out } = await client.query(
       "select public.import_employees($1::jsonb, true) as r", [JSON.stringify(people)]);
     await client.query("select public.record_directory_sync('scheduled', $1::jsonb, null)", [JSON.stringify(out[0].r)]);
+    await client.query("insert into public.system_runs (tenant_id, job, finished_at, result) values ($1, 'directory_sync', now(), $2)",
+      [rows[0].id, JSON.stringify(out[0].r)]);
     await client.query("commit");
     return reply(200, { people: people.length, ...out[0].r });
   } catch (err) {

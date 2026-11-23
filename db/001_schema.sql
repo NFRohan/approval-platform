@@ -1608,4 +1608,145 @@ create table if not exists public.inbound_mail (
 );
 create index if not exists inbound_mail_tenant_idx on public.inbound_mail(tenant_id, received_at desc);
 
+-- =====================================================================
+-- Stage 6 — integration, audit and retention.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- The open API: keys an organisation issues to its other systems (ERP,
+-- Tableau), each with the scopes it may use. Only a hash of the secret
+-- is kept; the key is shown once, when it is made.
+-- ---------------------------------------------------------------------
+create table if not exists public.api_keys (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null default app.current_tenant()
+                 references public.tenants(id) on delete cascade,
+  name         text not null,
+  prefix       text not null unique,
+  secret_hash  text not null,
+  scopes       text[] not null default '{}',
+  created_by   text,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at   timestamptz,
+  revoked_by   text,
+  unique (id, tenant_id)
+);
+
+-- Every call made with a key, for the audit trail and for monitoring.
+create table if not exists public.api_requests (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid not null references public.tenants(id) on delete cascade,
+  key_id     uuid,
+  method     text not null,
+  path       text not null,
+  status     integer not null,
+  ms         integer,
+  ip         text,
+  error      text,
+  created_at timestamptz not null default now()
+);
+create index if not exists api_requests_tenant_idx on public.api_requests(tenant_id, created_at desc);
+
+-- ---------------------------------------------------------------------
+-- Webhooks: what happened, posted to the organisation's systems, signed
+-- with a secret only they and we hold. Each delivery is kept with what
+-- the other end said.
+-- ---------------------------------------------------------------------
+create table if not exists public.webhooks (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null default app.current_tenant()
+                references public.tenants(id) on delete cascade,
+  name        text not null,
+  url         text not null,
+  events      text[] not null default '{}',
+  secret      text not null,
+  active      boolean not null default true,
+  created_by  text,
+  created_at  timestamptz not null default now(),
+  unique (id, tenant_id)
+);
+
+create table if not exists public.webhook_deliveries (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references public.tenants(id) on delete cascade,
+  webhook_id      uuid not null,
+  event           text not null,
+  payload         jsonb not null,
+  status          text not null default 'queued' check (status in ('queued', 'sending', 'delivered', 'failed')),
+  attempts        integer not null default 0,
+  response_status integer,
+  response_ms     integer,
+  response_body   text,
+  error           text,
+  created_at      timestamptz not null default now(),
+  next_attempt_at timestamptz not null default now(),
+  delivered_at    timestamptz,
+  foreign key (webhook_id, tenant_id) references public.webhooks(id, tenant_id) on delete cascade
+);
+create index if not exists webhook_deliveries_tenant_idx on public.webhook_deliveries(tenant_id, created_at desc);
+create index if not exists webhook_deliveries_queued_idx on public.webhook_deliveries(next_attempt_at) where status = 'queued';
+
+-- ---------------------------------------------------------------------
+-- The system's own logs, so the audit trail covers more than people:
+--   system_runs        the daily round and other scheduled work
+--   app_errors         what went wrong in the application
+--   schema_migrations  every time the database's structure was applied
+-- ---------------------------------------------------------------------
+create table if not exists public.system_runs (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid references public.tenants(id) on delete cascade,
+  job         text not null,
+  started_at  timestamptz not null default now(),
+  finished_at timestamptz,
+  result      jsonb,
+  error       text
+);
+create index if not exists system_runs_started_idx on public.system_runs(started_at desc);
+
+create table if not exists public.app_errors (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid references public.tenants(id) on delete cascade,
+  at         timestamptz not null default now(),
+  source     text not null,
+  message    text not null,
+  status     integer
+);
+create index if not exists app_errors_at_idx on public.app_errors(at desc);
+
+create table if not exists public.schema_migrations (
+  file       text not null,
+  checksum   text not null,
+  applied_at timestamptz not null default now(),
+  primary key (file, applied_at)
+);
+
+-- ---------------------------------------------------------------------
+-- Retention. "Retention 12 years, archiving yearly, purging at 10 years."
+-- A decided request is archived after archive_after_months — out of the
+-- working lists, still found by search and in reports — and records are
+-- kept for retention_years. Logs (emails, API calls, document reads,
+-- errors) are purged after purge_logs_after_months.
+-- ---------------------------------------------------------------------
+alter table public.tenants add column if not exists retention_years         integer not null default 12;
+alter table public.tenants add column if not exists archive_after_months    integer not null default 12;
+alter table public.tenants add column if not exists purge_logs_after_months integer not null default 120;
+alter table public.tenants add column if not exists last_retention_run      timestamptz;
+alter table public.tenants add column if not exists last_retention_result   jsonb;
+
+alter table public.form_submissions add column if not exists archived_at   timestamptz;
+-- Tickets brought over from another system keep that system's reference.
+alter table public.form_submissions add column if not exists legacy_ref    text;
+alter table public.form_submissions add column if not exists legacy_source text;
+alter table public.form_submissions add column if not exists closed_at     timestamptz;
+create unique index if not exists form_submissions_legacy_idx
+  on public.form_submissions(tenant_id, legacy_source, legacy_ref) where legacy_ref is not null;
+
+-- A template that only holds migrated records is archived, not offered.
+do $s6$
+begin
+  alter table public.form_templates drop constraint if exists form_templates_status_check;
+  alter table public.form_templates add constraint form_templates_status_check check (status in ('draft', 'published', 'archived'));
+end $s6$;
+
 commit;

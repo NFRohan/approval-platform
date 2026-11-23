@@ -120,7 +120,7 @@ begin
 
   select id into v_tpl from public.tenants where kind = 'template' limit 1;
   if v_tpl is null then
-    raise exception 'no template tenant — run 009_seed_template.sql first';
+    raise exception 'no template tenant — run 010_seed_template.sql first';
   end if;
 
   v_slug := left(app.slugify(p_name), 40);
@@ -133,10 +133,12 @@ begin
 
   insert into public.tenants (name, slug, kind, expires_at, notes, created_by,
                               persona_switching, require_admin_mfa, default_persona, history_seeded,
-                              inbound_domains, inbound_poc, inbound_form, campaigns_seeded)
+                              inbound_domains, inbound_poc, inbound_form, campaigns_seeded,
+                              retention_years, archive_after_months, purge_logs_after_months)
   select p_name, v_slug || '-' || substr(gen_random_uuid()::text, 1, 6), 'demo', v_exp, p_notes, p_actor,
          t.persona_switching, t.require_admin_mfa, t.default_persona, t.history_seeded,
-         t.inbound_domains, t.inbound_poc, t.inbound_form, t.campaigns_seeded
+         t.inbound_domains, t.inbound_poc, t.inbound_form, t.campaigns_seeded,
+         t.retention_years, t.archive_after_months, t.purge_logs_after_months
     from public.tenants t where t.id = v_tpl
   returning id, tenants.slug into v_new, v_slug;
 
@@ -260,9 +262,9 @@ begin
   select v_new, c.name, c.value from public.tenant_counters c where c.tenant_id = v_tpl;
 
   insert into public.form_submissions (id, tenant_id, form_template_id, submitted_by, status, submitted_at,
-                                       ref_number, priority, flag)
+                                       ref_number, priority, flag, archived_at, legacy_ref, legacy_source, closed_at)
   select m.new, v_new, mt.new, s.submitted_by, s.status, s.submitted_at,
-         s.ref_number, s.priority, s.flag
+         s.ref_number, s.priority, s.flag, s.archived_at, s.legacy_ref, s.legacy_source, s.closed_at
     from public.form_submissions s
     join _m m  on m.old  = s.id
     join _m mt on mt.old = s.form_template_id
@@ -461,6 +463,10 @@ begin
   values (p_actor, 'tenant.mint', v_slug,
           format('Minted %s for %s, expires %s', p_username, p_name, v_exp),
           jsonb_build_object('tenant_id', v_new, 'username', p_username));
+
+  -- Its own API keys, webhook and their history: keys are never shared
+  -- between organisations, so these are made rather than copied.
+  perform app.seed_integration(v_new);
 
   -- Mail goes out again for whatever this transaction does next.
   perform set_config('app.no_mail', 'false', true);

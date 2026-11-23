@@ -67,9 +67,10 @@ select s.id,
        s.flag,
        app.submission_amount(s.id)                        as amount,
        s.submitted_at,
-       st.decided_at,
-       case when st.decided_at is not null
-            then round(extract(epoch from st.decided_at - s.submitted_at) / 86400.0, 1) end
+       -- A ticket migrated from another system was decided there.
+       coalesce(st.decided_at, s.closed_at)               as decided_at,
+       case when coalesce(st.decided_at, s.closed_at) is not null
+            then round(extract(epoch from coalesce(st.decided_at, s.closed_at) - s.submitted_at) / 86400.0, 1) end
                                                           as cycle_days,
        coalesce(st.steps_total, 0)                        as steps_total,
        coalesce(st.steps_done, 0)                         as steps_done,

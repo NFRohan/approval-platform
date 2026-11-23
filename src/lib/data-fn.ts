@@ -19,6 +19,7 @@ import { withContext, resolveContext } from '@/server/db';
 import { build, type QueryBody } from '@/server/query';
 import { RPCS, HttpError } from '@/server/tables';
 import { kickMailer } from '@/server/mailer';
+import { logAppError } from '@/server/logs';
 
 export type DataRequest =
   | ({ kind: 'query' } & QueryBody)
@@ -37,7 +38,7 @@ export type DataResponse = {
   truncated?: boolean;
 };
 
-function fail(err: unknown): DataResponse {
+function fail(err: unknown, tenantId?: string | null): DataResponse {
   if (err instanceof HttpError) {
     return { data: null, error: { message: err.message, status: err.status } };
   }
@@ -73,14 +74,17 @@ function fail(err: unknown): DataResponse {
   }
 
   console.error('[data]', e?.message || err);
+  void logAppError('data', err, 500, tenantId);
   return { data: null, error: { message: 'internal error', status: 500 } };
 }
 
 export const runData = createServerFn({ method: 'POST' })
   .inputValidator((input: DataRequest) => input)
   .handler(async ({ data: body }): Promise<DataResponse> => {
+    let tenantId: string | null = null;
     try {
       const ctx = await resolveContext();
+      tenantId = ctx.tenantId;
 
       if (body.kind === 'rpc') {
         const allowed = RPCS[body.fn];
@@ -125,6 +129,6 @@ export const runData = createServerFn({ method: 'POST' })
         truncated: limit !== undefined && rows.length >= limit,
       };
     } catch (err) {
-      return fail(err);
+      return fail(err, tenantId);
     }
   });

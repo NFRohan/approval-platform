@@ -11,6 +11,7 @@ import { todayInOrg } from "@/lib/workdays";
 import { copySubmission } from "@/lib/chain";
 
 export const Route = createFileRoute("/submissions")({
+  validateSearch: (s: Record<string, unknown>): { archived?: number } => (Number(s.archived) === 1 ? { archived: 1 } : {}),
   head: () => ({
     meta: [{ title: "My Submissions · Admin Services Portal" }],
   }),
@@ -26,19 +27,29 @@ type Row = {
   ref_number: string | null;
   priority: string | null;
   flag: string | null;
+  archived_at?: string | null;
+  legacy_ref?: string | null;
+  legacy_source?: string | null;
+  closed_at?: string | null;
   formName?: string;
   requesterName?: string;
 };
 
 // What a person finds here: what they raised, and what they were copied
 // on. Copied requests are the "ad-hoc report" the scope of work says CC'd
-// people currently cannot get at.
-type Tab = "mine" | "copied";
+// people currently cannot get at. The archive holds what retention has
+// put away — settled more than a year ago — and tickets migrated from
+// ManageEngine; out of the working lists, still found here and by search.
+type Tab = "mine" | "copied" | "archive";
 
 function SubmissionsPage() {
-  const { currentUser } = useCurrentUser();
+  const { currentUser, can } = useCurrentUser();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("mine");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState<Tab>(search.archived ? "archive" : "mine");
+  const [archivedCount, setArchivedCount] = useState(0);
+  // Records officers and auditors see the whole organisation's archive.
+  const wholeArchive = can("records.manage") || can("audit.view");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   // Find a record by its reference, its form, or when it was raised.
@@ -52,19 +63,26 @@ function SubmissionsPage() {
     (async () => {
       setLoading(true);
       let list: Row[] = [];
-      const columns = "id, status, submitted_at, form_template_id, submitted_by, ref_number, priority, flag";
+      const columns = "id, status, submitted_at, form_template_id, submitted_by, ref_number, priority, flag, archived_at, legacy_ref, legacy_source, closed_at";
       if (tab === "mine") {
         const { data } = await db.from("form_submissions").select(columns)
           .eq("submitted_by", currentUser.employee_id)
           .order("submitted_at", { ascending: false });
-        list = (data || []) as Row[];
+        const all = (data || []) as Row[];
+        list = all.filter((r) => !r.archived_at);
+        if (!wholeArchive && active) setArchivedCount(all.length - list.length);
+      } else if (tab === "archive") {
+        let q = db.from("form_submissions").select(columns);
+        if (!wholeArchive) q = q.eq("submitted_by", currentUser.employee_id);
+        const { data } = await q.order("submitted_at", { ascending: false }).limit(2000);
+        list = ((data || []) as Row[]).filter((r) => r.archived_at);
       } else {
         const { data: cc } = await db.from("submission_cc").select("submission_id").eq("employee_id", currentUser.employee_id);
         const ids = (cc ?? []).map((c) => c.submission_id as string);
         if (ids.length) {
           const { data } = await db.from("form_submissions").select(columns).in("id", ids)
             .order("submitted_at", { ascending: false });
-          list = ((data || []) as Row[]).filter((r) => r.status !== "draft");
+          list = ((data || []) as Row[]).filter((r) => r.status !== "draft" && !r.archived_at);
         }
       }
       const formIds = Array.from(new Set(list.map((r) => r.form_template_id).filter(Boolean) as string[]));
@@ -87,7 +105,7 @@ function SubmissionsPage() {
       }
     })();
     return () => { active = false; };
-  }, [currentUser.employee_id, tab]);
+  }, [currentUser.employee_id, tab, wholeArchive]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -97,7 +115,7 @@ function SubmissionsPage() {
       const day = r.submitted_at ? todayInOrg(new Date(r.submitted_at)) : "";
       if (from && day < from) return false;
       if (to && day > to) return false;
-      if (q && !`${r.ref_number ?? ""} ${r.formName ?? ""} ${r.requesterName ?? ""}`.toLowerCase().includes(q)) return false;
+      if (q && !`${r.ref_number ?? ""} ${r.legacy_ref ?? ""} ${r.formName ?? ""} ${r.requesterName ?? ""}`.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [rows, query, status, from, to]);
@@ -114,7 +132,7 @@ function SubmissionsPage() {
         { key: "submitted", label: "Submitted" },
       ],
     );
-    downloadCsv(`${tab === "mine" ? "my-submissions" : "copied-to-me"}-${todayInOrg()}.csv`, csv);
+    downloadCsv(`${tab === "mine" ? "my-submissions" : tab === "copied" ? "copied-to-me" : "archive"}-${todayInOrg()}.csv`, csv);
   }
 
   async function copy(r: Row) {
@@ -150,7 +168,7 @@ function SubmissionsPage() {
       </div>
 
       <div className="flex gap-1 mb-4" role="tablist">
-        {(["mine", "copied"] as const).map((t) => (
+        {(["mine", "copied", "archive"] as const).map((t) => (
           <button
             key={t}
             role="tab"
@@ -159,7 +177,7 @@ function SubmissionsPage() {
             className="rounded-md text-[13px] font-medium"
             style={{ padding: "6px 12px", border: `1px solid ${tab === t ? "#C7D2FE" : "#E4E4E7"}`, background: tab === t ? "#EEF2FF" : "#fff", color: tab === t ? "#4338CA" : "#52525B" }}
           >
-            {t === "mine" ? "Raised by me" : "Copied to me"}
+            {t === "mine" ? "Raised by me" : t === "copied" ? "Copied to me" : wholeArchive ? "Archive" : `Archived${archivedCount ? ` (${archivedCount})` : ""}`}
           </button>
         ))}
       </div>
@@ -194,7 +212,7 @@ function SubmissionsPage() {
             <FileText size={32} />
           </div>
           <div style={{ fontSize: 15, fontWeight: 500, color: "#A1A1AA" }}>
-            {rows.length ? "Nothing matches those filters" : tab === "mine" ? "No submissions yet" : "Nothing has been copied to you"}
+            {rows.length ? "Nothing matches those filters" : tab === "mine" ? "No submissions yet" : tab === "copied" ? "Nothing has been copied to you" : "Nothing has been archived"}
           </div>
         </div>
       ) : (
@@ -223,19 +241,25 @@ function SubmissionsPage() {
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: "#71717A" }}>
-                  {tab === "copied" && r.requesterName ? `${r.requesterName} · ` : ""}Submitted {fmtDate(r.submitted_at)}
+                  {tab !== "mine" && r.requesterName ? `${r.requesterName} · ` : ""}{r.legacy_ref ? `Raised in ${r.legacy_source} ` : "Submitted "}{fmtDate(r.submitted_at)}
+                  {r.archived_at && <span> · {r.legacy_ref ? `migrated ${fmtDate(r.archived_at)}` : `archived ${fmtDate(r.archived_at)}`}</span>}
                 </div>
               </Link>
               <div className="flex flex-col items-end gap-2">
                 <StatusBadge status={(r.status as never) || "submitted"} size="sm" />
-                <button
+                {r.archived_at && (
+                  <span className="rounded-full" style={{ padding: "1px 8px", fontSize: 11, fontWeight: 600, background: "#F4F4F5", color: "#52525B", border: "1px solid #E4E4E7" }}>
+                    {r.legacy_source ? `From ${r.legacy_source}` : "Archived"}
+                  </span>
+                )}
+                {!r.legacy_ref && <button
                   onClick={() => copy(r)}
                   className="inline-flex items-center gap-1 rounded-md"
                   title="Start a new request from this one"
                   style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #E4E4E7", background: "#fff", color: "#52525B" }}
                 >
                   <Copy size={12} /> Copy
-                </button>
+                </button>}
               </div>
             </div>
           ))}

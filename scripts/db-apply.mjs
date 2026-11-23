@@ -10,6 +10,7 @@
 
 import pg from 'pg';
 import { readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
 if (!url) {
@@ -26,7 +27,11 @@ await client.connect();
 
 for (const f of files) {
   try {
-    await client.query(readFileSync(`db/${f}`, 'utf8'));
+    const sql = readFileSync(`db/${f}`, 'utf8');
+    await client.query(sql);
+    // The audit centre's database log: what was applied, and when.
+    await client.query('insert into public.schema_migrations (file, checksum) values ($1, $2)',
+      [f, createHash('sha256').update(sql).digest('hex')]).catch(() => {});
     console.log('  applied', f);
   } catch (err) {
     console.log('  FAILED ', f, '::', err.message);

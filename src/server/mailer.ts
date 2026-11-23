@@ -33,6 +33,7 @@ import { describeFilters, isDataset, type ReportFilters } from '@/lib/report-cat
 import { runReport } from './reports';
 import { exportReport, fileName, CONTENT_TYPES, type ExportFormat } from './export';
 import { loadRecord, recordPdf } from './record';
+import { kickWebhooks } from './webhooks';
 
 export function appUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
@@ -234,6 +235,8 @@ export async function drainOutbox(opts: { tenantId?: string | null; limit?: numb
  */
 export async function kickMailer(tenantId: string | null | undefined): Promise<void> {
   if (!tenantId) return;
+  // Whatever told somebody may also have told another system.
+  await kickWebhooks(tenantId);
   try {
     const { rows } = await getPool().query(
       `select exists (select 1 from public.email_outbox where tenant_id = $1 and status = 'queued') as any`, [tenantId]);

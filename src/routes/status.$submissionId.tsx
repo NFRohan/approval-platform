@@ -16,6 +16,8 @@ import { answerQuestion, cancelSubmission, copySubmission, recallSubmission } fr
 import { CcPanel, DocumentsPanel, LinksPanel, NotesPanel } from "@/components/ticket/TicketPanels";
 import { ProcessMap } from "@/components/ProcessMap";
 import { fmtDateTime as fmtDateTimeLib } from "@/lib/dates";
+import { Archive } from "lucide-react";
+import { unarchiveSubmission } from "@/lib/audit-fn";
 
 export const Route = createFileRoute("/status/$submissionId")({
   head: () => ({
@@ -34,6 +36,10 @@ type SubmissionRow = {
   ref_number?: string | null;
   priority?: string | null;
   flag?: string | null;
+  archived_at?: string | null;
+  legacy_ref?: string | null;
+  legacy_source?: string | null;
+  closed_at?: string | null;
 };
 
 type EventRow = {
@@ -73,6 +79,10 @@ const EVENT_TEXT: Record<string, string> = {
   answer: "answered",
   completed: "— every approver has cleared it",
   followup_created: "— a follow-up was started",
+  raised_in_legacy: "raised it in the old service desk",
+  closed_in_legacy: "— closed in the old service desk",
+  migrated: "— brought over and archived",
+  email_received: "— an email was added",
 };
 
 type ApprovalRow = ChainRow & {
@@ -148,7 +158,7 @@ function deriveOverallStatus(rows: ApprovalRow[]): StatusKey {
 
 function StatusPage() {
   const { submissionId } = Route.useParams();
-  const { currentUser } = useCurrentUser();
+  const { currentUser, can } = useCurrentUser();
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [form, setForm] = useState<FormRow | null>(null);
   const [submitter, setSubmitter] = useState<EmployeeRow | null>(null);
@@ -479,6 +489,33 @@ function StatusPage() {
       >
         ← Back to forms
       </Link>
+
+      {submission.archived_at && (
+        <div role="status" className="rounded-xl flex items-start gap-3" data-testid="archived-banner"
+          style={{ padding: "12px 16px", marginBottom: 16, background: "#F4F4F5", border: "1px solid #E4E4E7", color: "#3F3F46", fontSize: 13, lineHeight: 1.5 }}>
+          <Archive size={16} style={{ marginTop: 2, color: "#71717A", flex: "none" }} />
+          <div style={{ flex: 1 }}>
+            {submission.legacy_ref ? (
+              <><strong>Migrated from {submission.legacy_source}</strong>, where it was {submission.legacy_ref}
+                {submission.closed_at ? `, closed ${fmtDateTimeLib(submission.closed_at)}` : ""}. Brought over {fmtDateTimeLib(submission.archived_at)} as an archived record — read only.</>
+            ) : (
+              <><strong>Archived</strong> {fmtDateTimeLib(submission.archived_at)}: settled long enough ago that retention has taken it out of the working lists.
+                It is kept, read only, for the organisation's retention period.</>
+            )}
+          </div>
+          {!submission.legacy_ref && can("records.manage") && (
+            <button type="button" className="rounded-md" style={{ padding: "4px 10px", fontSize: 12, border: "1px solid #D4D4D8", background: "#fff", cursor: "pointer", whiteSpace: "nowrap" }}
+              onClick={async () => {
+                const r = await unarchiveSubmission({ data: { id: submission.id } });
+                if (!r.ok) { toast.error(r.error); return; }
+                toast.success("Back in the working lists");
+                void loadAll();
+              }}>
+              Bring back
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div

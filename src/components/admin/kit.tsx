@@ -132,19 +132,19 @@ export function NoPermission({ need }: { need: string }) {
 }
 
 /** Shown once: a password the server generated and does not keep. */
-export function OneTimeSecret({ label, value, onDone }: { label: string; value: string; onDone: () => void }) {
+export function OneTimeSecret({ label, value, onDone, note }: { label: string; value: string; onDone: () => void; note?: string }) {
   return (
     <div className="rounded-lg mb-4" style={{ padding: "14px 16px", background: "#F0FDF4", border: "1px solid #BBF7D0" }}>
       <div style={{ fontSize: 13, color: "#14532D", marginBottom: 8 }}>{label}</div>
       <div className="flex items-center gap-2 flex-wrap">
-        <code data-testid="one-time-secret" style={{ fontSize: 15, padding: "6px 10px", background: "#fff", border: "1px solid #BBF7D0", borderRadius: 6, letterSpacing: "0.03em" }}>
+        <code data-testid="one-time-secret" style={{ fontSize: 15, wordBreak: "break-all", padding: "6px 10px", background: "#fff", border: "1px solid #BBF7D0", borderRadius: 6, letterSpacing: "0.03em" }}>
           {value}
         </code>
         <Button small onClick={() => void navigator.clipboard?.writeText(value)}>Copy</Button>
         <Button small onClick={onDone}>Done</Button>
       </div>
       <div style={{ fontSize: 11.5, color: "#166534", marginTop: 8 }}>
-        It is not stored and cannot be shown again. It must be changed at first sign-in.
+        {note ?? "It is not stored and cannot be shown again. It must be changed at first sign-in."}
       </div>
     </div>
   );
@@ -162,6 +162,8 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "reports.view": "Reports and analytics",
   "reports.manage": "Manage report templates",
   "notifications.manage": "Email templates and log",
+  "integrations.manage": "API keys and webhooks",
+  "records.manage": "Retention and archive",
 };
 
 export function fmtWhen(iso: string | null | undefined): string {

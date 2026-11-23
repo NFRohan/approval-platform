@@ -37,6 +37,7 @@ const SECTION: Record<string, string> = {
   reports: "Reports",
   admin: "Administration",
   account: "Your account",
+  developers: "API documentation",
 };
 
 const LEAF: Record<string, string> = {
@@ -49,6 +50,8 @@ const LEAF: Record<string, string> = {
   roles: "Roles",
   people: "People & Directory",
   email: "Email",
+  integrations: "Integrations",
+  audit: "Audit centre",
 };
 
 const IS_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-|^d+$/i;

@@ -62,7 +62,9 @@ as $$
     'audit.view',       -- the audit trails
     'reports.view',     -- reports and analytics
     'reports.manage',   -- create and change report templates; approve column changes
-    'notifications.manage' -- email wording, and the delivery log
+    'notifications.manage', -- email wording, and the delivery log
+    'integrations.manage',  -- API keys, webhooks and their logs
+    'records.manage'        -- retention, the archive, and migrating old records in
   ]
 $$;
 

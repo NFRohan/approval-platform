@@ -118,6 +118,29 @@ carries their people, the forms offered to them and the reports about them;
 a division the HR file names for the first time is created. Forms are
 classified (budgetary, non-budgetary and so on) and found by keyword.
 
+**Other systems, the audit trail and the archive.** An open REST API lets the
+ERP raise requests for an employee, follow them, add notes, cancel them and
+approve or reject as the approver, and lets Tableau or Power BI pull any saved
+report as JSON or CSV. Access is by API key, issued on the Integrations
+screen, shown once and stored only as a hash; each key carries scopes, every
+call is logged, and a revoked key stops at its next call. Webhooks post what
+happens to a request to the other system within seconds, signed with
+HMAC-SHA256, retried after one and five minutes, every delivery kept and
+redeliverable; a built-in receiver at `/webhooks/echo` checks signatures for
+trying it out. `/developers` documents every endpoint, generated from the
+same catalogue as `/api/v1/openapi.json` (OpenAPI 3.1). The audit centre is
+one trail over user, application, system and database activity — sign-ins
+and failed ones, decisions, documents opened, email, mail received, API
+calls, webhooks, errors, scheduled runs, schema changes, imports — filtered by
+category, severity, period and search, exported to Excel or CSV, and watched:
+activity by day, failed sign-ins, refused keys, work out of hours and by
+whom. Retention follows the SOW: settled requests are archived after a year —
+out of working lists, still searchable — logs are purged after ten years,
+records kept for twelve and listed for disposal past that, by the daily round
+or on demand. Closed tickets from ManageEngine ServiceDesk Plus come in from
+its CSV export as archived records under their old references, matched to
+the org chart.
+
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
 orders with stock reservation and transfer between venues, delegation of
@@ -221,10 +244,18 @@ Walking the demo changes it. To start over:
 node --env-file=.env scripts/dev-tenant.mjs --fresh
 ```
 
+### The API and webhooks
+
+Keys are made under Administration → Integrations (`integrations.manage`);
+documentation is at `/developers`, the spec at `/api/v1/openapi.json`.
+Webhook deliveries go out after every write and in the daily round; a
+webhook's address may be a path on this server (`/webhooks/echo`), resolved
+against `APP_URL`.
+
 ### Tests
 
 ```bash
-npm test          # all nine, cheapest first
+npm test          # all ten, cheapest first
 ```
 
 | | |
@@ -234,9 +265,10 @@ npm test          # all nine, cheapest first
 | `test:identity` | 35 checks with no database: two-step codes against the RFC 6238 vectors, sealing their secrets, the password policy and a generator that always meets it, the idle timeout and the 12-hour limit, reading the HR file |
 | `test:reports` | 35 checks with no database: the report query builder builds only from its catalogue and binds every value, the CSV cannot carry a formula, the Excel file is a real workbook, the PDFs open, and emails fill and escape their templates |
 | `test:commercial` | 29 checks with no database: reading Word NFAs — business cases, labels as people write them, lakh and crore, dates in words — the top sheet's amounts in words and wrapped PO lines, and both shapes of inbound mail |
+| `test:integration` | 41 checks with no database: webhook signatures as a receiver checks them — tampered, replayed and unsigned deliveries refused — the API's answers before a key is looked up, the OpenAPI document and its agreement with the database's scopes and events, and ManageEngine exports read whichever way they spell their columns and dates |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
-| `test:render` | All 32 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 178 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation — and commercial: the reviewer the requester chooses, the team copied, campaigns from approved NFAs, budget alerts, extensions, coupons, merging divisions, partner mail to tickets, and older evaluations brought up to the template |
+| `test:render` | All 35 routes rendered once, against real ids, and every persona checked against the employee table |
+| `db:test` | 184 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation — and commercial: the reviewer the requester chooses, the team copied, campaigns from approved NFAs, budget alerts, extensions, coupons, merging divisions, partner mail to tickets, and older evaluations brought up to the template — and integration: keys of an evaluation's own, who may make and revoke them and a revoked key refused at once, webhooks queued for exactly what they listen for, one audit trail over every source and who may read it, retention archiving and purging by the policy without deleting a record, and migrated tickets imported once |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:ldap` | 13 checks against a real OpenLDAP in Docker: signing in with a directory password (and not with an empty one, a wildcard or an injected filter), failing closed, and reading people with their managers resolved. Needs Docker; not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |
@@ -262,6 +294,12 @@ Stated plainly, because a demo that hides its edges wastes everyone's time.
   (`persona_switching`), and a person's own account never switches.
 - **The directory is one per deployment.** LDAP settings come from the
   environment, for the one organisation named by `LDAP_TENANT`.
+- **The API has no rate limit.** Keys are scoped, logged and revoked at
+  once, but nothing caps how often one may call; a deployment would put a
+  quota in front of `/api/v1`.
+- **Records past retention are listed, not destroyed.** Retention archives
+  and purges logs on its own; disposing of a twelve-year-old financial
+  record is left to a person.
 - **Five of the ten specified admin modules are absent on purpose** — dispatch,
   event coordination, visitor management, air ticketing and standalone stock
   are each their own project.

@@ -144,6 +144,7 @@ export const signIn = createServerFn({ method: 'POST' })
                                    then now() end
             where id = $1
           returning failed_attempts, locked_at`, [row.id, LOCKOUT_ATTEMPTS]);
+        await trail(client, row, 'sign_in_failed', `wrong password for ${row.username} (attempt ${rows[0]?.failed_attempts ?? '?'})`);
         if (rows[0]?.locked_at) {
           await trail(client, row, 'account_locked', `${row.username} locked after ${LOCKOUT_ATTEMPTS} wrong attempts`);
         }
@@ -199,6 +200,7 @@ export const verifySignInCode = createServerFn({ method: 'POST' })
           `update public.app_users set failed_attempts = failed_attempts + 1,
                   locked_at = case when failed_attempts + 1 >= $2 then now() end
             where id = $1`, [row.id, LOCKOUT_ATTEMPTS]);
+        await trail(client, row, 'sign_in_failed', `wrong two-step code for ${row.username}`);
         return { ok: false, error: 'That code is not right. Codes change every 30 seconds.' };
       }
 
