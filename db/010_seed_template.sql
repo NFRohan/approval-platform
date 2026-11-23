@@ -828,6 +828,12 @@ select app.seed_sign_ins(app.current_tenant());
 -- purchase tickets.
 select app.seed_servicedesk(app.current_tenant());
 select app.seed_servicedesk(d.id) from public.tenants d where d.kind = 'demo';
+-- A ticket finds its requester by email, so evaluations issued before
+-- people had work addresses get them, by the same rule.
+update public.employees e
+   set email = lower(replace(e.name, ' ', '.')) || '@example.com'
+  from public.tenants d
+ where d.id = e.tenant_id and d.kind = 'demo' and e.email is null;
 select public.import_legacy_tickets('ManageEngine', app.sample_legacy_tickets(48));
 
 -- Evaluations issued before this: the two new permissions, the same
