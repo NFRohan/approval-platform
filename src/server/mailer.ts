@@ -73,6 +73,7 @@ const PATHS: Record<string, (id: string) => string> = {
   stationery_request: () => '/stationery',
   maintenance_request: () => '/maintenance',
   movement_order: () => '/movement-orders',
+  campaign: (id) => `/campaigns/${id}`,
 };
 
 export type BuiltEmail = {

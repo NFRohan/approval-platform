@@ -2,6 +2,7 @@ import { SlabTable } from "./SlabTable";
 import { useEffect, useRef, useState } from "react";
 import { Settings, Trash } from "lucide-react";
 import type { PlacedField } from "./types";
+import { db } from "@/lib/db";
 
 type Tab = "field" | "validation" | "routing";
 
@@ -232,6 +233,18 @@ function FieldTab({ field, allFields, onChange, onDelete }: { field: PlacedField
           <span style={{ fontSize: 11.5, fontWeight: 500, color: "#3F3F46" }}>Options (one per line)</span>
           <OptionsEditor options={field.options ?? []} onChange={(opts) => onChange({ options: opts })} />
         </label>
+      )}
+
+      {field.kind === "reviewer" && <ReviewerSettings field={field} onChange={onChange} />}
+
+      {field.kind === "multi_select" && (
+        <div className="flex items-center justify-between rounded-md" style={{ padding: "10px 12px", border: "1px solid #E4E4E7" }}>
+          <div>
+            <div className="font-medium" style={{ fontSize: 12.5, color: "#18181B" }}>Allow adding more</div>
+            <div style={{ fontSize: 11, color: "#A1A1AA" }}>The requester can add an option of their own</div>
+          </div>
+          <Toggle on={!!field.allowOther} onChange={(v) => onChange({ allowOther: v })} />
+        </div>
       )}
 
       {field.kind === "calculation" && (
@@ -522,5 +535,39 @@ export function ConfigPanel({
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * A reviewer is chosen by the requester from one department; the whole
+ * department can be copied on the request.
+ */
+function ReviewerSettings({ field, onChange }: { field: PlacedField; onChange: (p: Partial<PlacedField>) => void }) {
+  const [teams, setTeams] = useState<string[]>([]);
+  useEffect(() => {
+    void db.from("departments").select("name").order("name").then(({ data }) =>
+      setTeams(((data ?? []) as { name: string }[]).map((d) => d.name)));
+  }, []);
+  return (
+    <>
+      <label className="flex flex-col gap-1.5">
+        <span style={{ fontSize: 11.5, fontWeight: 500, color: "#3F3F46" }}>Chosen from</span>
+        <select value={field.team ?? ""} onChange={(e) => onChange({ team: e.target.value || undefined })} style={inputStyle}>
+          <option value="">Choose a department…</option>
+          {teams.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </label>
+      <div className="flex items-center justify-between rounded-md" style={{ padding: "10px 12px", border: "1px solid #E4E4E7" }}>
+        <div>
+          <div className="font-medium" style={{ fontSize: 12.5, color: "#18181B" }}>Copy the whole team</div>
+          <div style={{ fontSize: 11, color: "#A1A1AA" }}>Everyone in it is CC'd on the request</div>
+        </div>
+        <Toggle on={!!field.ccTeam} onChange={(v) => onChange({ ccTeam: v })} />
+      </div>
+      <div style={{ fontSize: 11, color: "#71717A", lineHeight: 1.45 }}>
+        To route an approval step to the chosen person, give the step the role
+        <code style={{ marginLeft: 4 }}>answer:{field.label}</code>.
+      </div>
+    </>
   );
 }

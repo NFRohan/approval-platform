@@ -58,10 +58,12 @@ select pg_temp.check('two evaluations exist',
   (select count(*)::int from public.tenants where kind='demo' and name like 'Prov Test%'), 2);
 
 select pg_temp.check('the template still has its employees',
-  (select count(*)::int from public.employees where tenant_id = current_setting('t.tpl')::uuid), 15);
+  (select count(*)::int from public.employees where tenant_id = current_setting('t.tpl')::uuid),
+  (select count(*)::int from public.employees e join public.tenants t on t.id = e.tenant_id and t.kind = 'template'));
 
 select pg_temp.check('the clone has the same employees',
-  (select count(*)::int from public.employees where tenant_id = current_setting('t.a')::uuid), 15);
+  (select count(*)::int from public.employees where tenant_id = current_setting('t.a')::uuid),
+  (select count(*)::int from public.employees where tenant_id = current_setting('t.tpl')::uuid));
 
 select pg_temp.check('employee identifiers copy across unchanged',
   (select name from public.employees

@@ -89,7 +89,7 @@ type EmployeeRow = {
   department: string | null;
 };
 
-type FormRow = { id: string; name: string };
+type FormRow = { id: string; name: string; category: string | null };
 
 const LINKED_LABELS: Record<string, string> = {
   linked_gate_pass_revocation: "Gate Pass Revocation",
@@ -166,6 +166,12 @@ function StatusPage() {
   const [busy, setBusy] = useState(false);
   const [fileFields, setFileFields] = useState<string[]>([]);
   const [view, setView] = useState<"timeline" | "map">("timeline");
+  // The campaign an approved NFA became, if any.
+  const [campaignId, setCampaignId] = useState<string | null>(null);
+  useEffect(() => {
+    void db.from("campaigns").select("id").eq("submission_id", submissionId).maybeSingle()
+      .then(({ data }) => setCampaignId((data as { id: string } | null)?.id ?? null));
+  }, [submissionId]);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
@@ -181,7 +187,7 @@ function StatusPage() {
     if (sub?.form_template_id) {
       const { data: f } = await db
         .from("form_templates")
-        .select("id, name")
+        .select("id, name, category")
         .eq("id", sub.form_template_id)
         .maybeSingle();
       setForm(f as FormRow | null);
@@ -553,6 +559,29 @@ function StatusPage() {
             >
               <FileDown size={13} /> Approval record (PDF)
             </a>
+            {/* Finance's page for paying it: PO lines wrapped in full,
+                the total in words, every approval. */}
+            {(form?.category === "Finance" || form?.category === "Commercial") && (
+              <a
+                href={`/topsheet/${submission.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md"
+                style={{ padding: "5px 10px", fontSize: 12, fontWeight: 500, color: "#3F3F46", border: "1px solid #E4E4E7", background: "#fff", textDecoration: "none" }}
+              >
+                <FileDown size={13} /> Payment top sheet
+              </a>
+            )}
+            {campaignId && (
+              <Link
+                to="/campaigns/$campaignId"
+                params={{ campaignId }}
+                className="inline-flex items-center gap-1.5 rounded-md"
+                style={{ padding: "5px 10px", fontSize: 12, fontWeight: 500, color: "#3730A3", border: "1px solid #C7D2FE", background: "#EEF2FF", textDecoration: "none" }}
+              >
+                Open the campaign →
+              </Link>
+            )}
             <div className="flex gap-1.5">
               {submission.flag && (
                 <span className="rounded-full text-[11.5px] font-semibold" style={{ padding: "2px 10px", background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>

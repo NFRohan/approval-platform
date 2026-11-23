@@ -22,8 +22,7 @@ import {
   Type,
   User,
   Zap,
-  FunctionSquare,
-} from "lucide-react";
+  FunctionSquare, UserCheck } from "lucide-react";
 import type { PaletteSection, FieldKind } from "./types";
 
 export const PALETTE: PaletteSection[] = [
@@ -69,6 +68,7 @@ export const PALETTE: PaletteSection[] = [
       { kind: "dept", label: "Department", Icon: Building },
       { kind: "daterange", label: "Date Range", Icon: CalendarRange },
       { kind: "signature", label: "Signature Pad", Icon: Pen },
+      { kind: "reviewer", label: "Reviewer From a Team", Icon: UserCheck, hint: "Requester picks; people on leave can't be chosen" },
       {
         kind: "calculation",
         label: "Calculation",
@@ -123,6 +123,7 @@ export const DEFAULT_LABELS: Record<FieldKind, string> = {
   dept: "Department",
   daterange: "Date Range",
   signature: "Signature",
+  reviewer: "Reviewer",
   calculation: "Calculated Value",
   gen_employee_name: "Employee Name",
   gen_designation: "Designation",
@@ -145,7 +146,7 @@ export function isEmbedded(kind: FieldKind) {
   return kind.startsWith("linked_");
 }
 export function isSmart(kind: FieldKind) {
-  return ["employee", "money", "dept", "daterange", "signature", "calculation"].includes(kind);
+  return ["employee", "money", "dept", "daterange", "signature", "calculation", "reviewer"].includes(kind);
 }
 export function isPermission(kind: FieldKind) {
   return kind.startsWith("perm_");

@@ -33,6 +33,7 @@ const SECTION: Record<string, string> = {
   status: "Submission Status",
   submissions: "My Submissions",
   analytics: "Analytics",
+  campaigns: "Campaigns",
   reports: "Reports",
   admin: "Administration",
   account: "Your account",
@@ -63,6 +64,7 @@ const DETAIL: Record<string, string> = {
   status: "Submission",
   certificate: "Certificate",
   reports: "Report",
+  campaigns: "Campaign",
 };
 
 export function crumbsFor(pathname: string): Array<{ label: string; to?: string }> {

@@ -51,6 +51,7 @@ export type PublicSession = {
   employeeId: string | null;
   personaName: string | null;
   personaTitle: string | null;
+  personaDepartment: string | null;
   canSwitch: boolean;
   /** What the acting employee may do, after the two-step rule. */
   permissions: string[];
@@ -74,6 +75,7 @@ function toPublic(session: Session): PublicSession {
     employeeId: session.employeeId,
     personaName: session.personaName,
     personaTitle: session.personaTitle,
+    personaDepartment: session.personaDepartment ?? null,
     canSwitch: session.canSwitch,
     permissions,
     mfa: session.mfa,

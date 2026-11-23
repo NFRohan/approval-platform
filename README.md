@@ -96,6 +96,28 @@ kept with what became of it; a completed request's email carries its
 approval record as a PDF. A daily round reminds approvers before a deadline,
 every day after it, and escalates to their manager two working days past it.
 
+**Commercial campaigns.** A campaign request goes to the Business Finance
+reviewer the requester picks — anybody on leave is shown but cannot be
+chosen — and the whole Business Finance team is copied. The NFA that follows
+is in the prescribed format, a KPI section and a reporting section, and can
+be filled from the vetted Word document: its labels are matched to the
+form's questions however the document words them, amounts in lakh and crore
+and dates in any common format are read, and an NFA with several business
+cases becomes a linked draft for each. Once approved, an NFA is a tracked
+campaign — status, KPI targets against actuals, budget used, run rate and
+where that pace ends up — and its requester is told at 95% of budget and
+again past 100%. Coupon campaigns keep each coupon's redemption and which
+service took it. A live campaign is extended through the same approvals,
+keeping its modality. A partner's email becomes a ticket for the telecom
+team, and a reply quoting a ticket's reference — a UAT result — is added to
+it. Finance requests print a payment top sheet with their PO lines wrapped in
+full and the amount in words.
+
+**The org chart moves.** Divisions are renamed and merged in one step that
+carries their people, the forms offered to them and the reports about them;
+a division the HR file names for the first time is created. Forms are
+classified (budgetary, non-budgetary and so on) and found by keyword.
+
 **The rest of the admin surface.** Notices with comments, stationery and
 business cards, maintenance requests across three approval tiers, movement
 orders with stock reservation and transfer between venues, delegation of
@@ -142,7 +164,7 @@ connection with no context reads nothing rather than everything.
 npm install
 cp .env.example .env          # fill in DATABASE_URL, DIRECT_URL and JWT_SECRET
 
-npm run db:apply              # 8 files, re-runnable, dependency-ordered
+npm run db:apply              # 9 files, re-runnable, dependency-ordered
 node --env-file=.env scripts/dev-tenant.mjs      # issue an evaluation
 node --env-file=.env scripts/staff-account.mjs   # and the account that issues them
 
@@ -185,6 +207,14 @@ who it was for. The
 daily round — reminders, escalation, scheduled reports, delivery — is
 `/cron/daily`, called by Vercel Cron at 08:00 Dhaka.
 
+### Mail into the system
+
+Point a mail provider's inbound webhook (Postmark, or anything posting
+`{from, subject, text, attachments}`) at `/inbound/email/<organisation slug>`
+with `INBOUND_SECRET` in an `x-inbound-secret` header. Which domains count as
+partners, and whose ticket their mail becomes, is set on the Email screen,
+which can also send a message in by hand.
+
 Walking the demo changes it. To start over:
 
 ```bash
@@ -194,7 +224,7 @@ node --env-file=.env scripts/dev-tenant.mjs --fresh
 ### Tests
 
 ```bash
-npm test          # all eight, cheapest first
+npm test          # all nine, cheapest first
 ```
 
 | | |
@@ -203,9 +233,10 @@ npm test          # all eight, cheapest first
 | `test:callsites` | Every query chain and function call in the source, pushed through the real query builder. Static — no database, no browser. |
 | `test:identity` | 35 checks with no database: two-step codes against the RFC 6238 vectors, sealing their secrets, the password policy and a generator that always meets it, the idle timeout and the 12-hour limit, reading the HR file |
 | `test:reports` | 35 checks with no database: the report query builder builds only from its catalogue and binds every value, the CSV cannot carry a formula, the Excel file is a real workbook, the PDFs open, and emails fill and escape their templates |
+| `test:commercial` | 29 checks with no database: reading Word NFAs — business cases, labels as people write them, lakh and crore, dates in words — the top sheet's amounts in words and wrapped PO lines, and both shapes of inbound mail |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
-| `test:render` | All 30 routes rendered once, against real ids, and every persona checked against the employee table |
-| `db:test` | 162 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation |
+| `test:render` | All 32 routes rendered once, against real ids, and every persona checked against the employee table |
+| `db:test` | 178 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation — and commercial: the reviewer the requester chooses, the team copied, campaigns from approved NFAs, budget alerts, extensions, coupons, merging divisions, partner mail to tickets, and older evaluations brought up to the template |
 | `db:test:local` | The same suites against PGlite — real Postgres in WebAssembly, in-process, a fresh database per suite. No server, no credentials, and nothing touches the deployed database. Use this while changing SQL; it is not part of `npm test` |
 | `test:ldap` | 13 checks against a real OpenLDAP in Docker: signing in with a directory password (and not with an empty one, a wildcard or an injected filter), failing closed, and reading people with their managers resolved. Needs Docker; not part of `npm test` |
 | `test:journey` | One request walked from submitted to fully approved, as the people the switcher offers. The other five each test one layer; this one goes through them, which is where the worst faults turned out to live |

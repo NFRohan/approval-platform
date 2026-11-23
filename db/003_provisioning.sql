@@ -120,7 +120,7 @@ begin
 
   select id into v_tpl from public.tenants where kind = 'template' limit 1;
   if v_tpl is null then
-    raise exception 'no template tenant — run 008_seed_template.sql first';
+    raise exception 'no template tenant — run 009_seed_template.sql first';
   end if;
 
   v_slug := left(app.slugify(p_name), 40);
@@ -132,9 +132,11 @@ begin
   perform set_config('app.no_mail', 'true', true);
 
   insert into public.tenants (name, slug, kind, expires_at, notes, created_by,
-                              persona_switching, require_admin_mfa, default_persona, history_seeded)
+                              persona_switching, require_admin_mfa, default_persona, history_seeded,
+                              inbound_domains, inbound_poc, inbound_form, campaigns_seeded)
   select p_name, v_slug || '-' || substr(gen_random_uuid()::text, 1, 6), 'demo', v_exp, p_notes, p_actor,
-         t.persona_switching, t.require_admin_mfa, t.default_persona, t.history_seeded
+         t.persona_switching, t.require_admin_mfa, t.default_persona, t.history_seeded,
+         t.inbound_domains, t.inbound_poc, t.inbound_form, t.campaigns_seeded
     from public.tenants t where t.id = v_tpl
   returning id, tenants.slug into v_new, v_slug;
 
@@ -185,8 +187,10 @@ begin
    where d.tenant_id = v_tpl;
 
   insert into _m select id, gen_random_uuid() from public.form_templates where tenant_id = v_tpl;
-  insert into public.form_templates (id, tenant_id, name, category, created_by, status, created_at)
-  select m.new, v_new, t.name, t.category, t.created_by, t.status, t.created_at
+  insert into public.form_templates (id, tenant_id, name, category, created_by, status, created_at,
+                                     audience_departments, classification, keywords, on_approval)
+  select m.new, v_new, t.name, t.category, t.created_by, t.status, t.created_at,
+         t.audience_departments, t.classification, t.keywords, t.on_approval
     from public.form_templates t join _m m on m.old = t.id
    where t.tenant_id = v_tpl;
 
@@ -411,6 +415,33 @@ begin
          a.data, a.uploaded_by, a.created_at, a.description, a.tags, a.version, a.superseded_at
     from public.attachments a join _m ms on ms.old = a.submission_id
    where a.tenant_id = v_tpl;
+
+  -- Campaigns, with what has been spent on them, their coupons and
+  -- their extensions.
+  insert into _m select id, gen_random_uuid() from public.campaigns where tenant_id = v_tpl;
+  insert into public.campaigns (id, tenant_id, submission_id, request_id, name, audience, modality, coupon, exceptional,
+                                status, starts_on, ends_on, budget, kpi, wallets, cost_center, gl_code, product, beneficiary,
+                                requester_id, reviewer_id, alerted, status_note, created_at, updated_at)
+  select m.new, v_new, ms.new, mr.new, c.name, c.audience, c.modality, c.coupon, c.exceptional,
+         c.status, c.starts_on, c.ends_on, c.budget, c.kpi, c.wallets, c.cost_center, c.gl_code, c.product, c.beneficiary,
+         c.requester_id, c.reviewer_id, c.alerted, c.status_note, c.created_at, c.updated_at
+    from public.campaigns c
+    join _m m on m.old = c.id
+    left join _m ms on ms.old = c.submission_id
+    left join _m mr on mr.old = c.request_id
+   where c.tenant_id = v_tpl;
+  insert into public.campaign_actuals (tenant_id, campaign_id, on_date, cost, beneficiaries, transactions, volume, note, recorded_by, created_at)
+  select v_new, m.new, a.on_date, a.cost, a.beneficiaries, a.transactions, a.volume, a.note, a.recorded_by, a.created_at
+    from public.campaign_actuals a join _m m on m.old = a.campaign_id where a.tenant_id = v_tpl;
+  insert into public.campaign_coupons (tenant_id, campaign_id, code, wallet, amount, issued_at, redeemed_at, redeemed_via, created_at)
+  select v_new, m.new, k.code, k.wallet, k.amount, k.issued_at, k.redeemed_at, k.redeemed_via, k.created_at
+    from public.campaign_coupons k join _m m on m.old = k.campaign_id where k.tenant_id = v_tpl;
+  insert into public.campaign_extensions (tenant_id, campaign_id, submission_id, new_ends_on, added_budget, business_case,
+                                          status, requested_by, decided_at, created_at)
+  select v_new, m.new, ms.new, x.new_ends_on, x.added_budget, x.business_case, x.status, x.requested_by, x.decided_at, x.created_at
+    from public.campaign_extensions x join _m m on m.old = x.campaign_id
+    left join _m ms on ms.old = x.submission_id
+   where x.tenant_id = v_tpl;
 
   insert into public.activity_log (id, tenant_id, actor_id, action, entity_type, entity_id, detail, created_at)
   select gen_random_uuid(), v_new, a.actor_id, a.action, a.entity_type,

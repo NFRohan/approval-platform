@@ -232,7 +232,7 @@ export type ImportRow = {
   line_manager_id?: string | null;
   email?: string | null;
 };
-export type ImportOutcome = { added: number; updated: number; managers: number; left: number; skipped: string[] };
+export type ImportOutcome = { added: number; updated: number; managers: number; left: number; skipped: string[]; departments?: number };
 
 /**
  * Run the import. A preview runs it for real inside a savepoint and rolls

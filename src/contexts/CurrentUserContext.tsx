@@ -7,6 +7,7 @@ export type CurrentUser = {
   name: string;
   designation: string;
   initials: string;
+  department?: string | null;
   /** What this person's roles let them do. The database enforces it; this decides what to show. */
   permissions: string[];
 };
@@ -35,6 +36,11 @@ export const USERS: Omit<CurrentUser, "permissions">[] = [
   { employee_id: "EMP-0830", name: "Lena Ortiz",     designation: "Compliance Officer",       initials: "LO" },
   { employee_id: "EMP-0831", name: "Kofi Mensah",    designation: "Compliance Officer",       initials: "KM" },
   { employee_id: "EMP-0832", name: "Ravi Shah",      designation: "Compliance Officer",       initials: "RS" },
+  // Campaigns: the requester, Business Finance, and the telecom team's
+  // point of contact for partners' mail.
+  { employee_id: "EMP-0416", name: "Mitu Rahman",    designation: "Campaign & Promotion Manager", initials: "MR" },
+  { employee_id: "EMP-0410", name: "Nusrat Jahan",   designation: "Business Finance Lead",    initials: "NJ" },
+  { employee_id: "EMP-0415", name: "Shahriar Kabir", designation: "Telecom Partnerships Manager", initials: "SK" },
 ];
 
 export function initialsOf(name: string): string {
@@ -48,6 +54,7 @@ export function userFromSession(session: PublicSession | null | undefined): Curr
     employee_id: session?.employeeId ?? "",
     name,
     designation: session?.personaTitle ?? (session?.isStaff ? "Staff" : ""),
+    department: session?.personaDepartment ?? null,
     initials: initialsOf(name),
     permissions: session?.permissions ?? [],
   };

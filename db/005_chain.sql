@@ -678,8 +678,17 @@ begin
     end if;
 
     v_role := app.rule_role(r.label);
+    -- "answer:<question>" is whoever the requester chose in that question
+    -- (the Business Finance reviewer, picked from a list), if they are an
+    -- active employee here; otherwise the rule's own person.
     v_approver := case when app.is_org_role(v_role)
                        then coalesce(app.resolve_role(v_role, p_requester), r.approver_user_id)
+                       when v_role like 'answer:%'
+                       then coalesce((select e.employee_id from public.employees e
+                                       where e.tenant_id = app.current_tenant() and e.active
+                                         and e.employee_id = nullif(trim(p_answers ->> substr(v_role, 8)), '')
+                                         and e.employee_id <> coalesce(p_requester, '')),
+                                     r.approver_user_id)
                        else r.approver_user_id end;
 
     c_phase := array_append(c_phase, v_phase);
@@ -927,6 +936,20 @@ begin
           app.subject_label(p_subject_type, p_subject_id) || ' was submitted.',
           p_subject_type, p_subject_id);
       end loop;
+
+      -- A reviewer question can copy the reviewer's whole team: "Business
+      -- Finance group to be CC'ed automatically."
+      insert into public.submission_cc (tenant_id, submission_id, employee_id, added_by)
+      select app.current_tenant(), p_subject_id, e.employee_id, v_requester
+        from public.form_fields f
+        join public.employees e
+          on e.tenant_id = app.current_tenant() and e.active
+         and e.department = f.field_config ->> 'team'
+       where f.form_template_id = p_form_template_id
+         and f.field_type = 'reviewer'
+         and coalesce((f.field_config ->> 'ccTeam')::boolean, false)
+         and e.employee_id <> coalesce(v_requester, '')
+      on conflict do nothing;
 
       perform app.notify_cc(p_subject_id, 'cc.raised', 'You were copied on a request',
         app.subject_label(p_subject_type, p_subject_id) || ' was raised and you were copied on it.');

@@ -9,6 +9,7 @@ import {
 } from "@/lib/admin-fn";
 import { readHrFile, type HrParse } from "@/lib/hr-file";
 import { Button, Card, NoPermission, Notice, Page, Pill, fmtWhen } from "@/components/admin/kit";
+import { Divisions } from "@/components/admin/Divisions";
 
 export const Route = createFileRoute("/admin/people")({
   head: () => ({ meta: [{ title: "People · Admin Services Portal" }] }),
@@ -24,6 +25,7 @@ function Outcome({ o, preview }: { o: ImportOutcome; preview?: boolean }) {
         <Pill>{o.managers} line managers set</Pill>
         <Pill tone={o.left ? "amber" : "zinc"}>{o.left} marked as left</Pill>
         <Pill tone={o.skipped.length ? "red" : "zinc"}>{o.skipped.length} skipped</Pill>
+        {!!o.departments && <Pill tone="brand">{o.departments} new division{o.departments === 1 ? "" : "s"}</Pill>}
       </div>
       {o.skipped.length > 0 && (
         <div style={{ marginTop: 8, fontSize: 12, color: "#B91C1C" }}>
@@ -54,6 +56,7 @@ function PeoplePage() {
       title="People"
       intro="The org chart — who works here, their department, title and line manager — comes from the HR master file or the directory. Approval routes read it: a requester's own manager, their department's head, HR business partner and CXO."
     >
+      <Divisions canManage={manage} />
       {manage && <HrImport onDone={load} />}
       {manage && <Directory status={dir} onDone={load} />}
 

@@ -22,6 +22,7 @@ export type FieldKind =
   | "dept"
   | "daterange"
   | "signature"
+  | "reviewer"
   // Generated (legacy / kept)
   | "gen_employee_name"
   | "gen_designation"
@@ -72,6 +73,11 @@ export type PlacedField = {
   placeholder?: string;
   order_index: number;
   formula?: string;
+  /** reviewer: the department to choose from, and whether to copy all of it. */
+  team?: string;
+  ccTeam?: boolean;
+  /** multi_select: the requester may add an option of their own. */
+  allowOther?: boolean;
   validation?: {
     minLength?: number;
     maxLength?: number;

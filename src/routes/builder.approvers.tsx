@@ -103,11 +103,14 @@ function ApproversStep() {
   // Who may raise this form: departments, or everybody when empty.
   const [audience, setAudience] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  // What kind of NFA it is, and the words that find it.
+  const [classification, setClassification] = useState("");
+  const [keywords, setKeywords] = useState("");
 
   useEffect(() => {
     (async () => {
       const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }, { data: tpls }] = await Promise.all([
-        db.from("form_templates").select("name, followup_template_id, audience_departments").eq("id", templateId).maybeSingle(),
+        db.from("form_templates").select("name, followup_template_id, audience_departments, classification, keywords").eq("id", templateId).maybeSingle(),
         db.from("form_fields").select("field_type, field_name, order_index").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
@@ -120,6 +123,8 @@ function ApproversStep() {
       ]);
       if (tpl?.name) setFormName(tpl.name);
       setAudience(((tpl as { audience_departments?: string[] | null } | null)?.audience_departments) ?? []);
+      setClassification((tpl as { classification?: string | null } | null)?.classification ?? "");
+      setKeywords(((tpl as { keywords?: string[] | null } | null)?.keywords ?? []).join(", "));
       void db.from("departments").select("name").order("name").then(({ data }) =>
         setDepartments(((data ?? []) as { name: string }[]).map((d) => d.name)));
       setFollowup((tpl as { followup_template_id?: string | null } | null)?.followup_template_id ?? "");
@@ -345,7 +350,11 @@ function ApproversStep() {
 
     const { error: fuErr } = await db
       .from("form_templates")
-      .update({ followup_template_id: followup || null, audience_departments: audience.length ? audience : null })
+      .update({
+        followup_template_id: followup || null, audience_departments: audience.length ? audience : null,
+        classification: classification || null,
+        keywords: [...new Set(keywords.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean))],
+      })
       .eq("id", templateId);
     if (fuErr) {
       toast.error("Failed to save the follow-up: " + fuErr.message);
@@ -434,6 +443,24 @@ function ApproversStep() {
                 <option value="">Nothing follows</option>
                 {templates.map((t) => <option key={t.id} value={t.id}>Start: {t.name}</option>)}
               </select>
+            </section>
+            <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="classification">
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>What it is, and how it is found</div>
+              <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
+                NFAs are classified so they can be told apart in lists and reports; keywords find the form from the search box.
+              </div>
+              <div className="flex gap-3 flex-wrap">
+                <select value={classification} onChange={(e) => setClassification(e.target.value)} aria-label="Classification"
+                  className="rounded-md bg-white" style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", minWidth: 200 }}>
+                  <option value="">Not classified</option>
+                  <option value="budgetary">Budgetary</option>
+                  <option value="non_budgetary">Non-budgetary</option>
+                  <option value="regulatory">Regulatory</option>
+                  <option value="operational">Operational</option>
+                </select>
+                <input value={keywords} onChange={(e) => setKeywords(e.target.value)} aria-label="Keywords" placeholder="Keywords, separated by commas"
+                  className="rounded-md bg-white" style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", flex: 1, minWidth: 240 }} />
+              </div>
             </section>
             <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="audience">
               <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Who can raise it</div>

@@ -265,8 +265,16 @@ function FieldInput({
     );
   }
   if (k === "multi_select") {
-    const opts = field.options ?? [];
-    const selected = (value as string[]) ?? [];
+    // A resumed draft (or one made from a Word document) holds the answer
+    // as it was stored — a JSON list, as text — rather than a list.
+    const selected: string[] = Array.isArray(value) ? (value as string[])
+      : typeof value === "string" && value ? (() => {
+          try { const p = JSON.parse(value); return Array.isArray(p) ? p.map(String) : [value]; }
+          catch { return value.split(",").map((s) => s.trim()).filter(Boolean); }
+        })()
+      : [];
+    // Options the requester added themselves stay listed, ticked.
+    const opts = [...(field.options ?? []), ...selected.filter((s) => !(field.options ?? []).includes(s))];
     return (
       <div className="flex flex-col gap-2.5">
         {opts.map((opt) => (
@@ -283,9 +291,10 @@ function FieldInput({
             {opt}
           </label>
         ))}
-        {opts.length === 0 && (
+        {opts.length === 0 && !field.allowOther && (
           <span style={{ fontSize: 12, color: "#A1A1AA", fontStyle: "italic" }}>No options configured</span>
         )}
+        {field.allowOther && <AddOther onAdd={(v) => { if (!selected.includes(v)) onChange([...selected, v]); }} />}
       </div>
     );
   }
@@ -423,6 +432,9 @@ function FieldInput({
   if (k === "employee") {
     return <EmployeeInput value={value as EmployeeRow | null} onChange={onChange} />;
   }
+  if (k === "reviewer") {
+    return <ReviewerInput team={field.team} ccTeam={!!field.ccTeam} value={(value as string) ?? ""} onChange={onChange} />;
+  }
   if (k === "signature") {
     return (
       <div>
@@ -558,6 +570,90 @@ function EmployeeInput({
             <Sparkles size={11} /> Auto-filled
           </span>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** "Option to add more": an option of the requester's own. */
+function AddOther({ onAdd }: { onAdd: (v: string) => void }) {
+  const [text, setText] = useState("");
+  const add = () => { const v = text.trim(); if (v) { onAdd(v); setText(""); } };
+  return (
+    <div className="flex items-center gap-2" style={{ maxWidth: 320 }}>
+      <input
+        style={{ ...inputStyle, padding: "5px 8px", fontSize: 12.5 }}
+        placeholder="Add another"
+        aria-label="Add another option"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+      />
+      <button type="button" onClick={add}
+        style={{ padding: "5px 10px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6, background: "#fff", cursor: "pointer" }}>
+        Add
+      </button>
+    </div>
+  );
+}
+
+type TeamMember = { employee_id: string; name: string; designation: string | null; away_until: string | null };
+
+/**
+ * A reviewer, chosen from a team. "Absent reviewer (on leave in system)
+ * to be unavailable in the list": somebody delegating their approvals
+ * today is shown, greyed, and cannot be chosen.
+ */
+function ReviewerInput({ team, ccTeam, value, onChange }: { team?: string; ccTeam: boolean; value: string; onChange: (v: unknown) => void }) {
+  const [people, setPeople] = useState<TeamMember[] | null>(null);
+  useEffect(() => {
+    if (!team) { setPeople([]); return; }
+    let alive = true;
+    (async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const [{ data: emps }, { data: away }] = await Promise.all([
+        db.from("employees").select("employee_id, name, designation").eq("department", team).eq("active", true).order("name"),
+        db.from("delegation_rules").select("delegator_id, end_date").lte("start_date", today).gte("end_date", today),
+      ]);
+      if (!alive) return;
+      const until = new Map(((away ?? []) as { delegator_id: string; end_date: string }[]).map((a) => [a.delegator_id, a.end_date]));
+      setPeople(((emps ?? []) as Omit<TeamMember, "away_until">[]).map((e) => ({ ...e, away_until: until.get(e.employee_id) ?? null })));
+    })();
+    return () => { alive = false; };
+  }, [team]);
+
+  if (!team) return <span style={{ fontSize: 12, color: "#A1A1AA", fontStyle: "italic" }}>No team configured</span>;
+  const dm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={`Reviewer from ${team}`}>
+        {(people ?? []).map((p) => {
+          const away = !!p.away_until;
+          const on = value === p.employee_id;
+          return (
+            <label key={p.employee_id} className="flex items-center gap-2.5 rounded-md"
+              data-reviewer={p.employee_id}
+              style={{ padding: "8px 10px", border: `1px solid ${on ? "#C7D2FE" : "#E4E4E7"}`, background: on ? "#EEF2FF" : away ? "#FAFAFA" : "#fff",
+                       cursor: away ? "not-allowed" : "pointer", opacity: away ? 0.6 : 1 }}>
+              <input type="radio" name={`reviewer-${team}`} checked={on} disabled={away}
+                onChange={() => onChange(p.employee_id)} style={{ accentColor: "var(--color-brand-500)" }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: "#18181B" }}>{p.name}</span>
+                <span style={{ fontSize: 12, color: "#71717A" }}> · {p.designation ?? "—"}</span>
+              </span>
+              {away && (
+                <span className="rounded-full" style={{ padding: "1px 8px", fontSize: 11, background: "#FFFBEB", color: "#B45309", border: "1px solid #FDE68A" }}>
+                  On leave until {dm(p.away_until!)}
+                </span>
+              )}
+            </label>
+          );
+        })}
+        {people === null && <span style={{ fontSize: 12, color: "#A1A1AA" }}>Loading {team}…</span>}
+        {people?.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>Nobody in {team}.</span>}
+      </div>
+      {ccTeam && (
+        <span style={{ fontSize: 11.5, color: "#71717A" }}>Everyone in {team} is copied on the request.</span>
       )}
     </div>
   );

@@ -77,7 +77,10 @@ export function GlobalSearch() {
     setBusy(true);
 
     const [forms, values, people, notices, maint, stationery, refs, docs] = await Promise.all([
-      db.from("form_templates").select("id, name, category").ilike("name", like).limit(PER_GROUP),
+      // Forms by name or by their keywords — "some keywords that will
+      // identify the appropriate templates". There are few enough to
+      // match here rather than in the query.
+      db.from("form_templates").select("id, name, category, keywords").eq("status", "published").limit(200),
       db.from("submission_values").select("submission_id, field_name, value").ilike("value", like).limit(8),
       db.from("employees").select("employee_id, name, designation, department").ilike("name", like).limit(PER_GROUP),
       db.from("notices").select("id, title, category").ilike("title", like).limit(PER_GROUP),
@@ -91,11 +94,16 @@ export function GlobalSearch() {
 
     const out: Hit[] = [];
 
-    (forms.data ?? []).forEach((f) => out.push({
+    const term = q.trim().toLowerCase();
+    const formHits = ((forms.data ?? []) as { id: string; name: string; category: string | null; keywords: string[] | null }[])
+      .map((f) => ({ f, kw: (f.keywords ?? []).find((k) => k.toLowerCase().includes(term) || term.includes(k.toLowerCase())) }))
+      .filter(({ f, kw }) => f.name.toLowerCase().includes(term) || kw)
+      .slice(0, PER_GROUP);
+    formHits.forEach(({ f, kw }) => out.push({
       key: `form:${f.id}`,
       group: "Forms",
       label: f.name,
-      sub: f.category ?? undefined,
+      sub: [f.category, kw && !f.name.toLowerCase().includes(term) ? `keyword: ${kw}` : null].filter(Boolean).join(" · ") || undefined,
       go: () => navigate({ to: "/forms/$formId", params: { formId: f.id } }),
     }));
 

@@ -18,6 +18,8 @@ type FormRow = {
   name: string;
   status: string | null;
   audience_departments?: string[] | null;
+  classification?: string | null;
+  keywords?: string[] | null;
   category: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -36,6 +38,10 @@ function FormsPage() {
   const [creators, setCreators] = useState<Record<string, Creator>>({});
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("HR");
+  // Find a form by its name or keywords, across every tab; or narrow a
+  // tab to budgetary or non-budgetary NFAs.
+  const [q, setQ] = useState("");
+  const [cls, setCls] = useState("");
   const { currentUser, can } = useCurrentUser();
   // Whoever designs workflows manages the published ones — a permission
   // from their roles, not one person's id.
@@ -47,7 +53,7 @@ function FormsPage() {
     (async () => {
       const { data } = await db
         .from("form_templates")
-        .select("id, name, status, category, created_by, created_at, audience_departments")
+        .select("id, name, status, category, created_by, created_at, audience_departments, classification, keywords")
         .eq("status", "published")
         .order("created_at", { ascending: false });
       const rows = (data ?? []) as FormRow[];
@@ -84,8 +90,13 @@ function FormsPage() {
   // either way.
   const offered = (f: FormRow) =>
     isAdmin || !f.audience_departments?.length || (!!myDepartment && f.audience_departments.includes(myDepartment));
-  const visible = forms.filter(
-    (f) => offered(f) && (f.category ?? "").toLowerCase() === tab.toLowerCase(),
+  const term = q.trim().toLowerCase();
+  const visible = forms.filter((f) =>
+    offered(f)
+    && (term
+      ? f.name.toLowerCase().includes(term) || (f.keywords ?? []).some((k) => k.toLowerCase().includes(term))
+      : (f.category ?? "").toLowerCase() === tab.toLowerCase())
+    && (!cls || f.classification === cls),
   );
 
   return (
@@ -103,8 +114,27 @@ function FormsPage() {
         )}
       </div>
 
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <input
+          aria-label="Find a form"
+          placeholder="Find a form by name or keyword — e.g. capex, leave, campaign"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="rounded-md bg-white"
+          style={{ padding: "8px 11px", fontSize: 13, border: "1px solid #E4E4E7", flex: 1, minWidth: 260 }}
+        />
+        <select aria-label="Classification" value={cls} onChange={(e) => setCls(e.target.value)}
+          className="rounded-md bg-white" style={{ padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}>
+          <option value="">Every classification</option>
+          <option value="budgetary">Budgetary</option>
+          <option value="non_budgetary">Non-budgetary</option>
+          <option value="regulatory">Regulatory</option>
+          <option value="operational">Operational</option>
+        </select>
+      </div>
+
       {/* Tabs */}
-      <div className="flex gap-1 border-b mb-6" style={{ borderColor: "#E4E4E7" }}>
+      <div className="flex gap-1 border-b mb-6" style={{ borderColor: "#E4E4E7", opacity: term ? 0.4 : 1 }}>
         {TABS.map((t) => {
           const active = t === tab;
           return (
@@ -143,7 +173,7 @@ function FormsPage() {
         ))}
         {!loading && visible.length === 0 && (
           <div className="col-span-full text-center text-muted-foreground py-12 border rounded-xl bg-white">
-            No published forms in {tab}.
+            {term ? <>No form matches “{q}”.</> : <>No published forms in {tab}.</>}
           </div>
         )}
       </div>
@@ -191,6 +221,21 @@ function FormCard({
           {form.status === "published" ? "Published" : "Draft"}
         </span>
       </div>
+      {(form.classification || (form.keywords ?? []).length > 0) && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {form.classification && (
+            <span className="rounded-full text-[11px] font-medium" style={{ padding: "1px 8px",
+              background: form.classification === "budgetary" ? "#EEF2FF" : "#F4F4F5",
+              color: form.classification === "budgetary" ? "#3730A3" : "#52525B",
+              border: `1px solid ${form.classification === "budgetary" ? "#C7D2FE" : "#E4E4E7"}` }}>
+              {form.classification === "non_budgetary" ? "Non-budgetary" : form.classification.replace(/^./, (c) => c.toUpperCase())}
+            </span>
+          )}
+          {(form.keywords ?? []).slice(0, 4).map((k) => (
+            <span key={k} className="text-[11px]" style={{ color: "#A1A1AA" }}>#{k}</span>
+          ))}
+        </div>
+      )}
       <p className="text-[13px] mb-4" style={{ color: "#71717A" }}>
         {form.category ? `${form.category} form` : "Uncategorised"}
         {form.created_at ? ` · added ${fmtDate(form.created_at)}` : ""}

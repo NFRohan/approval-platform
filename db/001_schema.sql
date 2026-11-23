@@ -1455,4 +1455,157 @@ create table if not exists public.report_templates (
 -- anything; this marks a tenant that has had it generated.
 alter table public.tenants add column if not exists history_seeded boolean not null default false;
 
+
+-- =====================================================================
+-- Stage 5 — commercial campaigns, finance documents, divisions.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- Templates: what kind of NFA a form is, the words that find it, and
+-- what its approval sets in motion.
+--   classification  "NFAs will be classified as budgetary and non-budgetary
+--                   or any other segments"
+--   keywords        "some keywords that will identify the appropriate
+--                   templates"
+--   on_approval     campaign: an approved NFA becomes a tracked campaign;
+--                   campaign_extension: an approved extension extends one
+-- ---------------------------------------------------------------------
+alter table public.form_templates add column if not exists classification text;
+alter table public.form_templates add column if not exists keywords       text[] not null default '{}';
+alter table public.form_templates add column if not exists on_approval    text;
+do $s5$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'form_templates_on_approval_check') then
+    alter table public.form_templates
+      add constraint form_templates_on_approval_check check (on_approval in ('campaign', 'campaign_extension'));
+  end if;
+end $s5$;
+
+-- ---------------------------------------------------------------------
+-- Campaigns.
+--
+-- An approved campaign NFA, tracked: its KPI targets and reporting
+-- details as approved, what has actually been spent and achieved, and
+-- where it is in its life. Budget alerts are recorded once per
+-- threshold so a requester is told once.
+-- ---------------------------------------------------------------------
+create table if not exists public.campaigns (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  submission_id uuid,
+  request_id    uuid,
+  name          text not null,
+  audience      text,
+  modality      text,
+  coupon        boolean not null default false,
+  exceptional   boolean not null default false,
+  status        text not null default 'upcoming'
+                  check (status in ('upcoming', 'ongoing', 'completed', 'discontinued', 'discarded')),
+  starts_on     date,
+  ends_on       date,
+  budget        numeric not null default 0,
+  kpi           jsonb not null default '{}',
+  wallets       jsonb not null default '[]',
+  cost_center   text,
+  gl_code       text,
+  product       text,
+  beneficiary   text,
+  requester_id  text,
+  reviewer_id   text,
+  alerted       jsonb not null default '{}',
+  status_note   text,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete set null (submission_id),
+  foreign key (requester_id, tenant_id)  references public.employees(employee_id, tenant_id) on delete set null (requester_id)
+);
+create unique index if not exists campaigns_submission_idx on public.campaigns(tenant_id, submission_id) where submission_id is not null;
+
+create table if not exists public.campaign_actuals (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  campaign_id   uuid not null,
+  on_date       date not null,
+  cost          numeric not null default 0,
+  beneficiaries integer,
+  transactions  integer,
+  volume        numeric,
+  note          text,
+  recorded_by   text,
+  created_at    timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (campaign_id, tenant_id) references public.campaigns(id, tenant_id) on delete cascade
+);
+create index if not exists campaign_actuals_campaign_idx on public.campaign_actuals(campaign_id, on_date);
+
+-- Coupon campaigns keep a record of every coupon: issued, and redeemed
+-- through which service.
+create table if not exists public.campaign_coupons (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null default app.current_tenant()
+                 references public.tenants(id) on delete cascade,
+  campaign_id  uuid not null,
+  code         text not null,
+  wallet       text,
+  amount       numeric,
+  issued_at    timestamptz,
+  redeemed_at  timestamptz,
+  redeemed_via text check (redeemed_via in ('App', 'USSD', 'Agent', 'Merchant')),
+  created_at   timestamptz not null default now(),
+  unique (id, tenant_id),
+  unique (tenant_id, campaign_id, code),
+  foreign key (campaign_id, tenant_id) references public.campaigns(id, tenant_id) on delete cascade
+);
+
+create table if not exists public.campaign_extensions (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  campaign_id   uuid not null,
+  submission_id uuid,
+  new_ends_on   date not null,
+  added_budget  numeric not null default 0,
+  business_case text,
+  status        text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  requested_by  text,
+  decided_at    timestamptz,
+  created_at    timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (campaign_id, tenant_id)   references public.campaigns(id, tenant_id) on delete cascade,
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete set null (submission_id)
+);
+
+-- ---------------------------------------------------------------------
+-- Mail to ticket.
+--
+-- "MNO partner shares campaign request via email ... Email is converted
+-- to AMS ticket." Mail from a partner domain becomes a ticket for the
+-- telecom team's point of contact; mail quoting a ticket's reference
+-- (a UAT result, say) is added to that ticket. Every message is kept
+-- with what was done with it.
+-- ---------------------------------------------------------------------
+alter table public.tenants add column if not exists inbound_domains text[] not null default '{}';
+alter table public.tenants add column if not exists inbound_poc     text;
+alter table public.tenants add column if not exists inbound_form    text;
+alter table public.tenants add column if not exists campaigns_seeded boolean not null default false;
+
+create table if not exists public.inbound_mail (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  from_address  text not null,
+  subject       text,
+  body_text     text,
+  attachments   text[] not null default '{}',
+  outcome       text not null check (outcome in ('ticket', 'note', 'rejected')),
+  reason        text,
+  submission_id uuid,
+  received_at   timestamptz not null default now(),
+  unique (id, tenant_id)
+);
+create index if not exists inbound_mail_tenant_idx on public.inbound_mail(tenant_id, received_at desc);
+
 commit;

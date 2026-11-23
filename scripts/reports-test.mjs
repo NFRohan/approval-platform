@@ -126,7 +126,8 @@ check('every notification kind the database sends has a template',
   ['approval.turn', 'submission.raised', 'request.completed', 'phase.lane_cleared', 'request.rejected', 'request.clarification',
    'approval.returned', 'approval.review', 'request.recalled', 'request.cancelled', 'question.asked', 'question.answered',
    'request.followup', 'approval.overdue', 'approval.due_soon', 'approval.escalated', 'note.added', 'cc.added', 'cc.raised',
-   'cc.completed', 'cc.rejected', 'handover.received', 'report.sent', 'report.scheduled']
+   'cc.completed', 'cc.rejected', 'handover.received', 'report.sent', 'report.scheduled',
+   'campaign.created', 'campaign.budget', 'campaign.extended']
     .filter((k) => !mail.DEFAULT_EMAIL_TEMPLATES.some((t) => t.kind === k)), []);
 
 check('filters read back in words', cat.describeFilters({ period: 'last_90', status: ['rejected'], on_time: false }), 'Last 90 days · Status: rejected · Late only');

@@ -18,6 +18,12 @@ import { liveSession } from './session';
 
 const { Pool } = pg;
 
+// A date column is a calendar date — no time, no zone — so it stays the
+// "2026-11-23" Postgres sends. pg would otherwise make it a Date at local
+// midnight, which reaches the browser as an object rather than a string
+// and, on a server east of UTC, as the day before once it is written out.
+pg.types.setTypeParser(pg.types.builtins.DATE, (v: string) => v);
+
 let pool: pg.Pool | undefined;
 
 export function getPool(): pg.Pool {

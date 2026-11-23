@@ -12,6 +12,7 @@ import {
 import { DEFAULT_EMAIL_TEMPLATES, PLACEHOLDERS, SAMPLE_VARS, renderEmail } from "@/lib/email-templates";
 import { Button, Field, NoPermission, Notice, Page, Pill, fmtWhen, inputStyle } from "@/components/admin/kit";
 import { control } from "@/components/reports/ReportParts";
+import { InboundTab } from "@/components/admin/InboundTab";
 
 export const Route = createFileRoute("/admin/email")({
   head: () => ({ meta: [{ title: "Email · Admin Services Portal" }] }),
@@ -36,15 +37,18 @@ function EmailPage() {
     <div className="mx-auto" style={{ maxWidth: 1280, padding: "28px 28px 56px" }}>
       <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: 0 }}>Email</h1>
       <p style={{ marginTop: 6, fontSize: 14, color: "#71717A", marginBottom: 18 }}>
-        Every notification is also an email. Here is each one that was written, what it said and what became of it — and the wording each kind uses.
+        Every notification is also an email. Here is each one that was written, what it said and what became of it, the wording each kind uses —
+        and the mail that comes in, from partners and as replies to tickets.
       </p>
       <Tabs defaultValue="log">
         <TabsList>
           <TabsTrigger value="log">Delivery log</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="inbound">Inbound</TabsTrigger>
         </TabsList>
         <TabsContent value="log"><Log /></TabsContent>
         <TabsContent value="templates"><Templates canEdit={can("notifications.manage")} /></TabsContent>
+        <TabsContent value="inbound"><InboundTab canManage={can("notifications.manage") || can("org.manage")} /></TabsContent>
       </Tabs>
     </div>
   );

@@ -113,6 +113,8 @@ export type Session = {
   employeeId: string | null;
   personaName: string | null;
   personaTitle: string | null;
+  /** The acting person's department, for what the menus offer. */
+  personaDepartment?: string | null;
   /** May this login act as somebody else? Evaluation logins only. */
   canSwitch: boolean;
   /** What the acting employee's roles grant, as of the last time the session was issued. */
@@ -190,6 +192,7 @@ export async function verifySession(token: string | undefined): Promise<Session 
       employeeId: payload.employeeId ? String(payload.employeeId) : null,
       personaName: payload.personaName ? String(payload.personaName) : null,
       personaTitle: payload.personaTitle ? String(payload.personaTitle) : null,
+      personaDepartment: payload.personaDepartment ? String(payload.personaDepartment) : null,
       canSwitch: payload.canSwitch === true,
       permissions: Array.isArray(payload.permissions) ? payload.permissions.map(String) : [],
       mfa: payload.mfa === true,

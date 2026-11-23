@@ -7,6 +7,7 @@ import { validateField } from "@/lib/validateField";
 import { evaluateFormula } from "@/lib/formula";
 import { toast } from "sonner";
 import { FieldRenderer } from "@/components/builder/FieldRenderer";
+import { WordImport } from "@/components/WordImport";
 import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { DEFAULT_LABELS, isEmbedded, isPermission } from "@/components/builder/palette";
 import { type ApprovalSlab } from "@/lib/approvalSlabs";
@@ -139,7 +140,7 @@ function FillFormPage() {
       setSlabs((slabRows ?? []) as ApprovalSlab[]);
 
       const placed: PlacedField[] = (rows ?? []).map((row) => {
-        const cfg = (row.field_config as { helper?: string; options?: string[]; placeholder?: string; formula?: string } | null) ?? {};
+        const cfg = (row.field_config as { helper?: string; options?: string[]; placeholder?: string; formula?: string; team?: string; ccTeam?: boolean; allowOther?: boolean } | null) ?? {};
         const kind = (row.field_type ?? "text") as FieldKind;
         return {
           id: row.id,
@@ -150,6 +151,9 @@ function FillFormPage() {
           options: cfg.options,
           placeholder: cfg.placeholder,
           formula: cfg.formula,
+          team: cfg.team,
+          ccTeam: cfg.ccTeam,
+          allowOther: cfg.allowOther,
           order_index: row.order_index ?? 0,
         };
       });
@@ -675,6 +679,14 @@ function FillFormPage() {
             </>
           ) : (
             <div className="flex flex-col gap-3.5">
+              {stepIndex === 0 && (
+                <WordImport
+                  templateId={formId}
+                  formId={formId}
+                  showSample={/NFA/.test(formName)}
+                  onApply={(found) => setValues((v) => ({ ...v, ...Object.fromEntries(found.map((m) => [m.fieldId, m.value])) }))}
+                />
+              )}
               {current.fields.map((f) =>
                 f.kind.startsWith("gen_") ? (
                   <GenFieldDisplay key={f.id} field={f} value={genValue(f.kind)} />

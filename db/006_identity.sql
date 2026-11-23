@@ -574,6 +574,7 @@ declare
   v_desig    text;
   v_dept     text;
   v_email    text;
+  v_depts    int := 0;
 begin
   perform app.require_permission('org.manage');
   if jsonb_typeof(p_rows) <> 'array' then raise exception 'expected a list of employees'; end if;
@@ -621,6 +622,14 @@ begin
     if found then v_managers := v_managers + 1; end if;
   end loop;
 
+  -- A department the file names for the first time is a new division:
+  -- it gets its row, so it can be given a head, an HRBP and a CXO.
+  insert into public.departments (tenant_id, name)
+  select distinct app.current_tenant(), e.department from public.employees e
+   where e.tenant_id = app.current_tenant() and e.department is not null and e.active
+     and not exists (select 1 from public.departments d where d.tenant_id = e.tenant_id and d.name = e.department);
+  get diagnostics v_depts = row_count;
+
   if p_mark_missing_left then
     update public.employees e
        set active = false, left_on = (now() at time zone 'Asia/Dhaka')::date
@@ -630,11 +639,11 @@ begin
   end if;
 
   perform app.audit('hr_import', 'employee', null::uuid,
-    format('HR import: %s added, %s updated, %s line managers set, %s marked as left, %s skipped',
-           v_added, v_updated, v_managers, v_left, cardinality(v_skipped)));
+    format('HR import: %s added, %s updated, %s line managers set, %s marked as left, %s skipped, %s new departments',
+           v_added, v_updated, v_managers, v_left, cardinality(v_skipped), v_depts));
 
   return jsonb_build_object('added', v_added, 'updated', v_updated, 'managers', v_managers,
-                            'left', v_left, 'skipped', to_jsonb(v_skipped));
+                            'left', v_left, 'skipped', to_jsonb(v_skipped), 'departments', v_depts);
 end $$;
 
 

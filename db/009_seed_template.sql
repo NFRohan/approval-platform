@@ -74,6 +74,16 @@ insert into public.employees (employee_id, name, designation, department, line_m
   ('EMP-0831', 'Kofi Mensah',      'Compliance Officer',      'Compliance', 'EMP-0700', 'CARD-0831'),
   ('EMP-0832', 'Ravi Shah',        'Compliance Officer',      'Compliance', 'EMP-0700', 'CARD-0832');
 
+-- Business Finance, who review campaign requests, and the Commercial
+-- team who raise them and take partners' requests by email.
+insert into public.employees (employee_id, name, designation, department, line_manager_id, gate_pass_card_number) values
+  ('EMP-0410', 'Nusrat Jahan',     'Business Finance Lead',   'Business Finance', 'EMP-0600', 'CARD-0410'),
+  ('EMP-0416', 'Mitu Rahman',      'Campaign & Promotion Manager', 'Commercial', 'EMP-0800', 'CARD-0416'),
+  ('EMP-0415', 'Shahriar Kabir',   'Telecom Partnerships Manager', 'Commercial', 'EMP-0800', 'CARD-0415');
+insert into public.employees (employee_id, name, designation, department, line_manager_id, gate_pass_card_number) values
+  ('EMP-0411', 'Tanvir Hasan',     'Business Finance Analyst', 'Business Finance', 'EMP-0410', 'CARD-0411'),
+  ('EMP-0412', 'Farzana Akter',    'Business Finance Analyst', 'Business Finance', 'EMP-0410', 'CARD-0412');
+
 -- Who heads each department, its HR business partner and its CXO — the
 -- roles a rule can name besides the line manager. Operations is headed
 -- by the line manager most of its people report to, which is the case
@@ -84,7 +94,9 @@ insert into public.departments (name, head_employee_id, hrbp_employee_id, cxo_em
   ('HR',                   'EMP-0650', 'EMP-0201', 'EMP-0650'),
   ('Admin',                'EMP-0445', 'EMP-0201', 'EMP-0800'),
   ('Product & Technology', 'EMP-0520', 'EMP-0201', 'EMP-0800'),
-  ('Compliance',           'EMP-0700', 'EMP-0201', 'EMP-0700');
+  ('Compliance',           'EMP-0700', 'EMP-0201', 'EMP-0700'),
+  ('Business Finance',     'EMP-0410', 'EMP-0201', 'EMP-0700'),
+  ('Commercial',           'EMP-0800', 'EMP-0201', 'EMP-0800');
 
 -- =====================================================================
 -- 2. Form templates
@@ -160,6 +172,51 @@ insert into public.approval_rules (form_template_id, approver_user_id, deadline_
 
 -- The bands a claim climbs through. With cumulative escalation a claim
 -- of 600,000 involves all three, in this order — not the top one alone.
+-- Extending a live campaign, and a partner's request by email with the
+-- NFA that follows it.
+insert into public.form_templates (id, name, category, created_by, status, audience_departments) values
+  ('11111111-0000-4000-8000-000000000011', 'Campaign Extension',   'Commercial', 'EMP-0312', 'published', array['Commercial', 'Business Finance']),
+  ('11111111-0000-4000-8000-000000000013', 'MNO Campaign NFA',     'Commercial', 'EMP-0415', 'published', array['Commercial']);
+insert into public.form_templates (id, name, category, created_by, status, audience_departments, followup_template_id) values
+  ('11111111-0000-4000-8000-000000000012', 'MNO Campaign Request', 'Commercial', 'EMP-0415', 'published', array['Commercial'],
+   '11111111-0000-4000-8000-000000000013');
+
+insert into public.form_fields (form_template_id, field_type, field_name, order_index, is_required, field_config) values
+  ('11111111-0000-4000-8000-000000000011', 'text',     'Campaign',               0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000011', 'text',     'Modality',               1, true,  '{"helper":"An extension keeps the modality it was approved with"}'),
+  ('11111111-0000-4000-8000-000000000011', 'date',     'Current end date',       2, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000011', 'date',     'New end date',           3, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000011', 'money',    'Additional budget',      4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000011', 'textarea', 'Updated business case',  5, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000011', 'select',   'Approval route',         6, true,  '{"options":["Regular","Exceptional"]}'),
+
+  ('11111111-0000-4000-8000-000000000012', 'text',     'Partner',                0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000012', 'email',    'Sender',                 1, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000012', 'text',     'Subject',                2, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000012', 'textarea', 'Request details',        3, true,  '{}'),
+
+  ('11111111-0000-4000-8000-000000000013', 'text',     'Partner',                0, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000013', 'text',     'Subject',                1, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000013', 'textarea', 'Request details',        2, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000013', 'select',   'NFA type',               3, true,  '{"options":["Information only","Requires SO configuration"]}'),
+  ('11111111-0000-4000-8000-000000000013', 'money',    'Total cost',             4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000013', 'textarea', 'Finance notes',          5, false, '{}');
+
+insert into public.approval_rules
+  (form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, lane, quorum, stage_label, condition) values
+  ('11111111-0000-4000-8000-000000000011', 'EMP-0800', 2, false, 'cxo_exception',     0, 0, null, null, 'Exceptional approval',
+   '{"field": "Approval route", "op": "eq", "value": "Exceptional"}'),
+  ('11111111-0000-4000-8000-000000000011', 'EMP-0410', 2, false, 'business_finance',  1, 0, null, null, 'Business finance review', null),
+  ('11111111-0000-4000-8000-000000000011', null,       2, false, 'department_head',   2, 0, null, null, null, null),
+  -- The telecom team checks a partner's request ...
+  ('11111111-0000-4000-8000-000000000012', 'EMP-0520', 2, false, 'telecom_check',     0, 0, null, null, 'Telecom check', null),
+  -- ... and the NFA after it goes to the heads, then to SO for
+  -- configuration when it needs it.
+  ('11111111-0000-4000-8000-000000000013', null,       2, false, 'department_head',   0, 0, null, null, 'Head of department', null),
+  ('11111111-0000-4000-8000-000000000013', 'EMP-0410', 2, false, 'business_finance',  1, 0, null, null, 'Business finance review', null),
+  ('11111111-0000-4000-8000-000000000013', 'EMP-0520', 3, false, 'so_configuration',  2, 0, null, null, 'SO configuration',
+   '{"field": "NFA type", "op": "eq", "value": "Requires SO configuration"}');
+
 insert into public.approval_slabs (form_template_id, min_amount, max_amount, approver_user_id, order_index) values
   ('11111111-0000-4000-8000-000000000001', 0,           100000, 'EMP-0312', 0),
   ('11111111-0000-4000-8000-000000000001', 100000.01,   500000, 'EMP-0600', 1),
@@ -223,15 +280,33 @@ insert into public.form_fields (form_template_id, field_type, field_name, order_
   ('11111111-0000-4000-8000-000000000009', 'select',     'Approval route',              3, true,  '{"options":["Regular","Exceptional"]}'),
   ('11111111-0000-4000-8000-000000000009', 'number',     'Budget',                      4, true,  '{}'),
   ('11111111-0000-4000-8000-000000000009', 'textarea',   'Business case',               5, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000009', 'reviewer',   'Business finance reviewer',   6, false,
+   '{"team": "Business Finance", "ccTeam": true, "helper": "Who in Business Finance reviews it. People on leave cannot be chosen; the whole team is copied."}'),
+  ('11111111-0000-4000-8000-000000000009', 'file',       'NFA document',                7, false, '{"helper": "The vetted NFA and business case, as a Word file"}'),
 
   ('11111111-0000-4000-8000-000000000010', 'gen_employee_name', 'Employee name',        0, true,  '{}'),
   ('11111111-0000-4000-8000-000000000010', 'text',       'Campaign name',               1, true,  '{}'),
   ('11111111-0000-4000-8000-000000000010', 'select',     'Audience',                    2, true,  '{"options":["Customer","Agent","Merchant","Distributor","Field force","Internal"]}'),
-  ('11111111-0000-4000-8000-000000000010', 'number',     'Beneficiary count',           3, true,  '{}'),
-  ('11111111-0000-4000-8000-000000000010', 'number',     'Transaction count',           4, true,  '{}'),
-  ('11111111-0000-4000-8000-000000000010', 'money',      'Total cost',                  5, true,  '{}'),
-  ('11111111-0000-4000-8000-000000000010', 'text',       'Cost center',                 6, true,  '{}'),
-  ('11111111-0000-4000-8000-000000000010', 'text',       'GL code',                     7, true,  '{}');
+  ('11111111-0000-4000-8000-000000000010', 'select',     'Modality',                    3, true,  '{"options":["Cashback","Discount","Coupon","Bonus","Free transfer"]}'),
+  ('11111111-0000-4000-8000-000000000010', 'date',       'Start date',                  4, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'date',       'End date',                    5, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'section_header', 'KPI section',             6, false, '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'number',     'Beneficiary count',           7, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'number',     'Transaction count',           8, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'number',     'Transaction volume',          9, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'number',     'bKash cost',                 10, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'money',      'Total cost',                 11, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'section_header', 'Reporting section',      12, false, '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'multi_select', 'Wallet',                   13, true,  '{"options":["Customer","Agent","Merchant","Distributor"],"allowOther":true}'),
+  ('11111111-0000-4000-8000-000000000010', 'textarea',   'Wallet-wise budget',         14, true,  '{"placeholder":"One wallet a line, e.g. Customer: 2,000,000"}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'Cost center',                15, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'GL code',                    16, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'Product',                    17, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'text',       'Campaign beneficiary',       18, true,  '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'file',       'Business case document',     19, false, '{}'),
+
+  ('11111111-0000-4000-8000-000000000006', 'textarea',   'PO lines',                    6, false,
+   '{"placeholder":"One PO a line: PO number | description | amount","helper":"Printed on the payment top sheet"}');
 
 insert into public.approval_rules
   (form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, lane, quorum, stage_label, condition) values
@@ -256,7 +331,7 @@ insert into public.approval_rules
   -- Campaign request: CXO first only when it is exceptional.
   ('11111111-0000-4000-8000-000000000009', 'EMP-0800', 2, false, 'cxo_exception',   0, 0, null, null, 'Exceptional approval',
    '{"field": "Approval route", "op": "eq", "value": "Exceptional"}'),
-  ('11111111-0000-4000-8000-000000000009', 'EMP-0312', 2, false, 'business_finance', 1, 0, null, null, 'Business finance review', null),
+  ('11111111-0000-4000-8000-000000000009', 'EMP-0410', 2, false, 'answer:Business finance reviewer', 1, 0, null, null, 'Business finance review', null),
   ('11111111-0000-4000-8000-000000000009', null,       2, false, 'department_head',  2, 0, null, null, null, null),
 
   -- Campaign NFA: line manager, then finance by total cost.
@@ -681,6 +756,52 @@ update public.roles
  where name = 'System administrator'
    and not (permissions @> array['reports.manage', 'notifications.manage']);
 
+
+
+-- =====================================================================
+-- 8. Commercial: campaigns, partners' mail, classification
+-- =====================================================================
+-- Farzana is on leave, so she cannot be chosen to review a campaign;
+-- Tanvir covers for her.
+insert into public.delegation_rules (delegator_id, delegate_id, start_date, end_date, reason)
+values ('EMP-0412', 'EMP-0411', current_date - 3, current_date + 9, 'Annual leave');
+
+-- What each form is, and the words that find it.
+update public.form_templates t
+   set classification = x.cls, keywords = x.kw
+  from (values
+    ('Travel & Expense Reimbursement', 'budgetary',     array['travel', 'expense', 'claim', 'reimbursement', 'per diem']),
+    ('Leave Application',              'non_budgetary', array['leave', 'holiday', 'absence', 'vacation']),
+    ('Gate Pass',                      'non_budgetary', array['gate pass', 'visitor', 'access']),
+    ('New Employee Onboarding',        'non_budgetary', array['onboarding', 'joiner', 'new hire']),
+    ('Stationery Request',             'budgetary',     array['stationery', 'business card', 'stamp']),
+    ('Capital Expenditure Request',    'budgetary',     array['capex', 'purchase', 'asset', 'investment', 'po']),
+    ('Employee Exit Clearance',        'non_budgetary', array['exit', 'clearance', 'resignation', 'leaver', 'final settlement']),
+    ('Gift & Hospitality Declaration', 'regulatory',    array['gift', 'hospitality', 'abc', 'anti-bribery', 'donation']),
+    ('Campaign Request',               'budgetary',     array['campaign', 'promotion', 'business finance', 'commercial']),
+    ('Campaign NFA',                   'budgetary',     array['campaign', 'nfa', 'cashback', 'coupon', 'kpi']),
+    ('Campaign Extension',             'budgetary',     array['campaign', 'extension', 'extend']),
+    ('MNO Campaign Request',           'budgetary',     array['mno', 'telecom', 'partner', 'operator']),
+    ('MNO Campaign NFA',               'budgetary',     array['mno', 'telecom', 'nfa', 'so configuration'])
+  ) x(name, cls, kw)
+ where t.tenant_id = app.current_tenant() and t.name = x.name;
+update public.form_templates set on_approval = 'campaign'
+ where tenant_id = app.current_tenant() and name = 'Campaign NFA';
+update public.form_templates set on_approval = 'campaign_extension'
+ where tenant_id = app.current_tenant() and name = 'Campaign Extension';
+
+-- Mail from the mobile operators becomes a ticket for Shahriar.
+update public.tenants
+   set inbound_domains = array['grameenphone.com', 'robi.com.bd', 'banglalink.net', 'teletalk.com.bd'],
+       inbound_poc = 'EMP-0415', inbound_form = 'MNO Campaign Request'
+ where id = app.current_tenant();
+
+select app.seed_campaigns(app.current_tenant());
+
+-- Evaluations issued before this get what the template has gained, and
+-- campaigns of their own.
+select app.upgrade_from_template(d.id) from public.tenants d where d.kind = 'demo';
+select app.seed_campaigns(d.id) from public.tenants d where d.kind = 'demo' and not d.campaigns_seeded;
 
 -- The seed's steps are written already decided, so the trigger that
 -- records when a step opened never saw them open; give them the same

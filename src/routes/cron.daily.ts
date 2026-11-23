@@ -40,6 +40,8 @@ export async function dailyRound() {
       // here: it relies on row-level security, which does not apply to
       // the owner this runs as, so it would remind across organisations.
       const { rows: [r] } = await client.query("select app.daily_reminders() as r");
+      // Campaigns start on their day and finish after their last.
+      await client.query("select app.campaign_daily()");
       await client.query("commit");
       dueSoon += r.r.due_soon; escalated += r.r.escalated; overdue += r.r.overdue;
     } catch (err) {

@@ -23,6 +23,7 @@ import {
   BarChart3,
   FileSpreadsheet,
   Mail,
+  Megaphone as CampaignIcon,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "./Avatar";
@@ -149,13 +150,17 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
     sections = [{ ...first, items: [...first.items, { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder", accent: true }] }, ...rest];
   }
 
-  // Reports and analytics, for whoever reads them.
+  // Reports and analytics, for whoever reads them; campaigns, for them
+  // and for the people who run and review campaigns.
+  const insights: Item[] = [];
   if (can("reports.view") || can("reports.manage")) {
-    sections = [...sections, { section: "Insights", items: [
-      { id: "analytics", label: "Analytics", Icon: BarChart3, to: "/analytics" },
-      { id: "reports", label: "Reports", Icon: FileSpreadsheet, to: "/reports" },
-    ] }];
+    insights.push({ id: "analytics", label: "Analytics", Icon: BarChart3, to: "/analytics" });
+    insights.push({ id: "reports", label: "Reports", Icon: FileSpreadsheet, to: "/reports" });
   }
+  if (can("reports.view") || can("reports.manage") || ["Commercial", "Business Finance"].includes(user.department ?? "")) {
+    insights.push({ id: "campaigns", label: "Campaigns", Icon: CampaignIcon, to: "/campaigns" });
+  }
+  if (insights.length) sections = [...sections, { section: "Insights", items: insights }];
 
   const admin: Item[] = [];
   if (can("users.manage") || can("users.approve")) admin.push({ id: "users", label: "Users", Icon: Users, to: "/admin/users" });

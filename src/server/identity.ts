@@ -100,10 +100,11 @@ export async function buildSession(
   let employeeId: string | null = null;
   let personaName: string | null = null;
   let personaTitle: string | null = null;
+  let personaDepartment: string | null = null;
 
   if (wanted && row.tenant_id) {
     const { rows } = await client.query(
-      `select employee_id, name, designation, active from public.employees
+      `select employee_id, name, designation, department, active from public.employees
         where tenant_id = $1 and employee_id = any ($2::text[])`,
       [row.tenant_id, [wanted, row.default_persona].filter(Boolean)]);
     const pick = rows.find((r) => r.employee_id === wanted && r.active)
@@ -112,6 +113,7 @@ export async function buildSession(
       employeeId = pick.employee_id;
       personaName = pick.name;
       personaTitle = pick.designation;
+      personaDepartment = pick.department;
     }
   }
 
@@ -152,6 +154,7 @@ export async function buildSession(
     employeeId,
     personaName,
     personaTitle,
+    personaDepartment,
     canSwitch,
     permissions,
     mfa: opts.mfa,

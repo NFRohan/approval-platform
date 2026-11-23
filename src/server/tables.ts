@@ -132,6 +132,31 @@ export const TABLES: Record<string, TableDef> = {
   // Stage 3: roles and who holds them are read here and written only
   // through the administration functions (src/lib/admin-fn.ts), which
   // check permission and maker-checker in the database.
+  // Stage 5: campaigns and what is recorded against them. Read here;
+  // written only through the functions in db/008_commercial.sql.
+  campaigns: T(
+    ['id', 'submission_id', 'request_id', 'name', 'audience', 'modality', 'coupon', 'exceptional', 'status',
+      'starts_on', 'ends_on', 'budget', 'kpi', 'wallets', 'cost_center', 'gl_code', 'product', 'beneficiary',
+      'requester_id', 'reviewer_id', 'alerted', 'status_note', 'created_at', 'updated_at'],
+    [],
+    ['kpi', 'wallets', 'alerted'],
+  ),
+  campaign_actuals: T(
+    ['id', 'campaign_id', 'on_date', 'cost', 'beneficiaries', 'transactions', 'volume', 'note', 'recorded_by', 'created_at'],
+    [],
+    [],
+  ),
+  campaign_coupons: T(
+    ['id', 'campaign_id', 'code', 'wallet', 'amount', 'issued_at', 'redeemed_at', 'redeemed_via'],
+    [],
+    [],
+  ),
+  campaign_extensions: T(
+    ['id', 'campaign_id', 'submission_id', 'new_ends_on', 'added_budget', 'business_case', 'status',
+      'requested_by', 'decided_at', 'created_at'],
+    [],
+    [],
+  ),
   roles: T(
     ['id', 'name', 'description', 'permissions', 'status', 'pending_name',
       'pending_permissions', 'created_by', 'changed_by', 'approved_by',
@@ -177,9 +202,9 @@ export const TABLES: Record<string, TableDef> = {
   ),
   form_templates: T(
     ['id', 'name', 'category', 'created_by', 'status', 'created_at',
-      'followup_template_id', 'audience_departments'],
+      'followup_template_id', 'audience_departments', 'classification', 'keywords', 'on_approval'],
     ['name', 'category', 'created_by', 'status', 'followup_template_id',
-      'audience_departments'],
+      'audience_departments', 'classification', 'keywords'],
     [],
   ),
   item_stock: T(
@@ -308,6 +333,13 @@ export const RPCS: Record<string, readonly string[]> = {
   // Stage 3: a workflow's task settings — deadlines and signatures — for
   // somebody with forms.settings, who may not otherwise touch the design.
   update_rule_settings: ['p_rule', 'p_deadline_days', 'p_require_signature'],
+  // Stage 5: campaigns and divisions. Each checks who may, in the database.
+  record_campaign_actuals:    ['p_campaign', 'p_on_date', 'p_cost', 'p_beneficiaries', 'p_transactions', 'p_volume', 'p_note'],
+  set_campaign_status:        ['p_campaign', 'p_status', 'p_note'],
+  import_coupons:             ['p_campaign', 'p_rows'],
+  request_campaign_extension: ['p_campaign', 'p_new_ends_on', 'p_added_budget', 'p_business_case', 'p_route'],
+  rename_department:          ['p_from', 'p_into'],
+  merge_departments:          ['p_from', 'p_into'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],

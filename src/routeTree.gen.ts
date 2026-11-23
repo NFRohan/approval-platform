@@ -29,6 +29,8 @@ import { Route as ApprovalsHistoryRouteImport } from './routes/approvals.history
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as BuilderApproversRouteImport } from './routes/builder.approvers'
 import { Route as BuilderNotificationsRouteImport } from './routes/builder.notifications'
+import { Route as CampaignsIndexRouteImport } from './routes/campaigns.index'
+import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$campaignId'
 import { Route as CertificateSubmissionIdRouteImport } from './routes/certificate.$submissionId'
 import { Route as CronDailyRouteImport } from './routes/cron.daily'
 import { Route as CronDirectorySyncRouteImport } from './routes/cron.directory-sync'
@@ -42,8 +44,11 @@ import { Route as RecordsSubmissionIdRouteImport } from './routes/records.$submi
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
 import { Route as ReportsNewRouteImport } from './routes/reports.new'
+import { Route as SamplesCampaignNfaRouteImport } from './routes/samples.campaign-nfa'
 import { Route as StatusSubmissionIdRouteImport } from './routes/status.$submissionId'
+import { Route as TopsheetSubmissionIdRouteImport } from './routes/topsheet.$submissionId'
 import { Route as ExportsReportReportIdRouteImport } from './routes/exports.report.$reportId'
+import { Route as InboundEmailTenantRouteImport } from './routes/inbound.email.$tenant'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -145,6 +150,16 @@ const BuilderNotificationsRoute = BuilderNotificationsRouteImport.update({
   path: '/builder/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CampaignsIndexRoute = CampaignsIndexRouteImport.update({
+  id: '/campaigns/',
+  path: '/campaigns/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CampaignsCampaignIdRoute = CampaignsCampaignIdRouteImport.update({
+  id: '/campaigns/$campaignId',
+  path: '/campaigns/$campaignId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CertificateSubmissionIdRoute = CertificateSubmissionIdRouteImport.update({
   id: '/certificate/$submissionId',
   path: '/certificate/$submissionId',
@@ -210,14 +225,29 @@ const ReportsNewRoute = ReportsNewRouteImport.update({
   path: '/reports/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SamplesCampaignNfaRoute = SamplesCampaignNfaRouteImport.update({
+  id: '/samples/campaign-nfa',
+  path: '/samples/campaign-nfa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StatusSubmissionIdRoute = StatusSubmissionIdRouteImport.update({
   id: '/status/$submissionId',
   path: '/status/$submissionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TopsheetSubmissionIdRoute = TopsheetSubmissionIdRouteImport.update({
+  id: '/topsheet/$submissionId',
+  path: '/topsheet/$submissionId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExportsReportReportIdRoute = ExportsReportReportIdRouteImport.update({
   id: '/exports/report/$reportId',
   path: '/exports/report/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboundEmailTenantRoute = InboundEmailTenantRouteImport.update({
+  id: '/inbound/email/$tenant',
+  path: '/inbound/email/$tenant',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -241,6 +271,7 @@ export interface FileRoutesByFullPath {
   '/approvals/history': typeof ApprovalsHistoryRoute
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
+  '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
@@ -251,12 +282,16 @@ export interface FileRoutesByFullPath {
   '/records/$submissionId': typeof RecordsSubmissionIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/reports/new': typeof ReportsNewRoute
+  '/samples/campaign-nfa': typeof SamplesCampaignNfaRoute
   '/status/$submissionId': typeof StatusSubmissionIdRoute
+  '/topsheet/$submissionId': typeof TopsheetSubmissionIdRoute
   '/builder/': typeof BuilderIndexRoute
+  '/campaigns/': typeof CampaignsIndexRoute
   '/forms/': typeof FormsIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
+  '/inbound/email/$tenant': typeof InboundEmailTenantRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -278,6 +313,7 @@ export interface FileRoutesByTo {
   '/approvals/history': typeof ApprovalsHistoryRoute
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
+  '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
@@ -288,12 +324,16 @@ export interface FileRoutesByTo {
   '/records/$submissionId': typeof RecordsSubmissionIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/reports/new': typeof ReportsNewRoute
+  '/samples/campaign-nfa': typeof SamplesCampaignNfaRoute
   '/status/$submissionId': typeof StatusSubmissionIdRoute
+  '/topsheet/$submissionId': typeof TopsheetSubmissionIdRoute
   '/builder': typeof BuilderIndexRoute
+  '/campaigns': typeof CampaignsIndexRoute
   '/forms': typeof FormsIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
+  '/inbound/email/$tenant': typeof InboundEmailTenantRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -316,6 +356,7 @@ export interface FileRoutesById {
   '/approvals/history': typeof ApprovalsHistoryRoute
   '/builder/approvers': typeof BuilderApproversRoute
   '/builder/notifications': typeof BuilderNotificationsRoute
+  '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
@@ -326,12 +367,16 @@ export interface FileRoutesById {
   '/records/$submissionId': typeof RecordsSubmissionIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/reports/new': typeof ReportsNewRoute
+  '/samples/campaign-nfa': typeof SamplesCampaignNfaRoute
   '/status/$submissionId': typeof StatusSubmissionIdRoute
+  '/topsheet/$submissionId': typeof TopsheetSubmissionIdRoute
   '/builder/': typeof BuilderIndexRoute
+  '/campaigns/': typeof CampaignsIndexRoute
   '/forms/': typeof FormsIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
+  '/inbound/email/$tenant': typeof InboundEmailTenantRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -355,6 +400,7 @@ export interface FileRouteTypes {
     | '/approvals/history'
     | '/builder/approvers'
     | '/builder/notifications'
+    | '/campaigns/$campaignId'
     | '/certificate/$submissionId'
     | '/cron/daily'
     | '/cron/directory-sync'
@@ -365,12 +411,16 @@ export interface FileRouteTypes {
     | '/records/$submissionId'
     | '/reports/$reportId'
     | '/reports/new'
+    | '/samples/campaign-nfa'
     | '/status/$submissionId'
+    | '/topsheet/$submissionId'
     | '/builder/'
+    | '/campaigns/'
     | '/forms/'
     | '/notices/'
     | '/reports/'
     | '/exports/report/$reportId'
+    | '/inbound/email/$tenant'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -392,6 +442,7 @@ export interface FileRouteTypes {
     | '/approvals/history'
     | '/builder/approvers'
     | '/builder/notifications'
+    | '/campaigns/$campaignId'
     | '/certificate/$submissionId'
     | '/cron/daily'
     | '/cron/directory-sync'
@@ -402,12 +453,16 @@ export interface FileRouteTypes {
     | '/records/$submissionId'
     | '/reports/$reportId'
     | '/reports/new'
+    | '/samples/campaign-nfa'
     | '/status/$submissionId'
+    | '/topsheet/$submissionId'
     | '/builder'
+    | '/campaigns'
     | '/forms'
     | '/notices'
     | '/reports'
     | '/exports/report/$reportId'
+    | '/inbound/email/$tenant'
   id:
     | '__root__'
     | '/'
@@ -429,6 +484,7 @@ export interface FileRouteTypes {
     | '/approvals/history'
     | '/builder/approvers'
     | '/builder/notifications'
+    | '/campaigns/$campaignId'
     | '/certificate/$submissionId'
     | '/cron/daily'
     | '/cron/directory-sync'
@@ -439,12 +495,16 @@ export interface FileRouteTypes {
     | '/records/$submissionId'
     | '/reports/$reportId'
     | '/reports/new'
+    | '/samples/campaign-nfa'
     | '/status/$submissionId'
+    | '/topsheet/$submissionId'
     | '/builder/'
+    | '/campaigns/'
     | '/forms/'
     | '/notices/'
     | '/reports/'
     | '/exports/report/$reportId'
+    | '/inbound/email/$tenant'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -465,6 +525,7 @@ export interface RootRouteChildren {
   AdminUsersRoute: typeof AdminUsersRoute
   BuilderApproversRoute: typeof BuilderApproversRoute
   BuilderNotificationsRoute: typeof BuilderNotificationsRoute
+  CampaignsCampaignIdRoute: typeof CampaignsCampaignIdRoute
   CertificateSubmissionIdRoute: typeof CertificateSubmissionIdRoute
   CronDailyRoute: typeof CronDailyRoute
   CronDirectorySyncRoute: typeof CronDirectorySyncRoute
@@ -475,12 +536,16 @@ export interface RootRouteChildren {
   RecordsSubmissionIdRoute: typeof RecordsSubmissionIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   ReportsNewRoute: typeof ReportsNewRoute
+  SamplesCampaignNfaRoute: typeof SamplesCampaignNfaRoute
   StatusSubmissionIdRoute: typeof StatusSubmissionIdRoute
+  TopsheetSubmissionIdRoute: typeof TopsheetSubmissionIdRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
+  CampaignsIndexRoute: typeof CampaignsIndexRoute
   FormsIndexRoute: typeof FormsIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   ExportsReportReportIdRoute: typeof ExportsReportReportIdRoute
+  InboundEmailTenantRoute: typeof InboundEmailTenantRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -625,6 +690,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BuilderNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/campaigns/': {
+      id: '/campaigns/'
+      path: '/campaigns'
+      fullPath: '/campaigns/'
+      preLoaderRoute: typeof CampaignsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/campaigns/$campaignId': {
+      id: '/campaigns/$campaignId'
+      path: '/campaigns/$campaignId'
+      fullPath: '/campaigns/$campaignId'
+      preLoaderRoute: typeof CampaignsCampaignIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/certificate/$submissionId': {
       id: '/certificate/$submissionId'
       path: '/certificate/$submissionId'
@@ -716,6 +795,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/samples/campaign-nfa': {
+      id: '/samples/campaign-nfa'
+      path: '/samples/campaign-nfa'
+      fullPath: '/samples/campaign-nfa'
+      preLoaderRoute: typeof SamplesCampaignNfaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/status/$submissionId': {
       id: '/status/$submissionId'
       path: '/status/$submissionId'
@@ -723,11 +809,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusSubmissionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/topsheet/$submissionId': {
+      id: '/topsheet/$submissionId'
+      path: '/topsheet/$submissionId'
+      fullPath: '/topsheet/$submissionId'
+      preLoaderRoute: typeof TopsheetSubmissionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/exports/report/$reportId': {
       id: '/exports/report/$reportId'
       path: '/exports/report/$reportId'
       fullPath: '/exports/report/$reportId'
       preLoaderRoute: typeof ExportsReportReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbound/email/$tenant': {
+      id: '/inbound/email/$tenant'
+      path: '/inbound/email/$tenant'
+      fullPath: '/inbound/email/$tenant'
+      preLoaderRoute: typeof InboundEmailTenantRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -765,6 +865,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminUsersRoute: AdminUsersRoute,
   BuilderApproversRoute: BuilderApproversRoute,
   BuilderNotificationsRoute: BuilderNotificationsRoute,
+  CampaignsCampaignIdRoute: CampaignsCampaignIdRoute,
   CertificateSubmissionIdRoute: CertificateSubmissionIdRoute,
   CronDailyRoute: CronDailyRoute,
   CronDirectorySyncRoute: CronDirectorySyncRoute,
@@ -775,12 +876,16 @@ const rootRouteChildren: RootRouteChildren = {
   RecordsSubmissionIdRoute: RecordsSubmissionIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
   ReportsNewRoute: ReportsNewRoute,
+  SamplesCampaignNfaRoute: SamplesCampaignNfaRoute,
   StatusSubmissionIdRoute: StatusSubmissionIdRoute,
+  TopsheetSubmissionIdRoute: TopsheetSubmissionIdRoute,
   BuilderIndexRoute: BuilderIndexRoute,
+  CampaignsIndexRoute: CampaignsIndexRoute,
   FormsIndexRoute: FormsIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   ExportsReportReportIdRoute: ExportsReportReportIdRoute,
+  InboundEmailTenantRoute: InboundEmailTenantRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
