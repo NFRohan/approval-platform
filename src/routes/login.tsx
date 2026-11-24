@@ -37,6 +37,11 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Signed in, and on the way in. Loading the session and the first
+  // screen takes a round trip or two to the database; the form used to
+  // come back, empty, for that long — which read as being sent back to
+  // sign in again. Until the next screen is up, it says what is happening.
+  const [arriving, setArriving] = useState<null | "/" | "/staff">(null);
 
   // A first sign-in on a freshly issued evaluation lands here, and so
   // does a password past its 90 days.
@@ -54,12 +59,13 @@ function LoginPage() {
     setError(null);
 
     const result = await signIn({ data: { username: username.trim(), password } });
-    setBusy(false);
 
     if (!result.ok) {
+      setBusy(false);
       setError(result.error);
       return;
     }
+    setBusy(false);
     if (result.mfaRequired) {
       setNeedCode(true);
       return;
@@ -72,13 +78,22 @@ function LoginPage() {
       setMustChange(true);
       return;
     }
-    // The router cached a "no session" answer on the way in.
-    await router.invalidate();
-
     // Staff hold no tenant, so the prospect screens have nothing to show
     // them — landing there means a dashboard of zeroes under somebody
     // else's name. Their work is the console.
-    navigate({ to: result.isStaff ? "/staff" : "/" });
+    await goIn(result.isStaff ? "/staff" : "/");
+  }
+
+  async function goIn(to: "/" | "/staff") {
+    setArriving(to);
+    try {
+      // The router cached a "no session" answer on the way in.
+      await router.invalidate();
+      await navigate({ to, replace: true });
+    } catch {
+      setArriving(null);
+      setError("Signed in, but the next page did not load. Try again.");
+    }
   }
 
   async function submitCode(e: React.FormEvent) {
@@ -118,8 +133,7 @@ function LoginPage() {
       return;
     }
     toast.success("Password changed");
-    await router.invalidate();
-    navigate({ to: "/" });
+    await goIn("/");
   }
 
   return (
@@ -148,7 +162,17 @@ function LoginPage() {
           className="rounded-xl bg-white"
           style={{ border: "1px solid #E4E4E7", padding: "22px 22px 24px" }}
         >
-          {mustChange ? (
+          {arriving ? (
+            <div role="status" aria-live="polite" className="flex items-center gap-3" style={{ padding: "18px 2px" }} data-testid="signing-in">
+              <span className="animate-spin rounded-full" style={{ width: 18, height: 18, border: "2px solid #E4E4E7", borderTopColor: "#4F46E5", flex: "none" }} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#18181B" }}>Signing you in…</div>
+                <div style={{ fontSize: 12.5, color: "#71717A", marginTop: 2 }}>
+                  {arriving === "/staff" ? "Opening the staff console." : "Opening your dashboard."}
+                </div>
+              </div>
+            </div>
+          ) : mustChange ? (
             <form onSubmit={submitNewPassword} className="flex flex-col gap-3.5">
               <div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: "#18181B" }}>
