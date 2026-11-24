@@ -24,6 +24,7 @@
     "db:test": "node --env-file=.env scripts/db-test.mjs",
     "db:test:local": "node scripts/db-test-local.mjs",
     "test:journey": "node --env-file=.env scripts/journey-test.mjs",
+    "test:perf": "node scripts/perf-test.mjs",
     "qa": "node scripts/qa.mjs"
   },
   "dependencies": {
@@ -89,6 +90,7 @@
     "tw-animate-css": "^1.3.4",
     "vaul": "^1.1.2",
     "vite-tsconfig-paths": "^6.0.2",
+    "web-push": "^3.6.7",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -99,7 +101,9 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^5.0.4",
+    "embedded-postgres": "^17.5.0-beta.15",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",

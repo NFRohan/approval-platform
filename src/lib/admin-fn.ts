@@ -221,6 +221,18 @@ export const assignRole = createServerFn({ method: 'POST' })
     }
   });
 
+/** A role for everybody in a department, kept in step as people move. */
+export const assignRoleGroup = createServerFn({ method: 'POST' })
+  .inputValidator((input: { department: string; roleId: string; assign: boolean }) => input)
+  .handler(async ({ data }): Promise<Result> => {
+    try {
+      await run((c) => c.query('select public.assign_role_group($1, $2, $3)', [data.department, data.roleId, data.assign === true]));
+      return { ok: true };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
 // ---------------------------------------------------------------------
 // The org chart: the HR master file and the directory.
 // ---------------------------------------------------------------------

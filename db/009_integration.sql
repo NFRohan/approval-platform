@@ -33,7 +33,8 @@ as $$
     'approvals:write',  -- approve, reject or ask for clarification, as the approver
     'forms:read',       -- the published forms and their fields
     'reports:read',     -- run saved reports, as JSON or CSV
-    'campaigns:read'    -- campaigns, their budgets and what has been spent
+    'campaigns:read',   -- campaigns, their budgets and what has been spent
+    'audit:read'        -- the audit trail, as a feed a SIEM can pull
   ]
 $$;
 

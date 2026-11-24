@@ -8,6 +8,18 @@ import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/build
 import { toast } from "sonner";
 import { useBuilderAccess } from "@/components/builder/access";
 import { ruleRole } from "@/lib/routing";
+import { CONDITION_OPS } from "@/components/builder/stages";
+
+// "Define the criteria for sending notifications": each person added by
+// hand is told on the events ticked, and, with a condition, only when
+// the request's answers meet it (db/009_sow_gaps.sql).
+type When = { events: string[]; condition: { field: string; op: string; value: string } | null };
+const EVENTS: { key: string; label: string }[] = [
+  { key: "raised", label: "Raised" },
+  { key: "approved", label: "Approved" },
+  { key: "rejected", label: "Rejected" },
+];
+const DEFAULT_WHEN: When = { events: ["raised"], condition: null };
 
 const search = z.object({ templateId: z.string() });
 
@@ -87,20 +99,34 @@ function NotificationsStep() {
   // none saved — see autoNotify.
   const [savedAuto, setSavedAuto] = useState<{ label: string; user_id: string | null }[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [when, setWhen] = useState<Record<string, When>>({});
+  const [fieldLabels, setFieldLabels] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
       const [{ data: tpl }, { data: fields }, { data: slabRows }, { data: emps }, { data: rules }] = await Promise.all([
         db.from("form_templates").select("name").eq("id", templateId).maybeSingle(),
-        db.from("form_fields").select("field_type").eq("form_template_id", templateId),
+        db.from("form_fields").select("field_type, field_name").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation"),
         db.from("notification_rules")
-          .select("notifyee_user_id, is_auto_added, label")
+          .select("notifyee_user_id, is_auto_added, label, events, condition")
           .eq("form_template_id", templateId),
       ]);
       if (tpl?.name) setFormName(tpl.name);
       setFieldTypes(new Set((fields ?? []).map((f) => f.field_type ?? "").filter(Boolean)));
+      setFieldLabels((fields ?? [])
+        .filter((f) => f.field_name && !["section_header", "file", "signature"].includes(f.field_type ?? ""))
+        .map((f) => f.field_name as string));
+      setWhen(Object.fromEntries((rules ?? [])
+        .filter((r) => !r.is_auto_added && r.notifyee_user_id)
+        .map((r) => {
+          const c = (r as { condition?: { field?: string; op?: string; value?: string } | null }).condition;
+          return [r.notifyee_user_id as string, {
+            events: ((r as { events?: string[] | null }).events ?? ["raised"]),
+            condition: c?.field ? { field: c.field, op: c.op ?? "eq", value: c.value ?? "" } : null,
+          }];
+        })));
       setLoading(false);
       const empMap: Record<string, { name: string; designation: string | null }> = {};
       (emps ?? []).forEach((e) => { empMap[e.employee_id] = { name: e.name, designation: e.designation }; });
@@ -191,12 +217,17 @@ function NotificationsStep() {
           // finance watcher, which is a fixed person.
           label: a.label ?? a.reason,
         })),
-        ...manual.map((m) => ({
-          form_template_id: templateId,
-          notifyee_user_id: m.user_id,
-          is_auto_added: false,
-          label: "Manually added",
-        })),
+        ...manual.map((m) => {
+          const w = when[m.user_id] ?? DEFAULT_WHEN;
+          return {
+            form_template_id: templateId,
+            notifyee_user_id: m.user_id,
+            is_auto_added: false,
+            label: "Manually added",
+            events: w.events.length ? w.events : ["raised"],
+            condition: w.condition && w.condition.field ? w.condition : null,
+          };
+        }),
       ];
       const { error: nrErr } = await db.from("notification_rules").insert(rows);
       if (nrErr) {
@@ -253,6 +284,53 @@ function NotificationsStep() {
         manual={manual}
         onManualChange={setManual}
       />
+      )}
+      {!loading && manual.length > 0 && (
+        <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="notify-when">
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>When each is told</div>
+          <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
+            Tick when each person hears about a request, and narrow it to requests whose answers meet a condition — e.g. only above an amount.
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {manual.map((m) => {
+              const w = when[m.user_id] ?? DEFAULT_WHEN;
+              const put = (patch: Partial<When>) => setWhen((all) => ({ ...all, [m.user_id]: { ...w, ...patch } }));
+              const ctl = { padding: "5px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6, background: "#fff" } as const;
+              return (
+                <div key={m.user_id} className="flex items-center gap-3 flex-wrap" data-watcher={m.user_id}>
+                  <span style={{ fontSize: 13, color: "#18181B", minWidth: 160 }}>{m.name}</span>
+                  {EVENTS.map((ev) => (
+                    <label key={ev.key} className="inline-flex items-center gap-1" style={{ fontSize: 12.5, color: "#3F3F46" }}>
+                      <input type="checkbox" aria-label={`${m.name}: ${ev.label}`} checked={w.events.includes(ev.key)}
+                        onChange={(e) => put({ events: e.target.checked ? [...w.events, ev.key] : w.events.filter((x) => x !== ev.key) })} />
+                      {ev.label}
+                    </label>
+                  ))}
+                  <button type="button" onClick={() => put({ condition: w.condition ? null : { field: fieldLabels[0] ?? "", op: "gt", value: "" } })}
+                    style={{ ...ctl, cursor: "pointer", color: w.condition ? "#4338CA" : "#71717A", background: w.condition ? "#EEF2FF" : "#fff" }}>
+                    {w.condition ? "Only when…" : "Always"}
+                  </button>
+                  {w.condition && (
+                    <>
+                      <select aria-label={`${m.name}: condition field`} style={ctl} value={w.condition.field}
+                        onChange={(e) => put({ condition: { ...w.condition!, field: e.target.value } })}>
+                        {fieldLabels.map((f) => <option key={f}>{f}</option>)}
+                      </select>
+                      <select aria-label={`${m.name}: condition`} style={ctl} value={w.condition.op}
+                        onChange={(e) => put({ condition: { ...w.condition!, op: e.target.value } })}>
+                        {CONDITION_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      {!["empty", "not_empty"].includes(w.condition.op) && (
+                        <input aria-label={`${m.name}: condition value`} style={{ ...ctl, width: 140 }} value={w.condition.value}
+                          onChange={(e) => put({ condition: { ...w.condition!, value: e.target.value } })} />
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
     </BuilderChrome>
   );

@@ -936,7 +936,7 @@ function ApprovalsInbox() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <div className="row-actions flex items-center gap-2 flex-wrap md:flex-nowrap md:shrink-0 w-full md:w-auto" onClick={(e) => e.stopPropagation()}>
                       {r.status === "clarification" ? (
                         <>
                           <span

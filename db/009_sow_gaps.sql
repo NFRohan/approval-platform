@@ -506,6 +506,538 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Passwords apart from application data
+--
+-- "Store password files separately from application data." The hashes
+-- and their history are kept in vault.credentials, a schema the
+-- application's role has no access to. Whatever writes a password to an
+-- account (registration, a reset, a change) has it moved there by this
+-- trigger. In this first step app_users keeps its copy too, so a server
+-- still reading it signs people in while a release rolls out; the next
+-- release clears it.
+-- ---------------------------------------------------------------------
+revoke all on schema vault from public;
+revoke all on all tables in schema vault from public;
+do $$ begin
+  execute 'revoke all on schema vault from app_api';
+  execute 'revoke all on all tables in schema vault from app_api';
+exception when undefined_object then null; end $$;
+
+create or replace function app.keep_credentials()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, app, vault, pg_temp
+as $$
+begin
+  if new.password_hash is not null
+     and (tg_op = 'INSERT' or new.password_hash is distinct from old.password_hash
+          or new.password_history is distinct from old.password_history) then
+    insert into vault.credentials as c (user_id, password_hash, password_history, updated_at)
+    values (new.id, new.password_hash, coalesce(new.password_history, '{}'), now())
+    on conflict (user_id) do update
+       set password_hash = excluded.password_hash,
+           password_history = case when cardinality(excluded.password_history) > 0
+                                   then excluded.password_history else c.password_history end,
+           updated_at = now();
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists app_users_keep_credentials on public.app_users;
+create trigger app_users_keep_credentials
+  before insert or update of password_hash, password_history on public.app_users
+  for each row execute function app.keep_credentials();
+
+-- Every account's password, moved once; a later apply leaves newer ones be.
+insert into vault.credentials (user_id, password_hash, password_history)
+select id, password_hash, coalesce(password_history, '{}') from public.app_users where password_hash is not null
+on conflict (user_id) do nothing;
+
+-- ---------------------------------------------------------------------
+-- The SOW's own exit clearance checklists (§2.2 "Division-Specific
+-- Checklist Items"), the leaver's own checklist on the form, and the
+-- Payroll settlement after HR's final clearance.
+-- ---------------------------------------------------------------------
+create or replace function app.sow_exit_checklists()
+returns table (track text, items text[])
+language sql
+immutable
+as $$
+  values
+    ('Own division', array['Handover formality and signed-off note', 'Property recovery (phone, SIM and the like)',
+                           'Official social media platforms (Facebook, LinkedIn, Instagram)', 'Other officially used portals',
+                           'Chat groups used for official purposes (WhatsApp, Telegram)', 'Other outstanding issue']),
+    ('Finance & Accounts', array['Pending IOU or advance', 'Unsettled bills', 'Other payment or recovery', 'Other outstanding issue']),
+    ('Supply Chain', array['Mobile SIM (for merchant wallet, if applicable)']),
+    ('Administration', array['Property or equipment issued', 'Desk keys', 'Stationeries', 'Seal and business cards', 'Other outstanding issue']),
+    ('Product & Technology', array['IT clearance completed in ManageEngine']),
+    ('Final settlement', array['Access ID card returned (GD copy if lost)', 'Access card deactivated', 'Exit interview', 'Acceptance of resignation',
+                               'Security bond', 'Pending domestic enquiry or investigation', 'Annual leave balance', 'Last LFA applied',
+                               'Notice period', 'Other outstanding issue']),
+    ('Payroll settlement', array['Clearances and annual leave balance received', 'Final settlement calculated',
+                                 'Paid to the nominated bank account', 'HRBP told to issue the release letter and experience certificate'])
+$$;
+
+-- The checklists first seeded on 25 November, in our own words; an
+-- organisation still on exactly these gets the SOW's.
+create or replace function app.first_exit_checklists()
+returns text
+language sql
+immutable
+as $$
+  select 'Administration:ID and access cards returned|Office keys and locker returned|Official SIM and handset returned;'
+      || 'Final settlement:Bank nomination verified|Every department''s clearance confirmed;'
+      || 'Finance & Accounts:Advances and loans settled|Corporate card returned or cancelled|Final settlement figures prepared;'
+      || 'Own division:Work and files handed over|Open tasks reassigned;'
+      || 'Product & Technology:Laptop and accessories returned|Email, VPN and system accounts disabled|Official portal access revoked;'
+      || 'Supply Chain:Assets on the inventory list returned|Open purchase orders handed over'
+$$;
+
+create or replace function app.seed_exit_clearance(p_tenant uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare
+  v_exit uuid;
+  v_now  text;
+  t      record;
+  v_i    int;
+  v_hr   text;
+begin
+  select id into v_exit from public.form_templates where tenant_id = p_tenant and name = 'Employee Exit Clearance';
+  if v_exit is null then return; end if;
+
+  -- The Payroll team: HR Operations, Payroll & HRIS, who settle last.
+  if not exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0661') then
+    v_hr := case when exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0650') then 'EMP-0650' end;
+    insert into public.employees (tenant_id, employee_id, name, designation, department, line_manager_id, gate_pass_card_number, email)
+    values (p_tenant, 'EMP-0661', 'Zara Ahmed', 'Payroll & HRIS Lead', 'HR', v_hr, 'CARD-0661', 'zara.ahmed@example.com');
+  end if;
+  if not exists (select 1 from public.approval_rules where tenant_id = p_tenant and form_template_id = v_exit and label = 'payroll') then
+    insert into public.approval_rules (tenant_id, form_template_id, approver_user_id, deadline_days, is_auto_added, label,
+                                       step_index, position, stage_label)
+    values (p_tenant, v_exit, 'EMP-0661', 5, false, 'payroll',
+            coalesce((select max(step_index) + 1 from public.approval_rules where tenant_id = p_tenant and form_template_id = v_exit), 2),
+            0, 'Payroll settlement');
+  end if;
+
+  -- The SOW's checklists, where an organisation has none or is still on
+  -- the first ones; one that changed them keeps its own.
+  select string_agg(x.track || ':' || x.items, ';' order by x.track) into v_now
+    from (select c.track, string_agg(c.item, '|' order by c.position, c.created_at) as items
+            from public.checklist_items c where c.tenant_id = p_tenant and c.form_template_id = v_exit and c.active
+           group by c.track) x;
+  if v_now is null or v_now = app.first_exit_checklists() then
+    update public.checklist_items set active = false
+     where tenant_id = p_tenant and form_template_id = v_exit and active;
+    for t in select * from app.sow_exit_checklists() loop
+      for v_i in 1 .. cardinality(t.items) loop
+        update public.checklist_items set active = true, position = v_i
+         where tenant_id = p_tenant and form_template_id = v_exit and track = t.track and item = t.items[v_i];
+        if not found then
+          insert into public.checklist_items (tenant_id, form_template_id, track, item, position)
+          values (p_tenant, v_exit, t.track, t.items[v_i], v_i);
+        end if;
+      end loop;
+    end loop;
+  elsif not exists (select 1 from public.checklist_items where tenant_id = p_tenant and form_template_id = v_exit and track = 'Payroll settlement') then
+    insert into public.checklist_items (tenant_id, form_template_id, track, item, position)
+    select p_tenant, v_exit, 'Payroll settlement', u.x, u.o
+      from app.sow_exit_checklists() c, unnest(c.items) with ordinality as u(x, o) where c.track = 'Payroll settlement';
+  end if;
+
+  -- "The employee fills out a comprehensive checklist (Handover
+  -- Formality, Property Recovery, Official Portals)": the leaver's own,
+  -- before the bank details.
+  if not exists (select 1 from public.form_fields where tenant_id = p_tenant and form_template_id = v_exit and field_name = 'Before you leave') then
+    update public.form_fields set order_index = order_index + 6
+     where tenant_id = p_tenant and form_template_id = v_exit and order_index >= 4;
+    insert into public.form_fields (tenant_id, form_template_id, field_type, field_name, order_index, is_required, field_config)
+    values
+      (p_tenant, v_exit, 'section_header', 'Before you leave', 4, false, '{}'),
+      (p_tenant, v_exit, 'checkbox', 'I have handed over my work, with a signed-off handover note', 5, true, '{}'),
+      (p_tenant, v_exit, 'checkbox', 'I have returned company property: phone, SIM, laptop, cards and keys', 6, true, '{}'),
+      (p_tenant, v_exit, 'checkbox', 'I have handed over official social media and portal accounts', 7, true, '{}'),
+      (p_tenant, v_exit, 'checkbox', 'I have left or handed over official chat groups', 8, true, '{}'),
+      (p_tenant, v_exit, 'textarea', 'Anything still outstanding', 9, false, '{"placeholder":"Leave blank if nothing"}');
+  end if;
+end $$;
+
+-- =====================================================================
+-- Roles given to a group
+--
+-- "Roles can be created based on user group(s)." A role given to a
+-- department is held by everybody in it, for as long as they are: the
+-- HR file and the directory sync move people, and their roles follow.
+-- =====================================================================
+drop policy if exists role_groups_member_read on public.role_groups;
+create policy role_groups_member_read on public.role_groups for select to app_api
+  using (tenant_id = app.current_tenant() and app.is_member());
+
+create or replace function app.held_roles(p_employee text, p_tenant uuid default null)
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select r.id
+    from public.employee_roles er
+    join public.roles r on r.id = er.role_id and r.tenant_id = er.tenant_id
+   where er.tenant_id = coalesce(p_tenant, app.current_tenant())
+     and er.employee_id = p_employee
+     and r.status = 'active'
+  union
+  select r.id
+    from public.role_groups g
+    join public.roles r on r.id = g.role_id and r.tenant_id = g.tenant_id
+    join public.employees e on e.tenant_id = g.tenant_id and e.department = g.department and e.active
+   where g.tenant_id = coalesce(p_tenant, app.current_tenant())
+     and e.employee_id = p_employee
+     and r.status = 'active'
+$$;
+
+create or replace function public.assign_role_group(p_department text, p_role uuid, p_assign boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_role record;
+begin
+  perform app.require_permission('users.manage');
+  select name, status into v_role from public.roles where id = p_role and tenant_id = app.current_tenant();
+  if not found then raise exception 'no such role'; end if;
+  if not exists (select 1 from public.departments where tenant_id = app.current_tenant() and name = p_department)
+     and not exists (select 1 from public.employees where tenant_id = app.current_tenant() and department = p_department) then
+    raise exception 'there is no department called %', p_department;
+  end if;
+  -- The group rule mirrors the personal one: an administrator could
+  -- otherwise hand their own department the role that approves roles.
+  if exists (select 1 from public.employees where tenant_id = app.current_tenant()
+              and employee_id = app.current_employee() and department = p_department) then
+    raise exception 'nobody changes the roles of their own department';
+  end if;
+  if p_assign then
+    if v_role.status <> 'active' then raise exception 'only an approved role can be given to a department'; end if;
+    insert into public.role_groups (tenant_id, role_id, department, assigned_by)
+    values (app.current_tenant(), p_role, p_department, app.current_employee())
+    on conflict do nothing;
+  else
+    delete from public.role_groups where tenant_id = app.current_tenant() and role_id = p_role and department = p_department;
+  end if;
+  perform app.audit(case when p_assign then 'role_assigned' else 'role_removed' end, 'role', p_role,
+                    v_role.name || case when p_assign then ' given to everyone in ' else ' taken from everyone in ' end || p_department);
+end $$;
+
+-- =====================================================================
+-- Who is told, and when
+--
+-- "Define the criteria for sending notifications." A form's watchers are
+-- told when a request is raised, approved or rejected — whichever each
+-- names — and, with a condition, only when the answers meet it.
+-- =====================================================================
+create or replace function app.watchers_for(p_submission uuid, p_event text)
+returns setof text
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select distinct w.who
+    from (
+      select case
+               when app.rule_role(nr.label) = 'submitter' then s.submitted_by
+               when app.rule_role(nr.label) = 'creator' then coalesce(t.created_by, nr.notifyee_user_id)
+               when app.is_org_role(app.rule_role(nr.label))
+                 then coalesce(app.resolve_role(app.rule_role(nr.label), s.submitted_by), nr.notifyee_user_id)
+               else nr.notifyee_user_id
+             end as who
+        from public.form_submissions s
+        join public.form_templates t on t.id = s.form_template_id and t.tenant_id = s.tenant_id
+        join public.notification_rules nr on nr.form_template_id = s.form_template_id and nr.tenant_id = s.tenant_id
+       where s.id = p_submission
+         and p_event = any (coalesce(nr.events, '{raised}'))
+         and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition))
+    ) w
+   where w.who is not null
+$$;
+
+-- Approved or rejected: the watchers who asked to hear it are told.
+-- The requester hears from the engine already, so not twice from here.
+create or replace function app.watchers_on_event()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_event text; r record; v_requester text;
+begin
+  if new.subject_type <> 'form_submission' then return new; end if;
+  v_event := case new.action when 'completed' then 'approved' when 'rejected' then 'rejected' end;
+  if v_event is null then return new; end if;
+  -- A step's rejection ends the request; one notice for it.
+  if v_event = 'rejected' and exists (select 1 from public.approval_events e
+                                        where e.subject_id = new.subject_id and e.action = 'rejected' and e.id <> new.id) then
+    return new;
+  end if;
+  select submitted_by into v_requester from public.form_submissions where id = new.subject_id;
+  for r in select who from app.watchers_for(new.subject_id, v_event) who where who is distinct from v_requester loop
+    perform app.notify(r.who, 'watch.' || v_event,
+      case v_event when 'approved' then 'A request you watch was approved' else 'A request you watch was rejected' end,
+      app.subject_label('form_submission', new.subject_id)
+        || case v_event when 'approved' then ' has been approved by everybody it needed.' else ' was not approved.' end,
+      'form_submission', new.subject_id);
+  end loop;
+  return new;
+end $$;
+
+drop trigger if exists approval_events_watchers on public.approval_events;
+create trigger approval_events_watchers after insert on public.approval_events
+  for each row execute function app.watchers_on_event();
+
+-- =====================================================================
+-- Trackers
+-- =====================================================================
+drop policy if exists trackers_member_read on public.trackers;
+create policy trackers_member_read on public.trackers for select to app_api
+  using (tenant_id = app.current_tenant() and app.is_member()
+         and (shared_with = 'everyone' or owner_id = app.current_employee()
+              or (shared_with = 'department' and department = (select e.department from public.employees e
+                                                                 where e.tenant_id = trackers.tenant_id
+                                                                   and e.employee_id = app.current_employee()))));
+drop policy if exists tracker_reminders_own_read on public.tracker_reminders;
+create policy tracker_reminders_own_read on public.tracker_reminders for select to app_api
+  using (tenant_id = app.current_tenant() and app.is_member() and employee_id = app.current_employee());
+
+-- Requests as a tracker shows them: where each is, with whom, since when,
+-- and the reminder the person looking has set on it.
+create or replace function public.tracker_rows(p_filters jsonb)
+returns table (id uuid, reference text, form text, category text, requester text, requester_name text, department text,
+               status text, priority text, flag text, submitted_at timestamptz, with_whom text, stage text,
+               waiting_since timestamptz, due_at timestamptz, overdue boolean, remind_on date, reminder_note text)
+language sql
+stable
+security invoker
+set search_path = public, app, pg_temp
+as $$
+  with f as (
+    select coalesce(p_filters, '{}'::jsonb) as j
+  ),
+  open_steps as (
+    select ar.submission_id,
+           string_agg(distinct coalesce(e.name, ar.approver_user_id), ', ') as with_whom,
+           min(ar.stage_label) as stage,
+           min(ar.opened_at) as waiting_since,
+           min(ar.deadline_at) as due_at
+      from public.approval_requests ar
+      left join public.employees e on e.tenant_id = ar.tenant_id and e.employee_id = ar.approver_user_id
+     where ar.tenant_id = app.current_tenant() and ar.submission_id is not null and ar.status in ('pending', 'clarification')
+     group by ar.submission_id
+  )
+  select s.id, s.ref_number, t.name, t.category, s.submitted_by, re.name, re.department,
+         s.status, coalesce(s.priority, 'normal'), s.flag, s.submitted_at,
+         o.with_whom, o.stage, o.waiting_since, o.due_at, coalesce(o.due_at < now(), false),
+         tr.remind_on, tr.note
+    from public.form_submissions s
+    join public.form_templates t on t.id = s.form_template_id and t.tenant_id = s.tenant_id
+    left join public.employees re on re.tenant_id = s.tenant_id and re.employee_id = s.submitted_by
+    left join open_steps o on o.submission_id = s.id
+    left join lateral (select x.remind_on, x.note from public.tracker_reminders x
+                        where x.submission_id = s.id and x.employee_id = app.current_employee() and x.sent_at is null
+                        order by x.remind_on limit 1) tr on true
+    cross join f
+   where s.tenant_id = app.current_tenant()
+     and s.status <> 'draft' and s.archived_at is null
+     and (not (f.j ? 'forms') or jsonb_array_length(f.j -> 'forms') = 0 or t.name in (select jsonb_array_elements_text(f.j -> 'forms')))
+     and (not (f.j ? 'statuses') or jsonb_array_length(f.j -> 'statuses') = 0 or s.status in (select jsonb_array_elements_text(f.j -> 'statuses')))
+     and (not (f.j ? 'departments') or jsonb_array_length(f.j -> 'departments') = 0 or re.department in (select jsonb_array_elements_text(f.j -> 'departments')))
+     and (coalesce(f.j ->> 'priority', '') = '' or coalesce(s.priority, 'normal') = f.j ->> 'priority')
+     and (not coalesce((f.j ->> 'flagged')::boolean, false) or s.flag is not null)
+     and (not coalesce((f.j ->> 'overdue')::boolean, false) or coalesce(o.due_at < now(), false))
+     and (coalesce(f.j ->> 'from', '') = '' or (s.submitted_at at time zone 'Asia/Dhaka')::date >= (f.j ->> 'from')::date)
+     and (coalesce(f.j ->> 'to', '') = '' or (s.submitted_at at time zone 'Asia/Dhaka')::date <= (f.j ->> 'to')::date)
+     and (coalesce(f.j ->> 'search', '') = ''
+          or concat_ws(' ', s.ref_number, s.legacy_ref, t.name, re.name, s.submitted_by) ilike '%' || (f.j ->> 'search') || '%')
+   order by coalesce(o.due_at < now(), false) desc, o.due_at nulls last, s.submitted_at desc
+   limit 1000
+$$;
+
+-- The same, as one JSON list, for the screen (the data endpoint returns
+-- one value per call).
+create or replace function public.tracker_list(p_filters jsonb)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = public, app, pg_temp
+as $$
+  select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) from public.tracker_rows(p_filters) r
+$$;
+
+create or replace function public.save_tracker(p_id uuid, p_name text, p_description text, p_shared_with text, p_filters jsonb)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_id uuid; v_owner text; v_dept text;
+begin
+  if app.current_employee() is null then raise exception 'sign in to keep a tracker'; end if;
+  if coalesce(trim(p_name), '') = '' then raise exception 'a tracker needs a name'; end if;
+  if p_shared_with not in ('me', 'department', 'everyone') then raise exception 'share it with me, my department or everyone'; end if;
+  if jsonb_typeof(coalesce(p_filters, '{}')) <> 'object' then raise exception 'filters must be an object'; end if;
+  select department into v_dept from public.employees where tenant_id = app.current_tenant() and employee_id = app.current_employee();
+  if p_id is null then
+    insert into public.trackers (tenant_id, name, description, owner_id, shared_with, department, filters)
+    values (app.current_tenant(), trim(p_name), nullif(trim(p_description), ''), app.current_employee(), p_shared_with, v_dept, coalesce(p_filters, '{}'))
+    returning id into v_id;
+  else
+    select owner_id into v_owner from public.trackers where id = p_id and tenant_id = app.current_tenant();
+    if not found then raise exception 'no such tracker'; end if;
+    if v_owner is distinct from app.current_employee() and not app.has_permission('reports.manage') then
+      raise exception 'only whoever made a tracker changes it';
+    end if;
+    update public.trackers
+       set name = trim(p_name), description = nullif(trim(p_description), ''), shared_with = p_shared_with,
+           department = coalesce(department, v_dept), filters = coalesce(p_filters, '{}'), updated_at = now()
+     where id = p_id
+    returning id into v_id;
+  end if;
+  perform app.audit('tracker_saved', 'tracker', v_id, trim(p_name) || ' — shared with ' || p_shared_with);
+  return v_id;
+end $$;
+
+create or replace function public.delete_tracker(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v record;
+begin
+  select * into v from public.trackers where id = p_id and tenant_id = app.current_tenant();
+  if not found then raise exception 'no such tracker'; end if;
+  if v.owner_id is distinct from app.current_employee() and not app.has_permission('reports.manage') then
+    raise exception 'only whoever made a tracker removes it';
+  end if;
+  delete from public.trackers where id = p_id;
+  perform app.audit('tracker_deleted', 'tracker', p_id, v.name);
+end $$;
+
+-- "Alerts/reminders for each item": the person looking is reminded about
+-- a request on the day they choose; null clears it.
+create or replace function public.set_tracker_reminder(p_submission uuid, p_on date, p_note text)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+begin
+  if app.current_employee() is null then raise exception 'sign in to set a reminder'; end if;
+  if not exists (select 1 from public.form_submissions where id = p_submission and tenant_id = app.current_tenant()) then
+    raise exception 'no such request';
+  end if;
+  delete from public.tracker_reminders
+   where tenant_id = app.current_tenant() and submission_id = p_submission and employee_id = app.current_employee() and sent_at is null;
+  if p_on is not null then
+    if p_on < (now() at time zone 'Asia/Dhaka')::date then raise exception 'a reminder is for today or later'; end if;
+    insert into public.tracker_reminders (tenant_id, submission_id, employee_id, remind_on, note)
+    values (app.current_tenant(), p_submission, app.current_employee(), p_on, nullif(trim(p_note), ''));
+  end if;
+end $$;
+
+-- The daily round sends the reminders due.
+create or replace function app.tracker_reminders_due()
+returns integer
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare r record; v_n int := 0;
+begin
+  for r in
+    select x.* from public.tracker_reminders x
+     where x.tenant_id = app.current_tenant() and x.sent_at is null
+       and x.remind_on <= (now() at time zone 'Asia/Dhaka')::date
+  loop
+    perform app.notify(r.employee_id, 'tracker.reminder',
+      'Reminder: ' || app.subject_label('form_submission', r.submission_id),
+      coalesce(r.note, 'You asked to be reminded about this today.'), 'form_submission', r.submission_id);
+    update public.tracker_reminders set sent_at = now() where id = r.id;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end $$;
+
+-- What every organisation starts with: a tracker each for ABC, exit
+-- clearance and what is overdue, and Treasury told of a large capital
+-- expenditure once it is approved.
+create or replace function app.seed_configuration(p_tenant uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_capex uuid;
+begin
+  if not exists (select 1 from public.trackers where tenant_id = p_tenant) then
+    insert into public.trackers (tenant_id, name, description, owner_id, shared_with, department, filters) values
+      (p_tenant, 'ABC declarations', 'Gift, hospitality and donation declarations, for Compliance to follow up',
+       case when exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0830') then 'EMP-0830' end,
+       'department', 'Compliance', '{"forms": ["Gift & Hospitality Declaration"]}'),
+      (p_tenant, 'Exit clearances in progress', 'Leavers whose clearance is not finished',
+       case when exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0650') then 'EMP-0650' end,
+       'everyone', 'HR', '{"forms": ["Employee Exit Clearance"], "statuses": ["submitted", "in_progress", "on_hold"]}'),
+      (p_tenant, 'Overdue approvals', 'Everything past its deadline, most overdue first',
+       case when exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0445') then 'EMP-0445' end,
+       'everyone', 'Admin', '{"overdue": true}');
+  end if;
+  select id into v_capex from public.form_templates where tenant_id = p_tenant and name = 'Capital Expenditure Request';
+  if v_capex is not null and exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0700')
+     and not exists (select 1 from public.notification_rules where tenant_id = p_tenant and form_template_id = v_capex and condition is not null) then
+    insert into public.notification_rules (tenant_id, form_template_id, notifyee_user_id, is_auto_added, label, events, condition)
+    values (p_tenant, v_capex, 'EMP-0700', false, 'Manually added', array['approved'],
+            '{"field": "Amount", "op": "gt", "value": "1000000"}');
+  end if;
+end $$;
+
+-- =====================================================================
+-- Push notifications
+--
+-- Every notification the bell gets is queued for push as well, when its
+-- recipient has a device with notifications on; src/server/push.ts sends
+-- the queue. Tapping one opens what it is about.
+-- =====================================================================
+create or replace function app.queue_push()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+begin
+  if exists (select 1 from public.push_subscriptions s where s.tenant_id = new.tenant_id and s.employee_id = new.recipient_id) then
+    insert into public.push_outbox (tenant_id, employee_id, notification_id, title, body, url, tag)
+    values (new.tenant_id, new.recipient_id, new.id, coalesce(new.title, 'Admin Services Portal'), left(coalesce(new.body, ''), 300),
+            case when new.kind like 'approval.%' and new.kind <> 'approval.escalated' then '/approvals'
+                 when new.entity_type = 'form_submission' and new.entity_id is not null then '/status/' || new.entity_id
+                 when new.entity_type = 'notice' and new.entity_id is not null then '/notices/' || new.entity_id
+                 when new.entity_type = 'stationery_request' then '/stationery'
+                 when new.entity_type = 'maintenance_request' then '/maintenance'
+                 else '/' end,
+            coalesce(new.entity_id::text, new.kind));
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists notifications_queue_push on public.notifications;
+create trigger notifications_queue_push after insert on public.notifications
+  for each row execute function app.queue_push();
+
+-- ---------------------------------------------------------------------
 -- What every organisation starts with
 -- ---------------------------------------------------------------------
 create or replace function app.seed_sow_gaps(p_tenant uuid)
@@ -517,9 +1049,6 @@ as $$
 declare
   v_form uuid;
   f      record;
-  v_exit uuid;
-  t      record;
-  v_i    int;
 begin
   -- The SOW's other forms, each with its fields and its approvers.
   for f in
@@ -588,25 +1117,10 @@ begin
     end if;
   end loop;
 
-  -- Exit clearance: what each department checks before it clears.
-  select id into v_exit from public.form_templates where tenant_id = p_tenant and name = 'Employee Exit Clearance';
-  if v_exit is not null and not exists (select 1 from public.checklist_items where tenant_id = p_tenant and form_template_id = v_exit) then
-    for t in
-      select * from (values
-        ('Own division',         array['Work and files handed over', 'Open tasks reassigned']),
-        ('Finance & Accounts',   array['Advances and loans settled', 'Corporate card returned or cancelled', 'Final settlement figures prepared']),
-        ('Supply Chain',         array['Assets on the inventory list returned', 'Open purchase orders handed over']),
-        ('Administration',       array['ID and access cards returned', 'Office keys and locker returned', 'Official SIM and handset returned']),
-        ('Product & Technology', array['Laptop and accessories returned', 'Email, VPN and system accounts disabled', 'Official portal access revoked']),
-        ('Final settlement',     array['Bank nomination verified', 'Every department''s clearance confirmed'])
-      ) as c(track, items)
-    loop
-      for v_i in 1 .. cardinality(t.items) loop
-        insert into public.checklist_items (tenant_id, form_template_id, track, item, position, created_by)
-        values (p_tenant, v_exit, t.track, t.items[v_i], v_i, null);
-      end loop;
-    end loop;
-  end if;
+  -- Exit clearance: the SOW's checklists, the leaver's own, and Payroll.
+  perform app.seed_exit_clearance(p_tenant);
+  -- Trackers, and a notification with a condition.
+  perform app.seed_configuration(p_tenant);
 
   -- Business Finance reviews: T+2, with a reminder every 12 hours.
   update public.approval_rules set remind_hours = 12

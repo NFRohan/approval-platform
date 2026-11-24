@@ -942,23 +942,12 @@ begin
     -- Like approvers, some are roles rather than people: the requester's
     -- line manager, the requester, the form's creator.
     if p_subject_type = 'form_submission' then
+      -- Who they are, and whether they asked to hear of a request being
+      -- raised and its answers meet their condition: app.watchers_for
+      -- (db/009_sow_gaps.sql).
       for r in
-        select distinct w.who
-          from (
-            select case
-                     when app.rule_role(nr.label) = 'submitter' then v_requester
-                     when app.rule_role(nr.label) = 'creator' then coalesce(
-                            (select ft.created_by from public.form_templates ft
-                              where ft.id = p_form_template_id),
-                            nr.notifyee_user_id)
-                     when app.is_org_role(app.rule_role(nr.label))
-                       then coalesce(app.resolve_role(app.rule_role(nr.label), v_requester),
-                                     nr.notifyee_user_id)
-                     else nr.notifyee_user_id
-                   end as who
-              from public.notification_rules nr
-             where nr.form_template_id = p_form_template_id
-          ) w
+        select w.who
+          from app.watchers_for(p_subject_id, 'raised') w(who)
          where w.who is not null
            and not exists (select 1 from public.approval_requests ar
                             where ar.subject_id = p_subject_id

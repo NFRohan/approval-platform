@@ -43,9 +43,13 @@ export type AccountRow = {
   default_persona: string | null;
 };
 
+// The password and its history are kept apart from the account, in
+// vault.credentials (db/009_sow_gaps.sql); the account's own copy is the
+// fallback while a release that moves them rolls out.
 const ACCOUNT_COLUMNS = `
-  u.id, u.username, u.password_hash, u.role, u.is_staff, u.status, u.approval_state,
-  u.must_change_pw, u.password_changed_at, u.password_history, u.failed_attempts, u.locked_at,
+  u.id, u.username, coalesce(c.password_hash, u.password_hash) as password_hash, u.role, u.is_staff, u.status, u.approval_state,
+  u.must_change_pw, u.password_changed_at, coalesce(c.password_history, u.password_history, '{}') as password_history,
+  u.failed_attempts, u.locked_at,
   u.mfa_enabled, u.mfa_secret, u.mfa_last_step, u.auth_source, u.employee_id, u.tenant_id,
   t.slug, t.expires_at, t.persona_switching, t.require_admin_mfa, t.default_persona,
   case when u.tenant_id is null then 'active' else app.tenant_status(u.tenant_id) end as tenant_state`;
@@ -54,6 +58,7 @@ export async function accountByUsername(client: pg.PoolClient, username: string)
   const { rows } = await client.query(
     `select ${ACCOUNT_COLUMNS}
        from public.app_users u left join public.tenants t on t.id = u.tenant_id
+       left join vault.credentials c on c.user_id = u.id
       where lower(u.username) = lower($1)`, [username]);
   return (rows[0] as AccountRow) ?? null;
 }
@@ -62,6 +67,7 @@ export async function accountById(client: pg.PoolClient, id: string): Promise<Ac
   const { rows } = await client.query(
     `select ${ACCOUNT_COLUMNS}
        from public.app_users u left join public.tenants t on t.id = u.tenant_id
+       left join vault.credentials c on c.user_id = u.id
       where u.id = $1`, [id]);
   return (rows[0] as AccountRow) ?? null;
 }
@@ -127,10 +133,10 @@ export async function buildSession(
   let permissions: string[] = [];
   if (employeeId && row.tenant_id) {
     const { rows } = await client.query(
+      // Roles given to the person or to a group they are in (app.held_roles).
       `select distinct unnest(r.permissions) as p
-         from public.employee_roles er
-         join public.roles r on r.id = er.role_id and r.tenant_id = er.tenant_id
-        where er.tenant_id = $1 and er.employee_id = $2 and r.status = 'active'
+         from public.roles r
+        where r.tenant_id = $1 and r.id in (select app.held_roles($2, $1))
         order by 1`, [row.tenant_id, employeeId]);
     permissions = rows.map((r) => String(r.p));
   } else if (row.is_staff || (row.role ?? 'admin') === 'admin') {

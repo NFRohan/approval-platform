@@ -134,7 +134,7 @@ function FormsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b mb-6" style={{ borderColor: "#E4E4E7", opacity: term ? 0.4 : 1 }}>
+      <div className="flex gap-1 border-b mb-6 overflow-x-auto scroll-thin" style={{ borderColor: "#E4E4E7", opacity: term ? 0.4 : 1 }}>
         {TABS.map((t) => {
           const active = t === tab;
           return (

@@ -160,7 +160,7 @@ function SubmissionsPage() {
 
   return (
     <div className="max-w-4xl mx-auto" style={{ padding: "32px 28px 56px" }}>
-      <div className="mb-5 flex items-start justify-between gap-4">
+      <div className="mb-5 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: 0 }}>
             My Submissions
@@ -170,7 +170,7 @@ function SubmissionsPage() {
           </p>
         </div>
         {shown.length > 0 && (
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => void handleExportExcel()}
               className="inline-flex items-center gap-1.5 rounded-md"

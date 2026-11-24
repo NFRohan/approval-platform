@@ -14,6 +14,7 @@ export const API_SCOPES = [
   { key: 'forms:read', label: 'Read forms', detail: 'The published forms and their fields.' },
   { key: 'reports:read', label: 'Run reports', detail: 'Saved reports, as JSON or CSV — for Tableau and the like.' },
   { key: 'campaigns:read', label: 'Read campaigns', detail: 'Campaigns, their budgets and what has been spent.' },
+  { key: 'audit:read', label: 'Read the audit trail', detail: 'The audit trail as a feed a SIEM or log platform pulls.' },
 ] as const;
 export type ApiScope = (typeof API_SCOPES)[number]['key'];
 
@@ -32,7 +33,7 @@ export const WEBHOOK_EVENTS = [
 export type Param = { name: string; in: 'path' | 'query'; required?: boolean; description: string; example?: string };
 export type Endpoint = {
   id: string;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PATCH';
   path: string;
   summary: string;
   description: string;
@@ -40,7 +41,7 @@ export type Endpoint = {
   params?: Param[];
   body?: { description: string; example: Record<string, unknown> };
   response: { status: number; example: unknown };
-  group: 'Requests' | 'Approvals' | 'Forms' | 'Reports' | 'Campaigns' | 'Meta';
+  group: 'Requests' | 'Approvals' | 'Forms' | 'Reports' | 'Campaigns' | 'Audit' | 'Meta';
 };
 
 const REQUEST_EXAMPLE = {
@@ -104,6 +105,17 @@ export const ENDPOINTS: Endpoint[] = [
       },
     },
     response: { status: 201, example: { data: { ...REQUEST_EXAMPLE, status: 'in_progress' } } },
+  },
+  {
+    id: 'edit-request', group: 'Requests', method: 'PATCH', path: '/requests/{id}', scope: 'requests:write',
+    summary: 'Edit a draft',
+    description: "Change a draft's answers or priority, as whoever raised it. Only the answers given change; an answer set to null or \"\" is cleared. With submit: true it is then sent for approval, its required fields checked first.",
+    params: [{ name: 'id', in: 'path', required: true, description: 'The id or the reference' }],
+    body: {
+      description: 'Who is editing, and what changes.',
+      example: { on_behalf_of: 'EMP-2847', answers: { 'Amount claimed': 45500 }, priority: 'high', submit: false },
+    },
+    response: { status: 200, example: { data: { ...REQUEST_EXAMPLE, status: 'draft' } } },
   },
   {
     id: 'submit-request', group: 'Requests', method: 'POST', path: '/requests/{id}/submit', scope: 'requests:write',
@@ -185,6 +197,26 @@ export const ENDPOINTS: Endpoint[] = [
     response: { status: 200, example: { data: [{ id: '2c9a…', name: 'Boishakhi Cashback 2026', status: 'ongoing', audience: 'Customer', modality: 'Cashback', starts_on: '2026-10-12', ends_on: '2026-12-11', budget: 4500000, spent: 4329000, utilisation: 0.962 }] } },
   },
   {
+    id: 'audit-feed', group: 'Audit', method: 'GET', path: '/audit', scope: 'audit:read',
+    summary: 'Read the audit trail',
+    description: "The audit centre's trail — user, application, system and database activity — oldest first, for a SIEM or log platform to pull. Ask again with next.since to read on from where the last page ended. format=ndjson returns one JSON object a line.",
+    params: [
+      { name: 'since', in: 'query', description: 'An ISO time; entries after it. Default: 24 hours ago', example: '2026-11-25T00:00:00Z' },
+      { name: 'until', in: 'query', description: 'An ISO time; entries up to it. Default: now. At most 31 days after since' },
+      { name: 'category', in: 'query', description: 'user, application, system or database' },
+      { name: 'limit', in: 'query', description: 'At most 1,000; default 500' },
+      { name: 'format', in: 'query', description: 'json (default) or ndjson' },
+    ],
+    response: {
+      status: 200,
+      example: {
+        data: [{ at: '2026-11-25T03:12:44.120Z', category: 'user', severity: 'warning', source: 'sign_in', action: 'sign_in_failed',
+                 actor_id: null, actor: null, subject: 'dev.local', subject_id: null, detail: 'Wrong password' }],
+        next: { since: '2026-11-25T03:12:44.120Z' },
+      },
+    },
+  },
+  {
     id: 'whoami', group: 'Meta', method: 'GET', path: '/me', scope: null,
     summary: 'This key',
     description: 'Which organisation the key belongs to and the scopes it holds — the first call to make, to check a key works.',
@@ -222,7 +254,7 @@ export function openApiDocument(serverUrl: string) {
       } : {}),
       responses: {
         [String(e.response.status)]: { description: 'OK', content: { 'application/json': { schema: { type: 'object' }, example: e.response.example } } },
-        ...Object.fromEntries(API_ERRORS.filter((x) => x.status !== 400 || e.method === 'POST').map((x) => [String(x.status), {
+        ...Object.fromEntries(API_ERRORS.filter((x) => x.status !== 400 || e.method !== 'GET').map((x) => [String(x.status), {
           description: x.meaning,
           content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
         }])),
@@ -246,7 +278,7 @@ export function openApiDocument(serverUrl: string) {
         },
       },
     },
-    tags: ['Requests', 'Approvals', 'Forms', 'Reports', 'Campaigns', 'Meta'].map((name) => ({ name })),
+    tags: ['Requests', 'Approvals', 'Forms', 'Reports', 'Campaigns', 'Audit', 'Meta'].map((name) => ({ name })),
     paths,
     'x-webhooks': {
       events: WEBHOOK_EVENTS.map((e) => e.key),

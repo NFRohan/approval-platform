@@ -214,9 +214,9 @@ export const TABLES: Record<string, TableDef> = {
   form_templates: T(
     ['id', 'name', 'category', 'created_by', 'status', 'created_at',
       'followup_template_id', 'audience_departments', 'classification', 'keywords', 'on_approval',
-      'forward_within_line'],
+      'forward_within_line', 'audience_roles'],
     ['name', 'category', 'created_by', 'status', 'followup_template_id',
-      'audience_departments', 'classification', 'keywords', 'forward_within_line'],
+      'audience_departments', 'classification', 'keywords', 'forward_within_line', 'audience_roles'],
     [],
   ),
   item_stock: T(
@@ -272,8 +272,26 @@ export const TABLES: Record<string, TableDef> = {
   ),
   notification_rules: T(
     ['id', 'form_template_id', 'notifyee_user_id', 'is_auto_added',
-      'label'],
-    ['form_template_id', 'notifyee_user_id', 'is_auto_added', 'label'],
+      'label', 'events', 'condition'],
+    ['form_template_id', 'notifyee_user_id', 'is_auto_added', 'label', 'events', 'condition'],
+    ['condition'],
+  ),
+  // Read only: given and taken through assign_role_group.
+  role_groups: T(
+    ['role_id', 'department', 'assigned_by', 'created_at'],
+    [],
+    [],
+  ),
+  // Read only: kept through save_tracker / delete_tracker and
+  // set_tracker_reminder, which check who may.
+  trackers: T(
+    ['id', 'name', 'description', 'owner_id', 'shared_with', 'department', 'filters', 'created_at', 'updated_at'],
+    [],
+    ['filters'],
+  ),
+  tracker_reminders: T(
+    ['id', 'submission_id', 'employee_id', 'remind_on', 'note', 'sent_at', 'created_at'],
+    [],
     [],
   ),
   notifications: T(
@@ -365,6 +383,10 @@ export const RPCS: Record<string, readonly string[]> = {
   checklist_config:           ['p_form'],
   save_checklist:             ['p_form', 'p_track', 'p_items'],
   forward_candidates:         ['p_request'],
+  tracker_list:               ['p_filters'],
+  save_tracker:               ['p_id', 'p_name', 'p_description', 'p_shared_with', 'p_filters'],
+  delete_tracker:             ['p_id'],
+  set_tracker_reminder:       ['p_submission', 'p_on', 'p_note'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],

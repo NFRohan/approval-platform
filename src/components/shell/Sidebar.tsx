@@ -25,14 +25,14 @@ import {
   Mail,
   Megaphone as CampaignIcon,
   type LucideIcon,
- Plug, ScrollText, CalendarDays, ListChecks } from "lucide-react";
+ Plug, ScrollText, CalendarDays, ListChecks, ClipboardList } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useCurrentUser, type CurrentUser } from "@/contexts/CurrentUserContext";
 import { db } from "@/lib/db";
 
 // A check, for a system whose whole job is sign-off. What was here was
 // the client's own letterform, which recolouring would not have fixed.
-function BrandMark({ size = 34, style }: { size?: number; style?: SVGProps<SVGSVGElement>["style"] }) {
+export function BrandMark({ size = 34, style }: { size?: number; style?: SVGProps<SVGSVGElement>["style"] }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={style} aria-label="Admin Services Portal">
       <rect width="100" height="100" rx="22" fill="#4F46E5"/>
@@ -160,6 +160,8 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
   if (can("reports.view") || can("reports.manage") || ["Commercial", "Business Finance"].includes(user.department ?? "")) {
     insights.push({ id: "campaigns", label: "Campaigns", Icon: CampaignIcon, to: "/campaigns" });
   }
+  // Trackers are for everybody: the main one, and the ones kept for them.
+  insights.push({ id: "trackers", label: "Trackers", Icon: ClipboardList, to: "/trackers" });
   if (insights.length) sections = [...sections, { section: "Insights", items: insights }];
 
   const admin: Item[] = [];
@@ -328,9 +330,11 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
   ];
 }
 
-export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boolean } = {}) {
+export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultCollapsed?: boolean; mobile?: boolean } = {}) {
   const [hover, setHover] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [collapsedState, setCollapsed] = useState(defaultCollapsed);
+  // In the phone's drawer the menu is always open, and fills it.
+  const collapsed = mobile ? false : collapsedState;
   const [leaving, setLeaving] = useState(false);
   const { currentUser } = useCurrentUser();
   const navigate = useNavigate();
@@ -432,7 +436,8 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
   return (
     <aside
       className="shrink-0 flex flex-col h-full text-white transition-all"
-      style={{ width: collapsed ? 60 : 240, background: "var(--color-zinc-900)" }}
+      style={{ width: mobile ? "100%" : collapsed ? 60 : 240, background: "var(--color-zinc-900)",
+               paddingTop: mobile ? "env(safe-area-inset-top)" : undefined, paddingBottom: mobile ? "env(safe-area-inset-bottom)" : undefined }}
     >
       {/* logo + collapse toggle */}
       <div
@@ -467,7 +472,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
         {collapsed && (
           <BrandMark size={34} style={{ borderRadius: 9, flexShrink: 0 }} />
         )}
-        {!collapsed && (
+        {!collapsed && !mobile && (
           <button
             onClick={() => setCollapsed(true)}
             title="Collapse sidebar"

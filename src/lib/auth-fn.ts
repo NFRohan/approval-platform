@@ -281,11 +281,11 @@ export const listPersonas = createServerFn({ method: 'GET' })
     const client = await getPool().connect();
     try {
       const { rows } = await client.query(
+        // Roles given to them or to their department (app.held_roles).
         `select e.employee_id, e.name, e.designation, e.department,
                 coalesce(array_agg(r.name order by r.name) filter (where r.id is not null), '{}') as roles
            from public.employees e
-           left join public.employee_roles er on er.tenant_id = e.tenant_id and er.employee_id = e.employee_id
-           left join public.roles r on r.id = er.role_id and r.tenant_id = er.tenant_id and r.status = 'active'
+           left join public.roles r on r.tenant_id = e.tenant_id and r.id in (select app.held_roles(e.employee_id, e.tenant_id))
           where e.tenant_id = $1 and e.active
           group by e.employee_id, e.name, e.designation, e.department
           order by e.name`, [session.tenantId]);

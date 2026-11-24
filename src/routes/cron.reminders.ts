@@ -12,6 +12,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { timingSafeEqual } from "node:crypto";
 import { getPool } from "@/server/db";
 import { drainOutbox } from "@/server/mailer";
+import { drainPush } from "@/server/push";
 import { logAppError } from "@/server/logs";
 
 function reply(status: number, body: unknown) {
@@ -60,7 +61,8 @@ export async function reminderRound() {
     delivered = { sent: delivered.sent + d.sent, captured: delivered.captured + d.captured, failed: delivered.failed + d.failed };
     if (d.sent + d.captured + d.failed === 0) break;
   }
-  return { tenants: tenants.length, reminded, ...delivered };
+  const push = await drainPush();
+  return { tenants: tenants.length, reminded, ...delivered, push };
 }
 
 export const Route = createFileRoute("/cron/reminders")({

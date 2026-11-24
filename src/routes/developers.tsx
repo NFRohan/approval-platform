@@ -15,8 +15,9 @@ const mono: React.CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, M
 const METHOD: Record<string, { bg: string; fg: string }> = {
   GET: { bg: "#EFF6FF", fg: "#1D4ED8" },
   POST: { bg: "#F0FDF4", fg: "#15803D" },
+  PATCH: { bg: "#FFFBEB", fg: "#B45309" },
 };
-const GROUPS = ["Meta", "Requests", "Approvals", "Forms", "Reports", "Campaigns"] as const;
+const GROUPS = ["Meta", "Requests", "Approvals", "Forms", "Reports", "Campaigns", "Audit"] as const;
 
 // The address is this site's, which the server rendering the page does
 // not know: filled in once the page is in the browser, so the two agree.
@@ -53,7 +54,7 @@ function C({ children }: { children: ReactNode }) {
 function curlFor(e: Endpoint, b: string): string {
   const path = e.path.replace("{id}", e.params?.find((p) => p.in === "path")?.example ?? (e.group === "Approvals" ? "<step id>" : e.group === "Reports" ? "<report id>" : "AMS-2026-00418"));
   const q = (e.params ?? []).filter((p) => p.in === "query" && p.example).slice(0, 2).map((p) => `${p.name}=${encodeURIComponent(p.example!)}`).join("&");
-  const lines = [`curl${e.method === "POST" ? " -X POST" : ""} "${b}${path}${q ? "?" + q : ""}" \\`, `  -H "Authorization: Bearer $AMS_KEY"`];
+  const lines = [`curl${e.method !== "GET" ? ` -X ${e.method}` : ""} "${b}${path}${q ? "?" + q : ""}" \\`, `  -H "Authorization: Bearer $AMS_KEY"`];
   if (e.body) {
     lines[lines.length - 1] += " \\";
     lines.push(`  -H "Content-Type: application/json" \\`);

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
-import { assignRole, createRole, decideRole, proposeRoleChange } from "@/lib/admin-fn";
+import { assignRole, createRole, decideRole, proposeRoleChange, assignRoleGroup } from "@/lib/admin-fn";
 import {
   Button, Card, Field, NoPermission, Notice, Page, Pill, PERMISSION_LABELS, inputStyle,
 } from "@/components/admin/kit";
@@ -33,14 +33,21 @@ function RolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  // Roles given to whole departments, and the departments there are.
+  const [groups, setGroups] = useState<{ role_id: string; department: string }[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
-    const [r, e, h] = await Promise.all([
+    const [r, e, h, g, d] = await Promise.all([
       db.from("roles").select("id, name, description, permissions, status, pending_name, pending_permissions, created_by, changed_by, approved_by").order("name"),
       db.from("employees").select("employee_id, name, designation, active").order("name"),
       db.from("employee_roles").select("employee_id, role_id"),
+      db.from("role_groups").select("role_id, department"),
+      db.from("departments").select("name").order("name"),
     ]);
+    setGroups((g.data ?? []) as { role_id: string; department: string }[]);
+    setDepartments(((d.data ?? []) as { name: string }[]).map((x) => x.name));
     setRoles((r.data ?? []) as Role[]);
     setEmployees((e.data ?? []) as Employee[]);
     setHoldings((h.data ?? []) as Holding[]);
@@ -127,6 +134,9 @@ function RolesPage() {
             employees={employees}
             nameOf={nameOf}
             act={act}
+            groups={groups.filter((x) => x.role_id === r.id).map((x) => x.department)}
+            departments={departments}
+            myDepartment={currentUser.department ?? null}
           />
         ))}
       </div>
@@ -176,13 +186,15 @@ function RoleEditor({ title, initial, onSave, onCancel }: {
   );
 }
 
-function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act }: {
+function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act, groups, departments, myDepartment }: {
   role: Role; manage: boolean; assign: boolean; me: string; holders: string[]; employees: Employee[];
+  groups: string[]; departments: string[]; myDepartment: string | null;
   nameOf: Map<string, string>;
   act: (label: string, fn: () => Promise<{ ok: boolean; error?: string }>) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState("");
+  const [addingGroup, setAddingGroup] = useState("");
 
   if (editing) {
     return (
@@ -238,6 +250,38 @@ function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act
             </select>
             <Button small disabled={!adding} onClick={async () => {
               if (await act(`${r.name} given to ${nameOf.get(adding) ?? adding}`, () => assignRole({ data: { employeeId: adding, roleId: r.id, assign: true } }))) setAdding("");
+            }}>Give</Button>
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: "#71717A", margin: "12px 0 6px" }}>Held by everyone in</div>
+      <div className="flex gap-1.5 flex-wrap items-center" data-role-groups={r.name}>
+        {groups.map((d) => (
+          <span key={d} className="inline-flex items-center gap-1 rounded-full" style={{ padding: "2px 4px 2px 9px", fontSize: 12, background: "#EEF2FF", border: "1px solid #C7D2FE", color: "#3730A3" }}>
+            {d}
+            {assign && d !== myDepartment && (
+              <button
+                title="Take this role from the department"
+                onClick={() => void act(`${r.name} taken from everyone in ${d}`, () => assignRoleGroup({ data: { department: d, roleId: r.id, assign: false } }))}
+                style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, display: "inline-flex" }}
+              ><X size={12} /></button>
+            )}
+          </span>
+        ))}
+        {groups.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>No department</span>}
+        {assign && r.status === "active" && (
+          <span className="inline-flex items-center gap-1.5">
+            <select
+              name={`give-group-${r.name}`}
+              style={{ ...inputStyle, width: 220, padding: "4px 8px", fontSize: 12 }}
+              value={addingGroup}
+              onChange={(e) => setAddingGroup(e.target.value)}
+            >
+              <option value="">Give to a department…</option>
+              {departments.filter((d) => !groups.includes(d) && d !== myDepartment).map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+            <Button small disabled={!addingGroup} onClick={async () => {
+              if (await act(`${r.name} given to everyone in ${addingGroup}`, () => assignRoleGroup({ data: { department: addingGroup, roleId: r.id, assign: true } }))) setAddingGroup("");
             }}>Give</Button>
           </span>
         )}

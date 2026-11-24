@@ -28,6 +28,7 @@ export const USERS: Omit<CurrentUser, "permissions">[] = [
   { employee_id: "EMP-0700", name: "Alex Mercer",    designation: "Chief Financial Officer",  initials: "AM" },
   { employee_id: "EMP-0201", name: "Nadia Okonjo",   designation: "HR Business Partner",      initials: "NO" },
   { employee_id: "EMP-0650", name: "Priya Raman",    designation: "Head of People",           initials: "PR" },
+  { employee_id: "EMP-0661", name: "Zara Ahmed",     designation: "Payroll & HRIS Lead",      initials: "ZA" },
   { employee_id: "EMP-0445", name: "Farah Haddad",   designation: "Admin Officer",            initials: "FH" },
   { employee_id: "EMP-9001", name: "Ivan Petrov",    designation: "Facilities Coordinator",   initials: "IP" },
   { employee_id: "EMP-3120", name: "Mei Sun",        designation: "Procurement Specialist",   initials: "MS" },

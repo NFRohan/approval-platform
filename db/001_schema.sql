@@ -1918,4 +1918,112 @@ create table if not exists public.servicedesk_tasks (
 );
 create index if not exists servicedesk_tasks_ticket_idx on public.servicedesk_tasks(tenant_id, ticket_id);
 
+-- "NFA ... visible as per the role of the user and his/her division":
+-- beside the departments a form is for, the roles that may see it.
+alter table public.form_templates add column if not exists audience_roles uuid[];
+
+-- "Store password files separately from application data": the
+-- password hashes and their history live in a schema of their own that
+-- the application's role cannot read; only the sign-in code (as the
+-- owner) and security-definer functions reach them.
+create schema if not exists vault;
+create table if not exists vault.credentials (
+  user_id          uuid primary key,
+  password_hash    text not null,
+  password_history text[] not null default '{}',
+  updated_at       timestamptz not null default now(),
+  foreign key (user_id) references public.app_users(id) on delete cascade deferrable initially deferred
+);
+alter table public.app_users alter column password_hash drop not null;
+
+-- "Roles can be created based on user group(s)": a role given to every
+-- member of a department, kept in step as people join, move and leave
+-- through the HR file and the directory sync.
+create table if not exists public.role_groups (
+  tenant_id   uuid not null default app.current_tenant()
+                references public.tenants(id) on delete cascade,
+  role_id     uuid not null,
+  department  text not null,
+  assigned_by text,
+  created_at  timestamptz not null default now(),
+  primary key (tenant_id, role_id, department),
+  foreign key (role_id, tenant_id) references public.roles(id, tenant_id) on delete cascade
+);
+
+-- "Define the criteria for sending notifications": a watcher is told on
+-- the events it names, and only when its condition holds.
+alter table public.notification_rules add column if not exists events    text[] not null default '{raised}';
+alter table public.notification_rules add column if not exists condition jsonb;
+
+-- ABC: "one main tracker and several multiple trackers for various
+-- filing and application follow-up", with "alerts/reminders for each
+-- item". A tracker is a named, filtered view of requests, kept for its
+-- owner, their department or everyone.
+create table if not exists public.trackers (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null default app.current_tenant()
+                references public.tenants(id) on delete cascade,
+  name        text not null,
+  description text,
+  owner_id    text,
+  shared_with text not null default 'me' check (shared_with in ('me', 'department', 'everyone')),
+  department  text,
+  filters     jsonb not null default '{}',
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (id, tenant_id)
+);
+create table if not exists public.tracker_reminders (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  submission_id uuid not null,
+  employee_id   text not null,
+  remind_on     date not null,
+  note          text,
+  sent_at       timestamptz,
+  created_at    timestamptz not null default now(),
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete cascade
+);
+create index if not exists tracker_reminders_due_idx on public.tracker_reminders(tenant_id, remind_on) where sent_at is null;
+
+-- The PWA's push notifications (src/server/push.ts): the server's own
+-- key pair, made on first use (one row; the private half sealed), the
+-- devices people turned notifications on in, and what is queued for
+-- them. None of it is readable by the application's role.
+create table if not exists public.push_keys (
+  id             integer primary key default 1 check (id = 1),
+  public_key     text not null,
+  private_sealed text not null,
+  created_at     timestamptz not null default now()
+);
+create table if not exists public.push_subscriptions (
+  id           uuid primary key default gen_random_uuid(),
+  tenant_id    uuid not null references public.tenants(id) on delete cascade,
+  employee_id  text not null,
+  user_id      uuid,
+  endpoint     text not null unique,
+  p256dh       text not null,
+  auth         text not null,
+  user_agent   text,
+  failures     integer not null default 0,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz
+);
+create index if not exists push_subscriptions_who_idx on public.push_subscriptions(tenant_id, employee_id);
+create table if not exists public.push_outbox (
+  id              uuid primary key default gen_random_uuid(),
+  tenant_id       uuid not null references public.tenants(id) on delete cascade,
+  employee_id     text not null,
+  notification_id uuid,
+  title           text not null,
+  body            text,
+  url             text not null default '/',
+  tag             text,
+  status          text not null default 'queued' check (status in ('queued', 'sending', 'sent', 'failed')),
+  created_at      timestamptz not null default now(),
+  sent_at         timestamptz
+);
+create index if not exists push_outbox_queued_idx on public.push_outbox(created_at) where status = 'queued';
+
 commit;

@@ -103,6 +103,9 @@ function ApproversStep() {
   // Who may raise this form: departments, or everybody when empty.
   const [audience, setAudience] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  // ...or to whoever holds one of these roles.
+  const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
+  const [roleList, setRoleList] = useState<{ id: string; name: string }[]>([]);
   // What kind of NFA it is, and the words that find it.
   const [classification, setClassification] = useState("");
   const [keywords, setKeywords] = useState("");
@@ -112,7 +115,7 @@ function ApproversStep() {
   useEffect(() => {
     (async () => {
       const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }, { data: tpls }] = await Promise.all([
-        db.from("form_templates").select("name, followup_template_id, audience_departments, classification, keywords, forward_within_line").eq("id", templateId).maybeSingle(),
+        db.from("form_templates").select("name, followup_template_id, audience_departments, audience_roles, classification, keywords, forward_within_line").eq("id", templateId).maybeSingle(),
         db.from("form_fields").select("field_type, field_name, order_index").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
@@ -125,6 +128,9 @@ function ApproversStep() {
       ]);
       if (tpl?.name) setFormName(tpl.name);
       setAudience(((tpl as { audience_departments?: string[] | null } | null)?.audience_departments) ?? []);
+      setAudienceRoles(((tpl as { audience_roles?: string[] | null } | null)?.audience_roles) ?? []);
+      void db.from("roles").select("id, name").eq("status", "active").order("name").then(({ data }) =>
+        setRoleList((data ?? []) as { id: string; name: string }[]));
       setClassification((tpl as { classification?: string | null } | null)?.classification ?? "");
       setKeywords(((tpl as { keywords?: string[] | null } | null)?.keywords ?? []).join(", "));
       setWithinLine(!!(tpl as { forward_within_line?: boolean | null } | null)?.forward_within_line);
@@ -360,6 +366,7 @@ function ApproversStep() {
       .from("form_templates")
       .update({
         followup_template_id: followup || null, audience_departments: audience.length ? audience : null,
+        audience_roles: audienceRoles.length ? audienceRoles : null,
         classification: classification || null,
         keywords: [...new Set(keywords.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean))],
         forward_within_line: withinLine,
@@ -484,7 +491,7 @@ function ApproversStep() {
             <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="audience">
               <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Who can raise it</div>
               <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
-                Offered only to people in these departments. Leave all unticked for everybody.
+                Offered only to people in these departments, or holding these roles. Leave all unticked for everybody.
               </div>
               <div className="flex flex-wrap gap-2">
                 {departments.map((d) => {
@@ -499,6 +506,23 @@ function ApproversStep() {
                 })}
                 {departments.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>No departments yet.</span>}
               </div>
+              {roleList.length > 0 && (
+                <>
+                  <div style={{ fontSize: 12, color: "#71717A", margin: "12px 0 6px" }}>Roles</div>
+                  <div className="flex flex-wrap gap-2" data-testid="audience-roles">
+                    {roleList.map((r) => {
+                      const on = audienceRoles.includes(r.id);
+                      return (
+                        <label key={r.id} className="inline-flex items-center gap-1.5 rounded-md" style={{ padding: "4px 9px", fontSize: 12.5, border: `1px solid ${on ? "#C7D2FE" : "#E4E4E7"}`, background: on ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
+                          <input type="checkbox" checked={on} name={`audience-role-${r.name}`}
+                            onChange={() => setAudienceRoles((a) => on ? a.filter((x) => x !== r.id) : [...a, r.id])} />
+                          {r.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </section>
           </>
         }

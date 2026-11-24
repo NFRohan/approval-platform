@@ -16,6 +16,7 @@ import { getPool } from "@/server/db";
 import { drainOutbox } from "@/server/mailer";
 import { drainWebhooks } from "@/server/webhooks";
 import { drainServicedesk, pollServicedesk } from "@/server/servicedesk";
+import { drainPush } from "@/server/push";
 import { logAppError } from "@/server/logs";
 
 function reply(status: number, body: unknown) {
@@ -51,6 +52,9 @@ export async function dailyRound() {
       // round (/cron/reminders) sends the others.
       const { rows: [iv] } = await client.query("select app.interval_reminders() as n");
       r.r.due_soon += iv.n;
+      // Reminders people set on requests in their trackers, due today.
+      const { rows: [tr] } = await client.query("select app.tracker_reminders_due() as n");
+      r.r.due_soon += tr.n;
       // Campaigns start on their day and finish after their last.
       await client.query("select app.campaign_daily()");
       // "Archiving yearly, purging at 10 years": settled requests past
@@ -93,13 +97,14 @@ export async function dailyRound() {
       [l.tenant_id, JSON.stringify(p), p.error ?? null]).catch(() => {});
   }
   const servicedesk = await drainServicedesk();
+  const push = await drainPush();
   let hooks = { delivered: 0, failed: 0, retrying: 0 };
   for (let i = 0; i < 20; i++) {
     const d = await drainWebhooks({ limit: 25 });
     hooks = { delivered: hooks.delivered + d.delivered, failed: hooks.failed + d.failed, retrying: hooks.retrying + d.retrying };
     if (d.delivered + d.failed + d.retrying === 0) break;
   }
-  return { tenants: tenants.length, dueSoon, escalated, overdue, archived, purged, reportsQueued: q.n, ...delivered, webhooks: hooks, servicedesk: { tickets, ...servicedesk } };
+  return { tenants: tenants.length, dueSoon, escalated, overdue, archived, purged, reportsQueued: q.n, ...delivered, webhooks: hooks, servicedesk: { tickets, ...servicedesk }, push };
 }
 
 export const Route = createFileRoute("/cron/daily")({

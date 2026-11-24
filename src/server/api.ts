@@ -299,6 +299,51 @@ const routes: Route[] = [
     },
   },
   {
+    // Edit a draft: its answers (only those given) and its priority, as
+    // whoever raised it; then, if asked, submit it.
+    method: 'PATCH', pattern: /^requests\/([^/]+)$/, scope: 'requests:write',
+    handler: async ({ key, params, request }) => {
+      const body = await readBody(request);
+      const s0 = await withContext(contextFor(key), (c) => findRequest(c, params[0]));
+      const who = await actingAs(key, body.on_behalf_of, s0.submitted_by);
+      const answers = body.answers ?? {};
+      if (typeof answers !== 'object' || Array.isArray(answers)) throw new ApiError(400, 'answers must be an object keyed by field name');
+      const priority = body.priority === undefined ? null : String(body.priority);
+      if (priority !== null && !['normal', 'high', 'urgent'].includes(priority)) throw new ApiError(400, 'priority is normal, high or urgent');
+      return withContext(contextFor(key, who), async (c) => {
+        const s = await findRequest(c, params[0]);
+        if (s.status !== 'draft') throw new ApiError(409, `it is ${s.status.replace('_', ' ')}, not a draft; only a draft is edited`);
+        if (s.submitted_by !== who) throw new ApiError(403, `only ${s.submitted_by} can edit their draft`);
+        const { rows: all } = await c.query(
+          'select field_name, field_type, is_required from public.form_fields where form_template_id = $1 order by order_index', [s.form_template_id]);
+        const byName = new Map(all.filter((f) => f.field_name && !NOT_ANSWERS(f.field_type) && !String(f.field_type).startsWith('gen_'))
+          .map((f) => [String(f.field_name).toLowerCase(), f]));
+        const given = answers as Record<string, unknown>;
+        const unknown = Object.keys(given).filter((k) => !byName.has(k.toLowerCase()));
+        if (unknown.length) throw new ApiError(422, `that form has no field it takes called ${unknown.map((u) => `"${u}"`).join(', ')}`, { unknown });
+        for (const [k, v] of Object.entries(given)) {
+          const name = byName.get(k.toLowerCase())!.field_name as string;
+          await c.query('delete from public.submission_values where submission_id = $1 and field_name = $2', [s.id, name]);
+          const text = answerText(v);
+          if (text !== '') await c.query('insert into public.submission_values (submission_id, field_name, value) values ($1, $2, $3)', [s.id, name, text]);
+        }
+        if (priority) await c.query('update public.form_submissions set priority = $2 where id = $1', [s.id, priority]);
+        await c.query(`select app.audit('edited_through_api', 'form_submission', $1, $2)`,
+          [s.id, `${Object.keys(given).length} answer(s)${priority ? `, priority ${priority}` : ''} for ${who} by ${key.name}`]);
+        if (body.submit === true) {
+          const { rows: vals } = await c.query('select field_name, value from public.submission_values where submission_id = $1', [s.id]);
+          const have = new Set(vals.filter((v) => String(v.value ?? '').trim()).map((v) => String(v.field_name).toLowerCase()));
+          const missing = all.filter((f) => f.is_required && f.field_name && !NOT_ANSWERS(f.field_type) && !String(f.field_type).startsWith('gen_')
+            && f.field_type !== 'file' && !have.has(String(f.field_name).toLowerCase())).map((f) => f.field_name as string);
+          if (missing.length) throw new ApiError(422, `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required`, { missing });
+          await c.query(`update public.form_submissions set status = 'submitted', submitted_at = now() where id = $1`, [s.id]);
+          await c.query(`select public.build_approval_chain('form_submission', $1, $2)`, [s.id, s.form_template_id]);
+        }
+        return { body: { data: await requestDetail(c, s.id) } };
+      });
+    },
+  },
+  {
     method: 'POST', pattern: /^requests\/([^/]+)\/submit$/, scope: 'requests:write',
     handler: async ({ key, params, request }) => {
       const body = await readBody(request);
@@ -412,6 +457,46 @@ const routes: Route[] = [
         }
         return { body: { data: { name: t.name, ...result } } };
       });
+    },
+  },
+  {
+    // The audit trail, for a SIEM: oldest first, a page at a time.
+    method: 'GET', pattern: /^audit$/, scope: 'audit:read',
+    handler: async ({ key, url }) => {
+      const parse = (name: string, dflt: Date) => {
+        const v = url.searchParams.get(name);
+        if (!v) return dflt;
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) throw new ApiError(400, `${name} must be an ISO time, like 2026-11-25T00:00:00Z`);
+        return d;
+      };
+      const since = parse('since', new Date(Date.now() - 86_400_000));
+      const until = parse('until', new Date());
+      if (until <= since) throw new ApiError(400, 'until must be after since');
+      if (until.getTime() - since.getTime() > 31 * 86_400_000) throw new ApiError(400, 'ask for at most 31 days at a time');
+      const limit = Math.max(1, intParam(url, 'limit', 500, 1000));
+      const category = url.searchParams.get('category');
+      if (category && !['user', 'application', 'system', 'database'].includes(category)) throw new ApiError(400, 'category is user, application, system or database');
+      const format = url.searchParams.get('format') ?? 'json';
+      if (!['json', 'ndjson'].includes(format)) throw new ApiError(400, 'format is json or ndjson');
+      const { rows } = await getPool().query(
+        `select at, category, severity, source, action, actor_id, actor, subject, subject_id, detail
+           from app.audit_rows($1, $2, $3)
+          where at > $2 and ($4::text is null or category = $4)
+          order by at limit $5`,
+        [key.tenantId, since, until, category, limit]);
+      const next = rows.length === limit ? { since: new Date(rows[rows.length - 1].at).toISOString() } : null;
+      if (format === 'ndjson') {
+        return {
+          body: null,
+          raw: new Response(rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''), {
+            status: 200,
+            headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store',
+                       ...(next ? { 'x-next-since': next.since } : {}) },
+          }),
+        };
+      }
+      return { body: { data: rows, next } };
     },
   },
   {

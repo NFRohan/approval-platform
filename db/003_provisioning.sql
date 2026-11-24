@@ -167,6 +167,10 @@ begin
   select m.new, v_new, r.name, r.description, r.permissions, r.status, r.created_by, r.approved_by, r.created_at, r.updated_at
     from public.roles r join _m m on m.old = r.id
    where r.tenant_id = v_tpl;
+  insert into public.role_groups (tenant_id, role_id, department, assigned_by, created_at)
+  select v_new, m.new, g.department, g.assigned_by, g.created_at
+    from public.role_groups g join _m m on m.old = g.role_id
+   where g.tenant_id = v_tpl;
   insert into public.employee_roles (tenant_id, employee_id, role_id, assigned_by, created_at)
   select v_new, er.employee_id, m.new, er.assigned_by, er.created_at
     from public.employee_roles er join _m m on m.old = er.role_id
@@ -190,9 +194,12 @@ begin
 
   insert into _m select id, gen_random_uuid() from public.form_templates where tenant_id = v_tpl;
   insert into public.form_templates (id, tenant_id, name, category, created_by, status, created_at,
-                                     audience_departments, classification, keywords, on_approval, forward_within_line)
+                                     audience_departments, classification, keywords, on_approval, forward_within_line,
+                                     audience_roles)
   select m.new, v_new, t.name, t.category, t.created_by, t.status, t.created_at,
-         t.audience_departments, t.classification, t.keywords, t.on_approval, t.forward_within_line
+         t.audience_departments, t.classification, t.keywords, t.on_approval, t.forward_within_line,
+         -- the roles are this evaluation's own copies, cloned above
+         (select array_agg(mr.new) from unnest(t.audience_roles) ar join _m mr on mr.old = ar)
     from public.form_templates t join _m m on m.old = t.id
    where t.tenant_id = v_tpl;
 
@@ -236,8 +243,8 @@ begin
    where s.tenant_id = v_tpl;
 
   insert into _m select id, gen_random_uuid() from public.notification_rules where tenant_id = v_tpl;
-  insert into public.notification_rules (id, tenant_id, form_template_id, notifyee_user_id, is_auto_added, label)
-  select m.new, v_new, mt.new, n.notifyee_user_id, n.is_auto_added, n.label
+  insert into public.notification_rules (id, tenant_id, form_template_id, notifyee_user_id, is_auto_added, label, events, condition)
+  select m.new, v_new, mt.new, n.notifyee_user_id, n.is_auto_added, n.label, n.events, n.condition
     from public.notification_rules n
     join _m m  on m.old  = n.id
     join _m mt on mt.old = n.form_template_id
@@ -463,6 +470,11 @@ begin
   values (p_actor, 'tenant.mint', v_slug,
           format('Minted %s for %s, expires %s', p_username, p_name, v_exp),
           jsonb_build_object('tenant_id', v_new, 'username', p_username));
+
+  -- Trackers: the same views, for the same people.
+  insert into public.trackers (tenant_id, name, description, owner_id, shared_with, department, filters, created_at, updated_at)
+  select v_new, t.name, t.description, t.owner_id, t.shared_with, t.department, t.filters, t.created_at, t.updated_at
+    from public.trackers t where t.tenant_id = v_tpl;
 
   -- Clearance checklists, and what has been ticked on them.
   insert into _m select id, gen_random_uuid() from public.checklist_items where tenant_id = v_tpl;

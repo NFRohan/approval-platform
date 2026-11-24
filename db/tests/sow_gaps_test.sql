@@ -86,14 +86,34 @@ begin
     raise exception 'FAIL: a 250,000 fraud transfer does not go line manager, compliance, then finance by amount: %', v_plan;
   end if;
   if (select count(distinct track) from public.checklist_items i join public.form_templates t on t.id = i.form_template_id
-       where t.tenant_id = current_setting('t.tpl')::uuid and t.name = 'Employee Exit Clearance') <> 6 then
-    raise exception 'FAIL: the exit clearance does not carry a checklist for each of its six tracks';
+       where t.tenant_id = current_setting('t.tpl')::uuid and t.name = 'Employee Exit Clearance' and i.active) <> 7 then
+    raise exception 'FAIL: the exit clearance does not carry a checklist for each of its seven tracks';
+  end if;
+  -- The SOW's own items, division by division.
+  if (select string_agg(item, '|' order by position) from public.checklist_items i join public.form_templates t on t.id = i.form_template_id
+       where t.tenant_id = current_setting('t.tpl')::uuid and t.name = 'Employee Exit Clearance' and i.active and i.track = 'Supply Chain')
+       <> 'Mobile SIM (for merchant wallet, if applicable)'
+     or (select count(*) from public.checklist_items i join public.form_templates t on t.id = i.form_template_id
+          where t.tenant_id = current_setting('t.tpl')::uuid and t.name = 'Employee Exit Clearance' and i.active and i.track = 'Final settlement'
+            and item in ('Security bond', 'Last LFA applied', 'Exit interview')) <> 3 then
+    raise exception 'FAIL: the exit clearance checklists are not the SOW''s';
+  end if;
+  -- The leaver's own checklist, and Payroll after HR.
+  if (select count(*) from public.form_fields f join public.form_templates t on t.id = f.form_template_id
+       where t.tenant_id = current_setting('t.tpl')::uuid and t.name = 'Employee Exit Clearance' and f.field_type = 'checkbox' and f.is_required) < 5 then
+    raise exception 'FAIL: the leaver does not tick their own checklist on the form';
+  end if;
+  v_plan := public.preview_approval_chain((select id from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Employee Exit Clearance'),
+                                          'EMP-2847', '{}'::jsonb);
+  if (select e->>'approver' from jsonb_array_elements(v_plan) e order by (e->>'step_index')::int desc limit 1) <> 'EMP-0661'
+     or (select e->>'stage_label' from jsonb_array_elements(v_plan) e order by (e->>'step_index')::int desc limit 1) <> 'Payroll settlement' then
+    raise exception 'FAIL: Payroll does not settle last: %', v_plan;
   end if;
   if exists (select 1 from public.approval_rules where tenant_id = current_setting('t.tpl')::uuid
               and (label = 'business_finance' or label like 'answer:Business finance%') and remind_hours is distinct from 12) then
     raise exception 'FAIL: a Business Finance review does not remind every 12 hours';
   end if;
-  raise notice 'pass: SIM requisition and transfer, fraud transfer, compensatory and night allowance are published and route; exit clearance has six checklists; Business Finance reminds every 12 hours';
+  raise notice 'pass: SIM requisition and transfer, fraud transfer, compensatory and night allowance are published and route; exit clearance has the SOW''s seven checklists, the leaver''s own and Payroll last; Business Finance reminds every 12 hours';
 end $$;
 
 -- =====================================================================
@@ -142,7 +162,7 @@ begin
   if (select status from public.approval_requests where id = v_fin) <> 'approved' then
     raise exception 'FAIL: Finance did not clear once its checklist was ticked';
   end if;
-  if (select count(*) from public.approval_events where subject_id = v_sub and action = 'checklist_ticked') <> 4 then
+  if (select count(*) from public.approval_events where subject_id = v_sub and action = 'checklist_ticked') <> 5 then
     raise exception 'FAIL: each tick is not on the request''s history';
   end if;
   if (select e->>'state' from jsonb_array_elements(public.checklist_for(v_sub)) e where e->>'track' = 'Finance & Accounts') <> 'cleared' then
@@ -156,11 +176,11 @@ begin
     raise exception 'FAIL: an employee changed a clearance checklist';
   end if;
   perform pg_temp.as_emp('EMP-0201');
-  perform public.save_checklist(v_form, 'Supply Chain', array['Assets on the inventory list returned', 'Toolkit returned']);
+  perform public.save_checklist(v_form, 'Supply Chain', array['Toolkit returned', 'Assets on the inventory list returned']);
   if (select string_agg(item, '|' order by position) from public.checklist_items where form_template_id = v_form and track = 'Supply Chain' and active)
-     <> 'Assets on the inventory list returned|Toolkit returned'
+     <> 'Toolkit returned|Assets on the inventory list returned'
      or not exists (select 1 from public.checklist_items where form_template_id = v_form and track = 'Supply Chain'
-                     and item = 'Open purchase orders handed over' and not active) then
+                     and item = 'Mobile SIM (for merchant wallet, if applicable)' and not active) then
     raise exception 'FAIL: saving a checklist did not keep, add and retire its items in order';
   end if;
   if (select jsonb_array_length(e->'items') from jsonb_array_elements(public.checklist_config(v_form)) e where e->>'track' = 'Supply Chain') <> 2 then
@@ -296,6 +316,203 @@ begin
   end if;
   raise notice 'pass: a leaver''s IT track raises one ServiceDesk ticket; resolved there, its checklist is ticked and the track clears';
 end $$;
+
+-- =====================================================================
+-- 6. Passwords apart from application data
+-- =====================================================================
+do $$
+declare v_user uuid; v_old text; v_refused boolean := false;
+begin
+  select id into v_user from public.app_users where tenant_id = current_setting('t.tpl')::uuid limit 1;
+  if not exists (select 1 from vault.credentials where user_id = v_user and password_hash = 'hash') then
+    raise exception 'FAIL: the account''s password is not kept in the vault';
+  end if;
+  begin
+    set local role app_api;
+    perform 1 from vault.credentials limit 1;
+  exception when insufficient_privilege then
+    v_refused := true;
+  end;
+  reset role;
+  if not v_refused then raise exception 'FAIL: the application''s role can read the vault'; end if;
+
+  -- Registering and resetting go through the vault, the old one into the history.
+  perform pg_temp.as_emp('EMP-0445');
+  update public.app_users set password_hash = 'hash-2', password_history = array['hash'] where id = v_user;
+  if (select row(password_hash, password_history) from vault.credentials where user_id = v_user) <> row('hash-2'::text, array['hash']::text[]) then
+    raise exception 'FAIL: a changed password did not reach the vault with its history';
+  end if;
+end $$;
+do $$ begin raise notice 'pass: passwords and their history are kept in a vault the application''s role cannot read'; end $$;
+
+-- =====================================================================
+-- 7. Who sees a form: departments or roles
+-- =====================================================================
+do $$
+declare v_role uuid; v_form uuid;
+begin
+  perform pg_temp.as_emp('');
+  select id into v_role from public.roles where tenant_id = current_setting('t.tpl')::uuid and name = 'Compliance auditor';
+  select id into v_form from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Night Allowance';
+  update public.form_templates set audience_departments = null, audience_roles = array[v_role] where id = v_form;
+  perform pg_temp.as_emp('EMP-2847');
+  if app.in_audience(v_form) then raise exception 'FAIL: Tom sees a form for compliance auditors only'; end if;
+  perform pg_temp.as_emp('EMP-0830');
+  if not app.in_audience(v_form) then raise exception 'FAIL: Lena, a compliance auditor, does not see the form for her role'; end if;
+  perform pg_temp.as_emp('');
+  update public.form_templates set audience_departments = array['Operations'] where id = v_form;
+  perform pg_temp.as_emp('EMP-2847');
+  if not app.in_audience(v_form) then raise exception 'FAIL: Tom, in Operations, does not see a form for Operations or the auditors'; end if;
+end $$;
+do $$ begin raise notice 'pass: a form is seen by its departments or by whoever holds its roles, and nobody else'; end $$;
+
+-- =====================================================================
+-- 8. A role given to a department
+-- =====================================================================
+do $$
+declare v_role uuid;
+begin
+  perform pg_temp.as_emp('EMP-2847');
+  if app.has_permission('audit.view') then raise exception 'FAIL: Tom can read the audit trail before anybody gave him the role'; end if;
+  perform pg_temp.as_emp('EMP-0445');
+  select id into v_role from public.roles where tenant_id = current_setting('t.tpl')::uuid and name = 'Compliance auditor';
+  perform public.assign_role_group('Operations', v_role, true);
+  perform pg_temp.as_emp('EMP-2847');
+  if not app.has_permission('audit.view') then raise exception 'FAIL: Tom, in Operations, does not hold the role given to Operations'; end if;
+  perform pg_temp.as_emp('EMP-0445');
+  if not pg_temp.refused(format($q$select public.assign_role_group('Admin', %L, true)$q$, v_role)) then
+    raise exception 'FAIL: Farah gave a role to her own department';
+  end if;
+  perform public.assign_role_group('Operations', v_role, false);
+  perform pg_temp.as_emp('EMP-2847');
+  if app.has_permission('audit.view') then raise exception 'FAIL: the role stayed with Tom after it was taken from Operations'; end if;
+end $$;
+do $$ begin raise notice 'pass: a role given to a department is held by everyone in it, and goes when it is taken; nobody gives one to their own department'; end $$;
+
+-- =====================================================================
+-- 9. Who is told, and when
+-- =====================================================================
+create or replace function pg_temp.approve_all(p_sub uuid) returns void language plpgsql as $$
+declare r record;
+begin
+  for i in 1..20 loop
+    select id, approver_user_id into r from public.approval_requests where submission_id = p_sub and status = 'pending' order by step_index limit 1;
+    exit when not found;
+    perform pg_temp.as_emp(r.approver_user_id);
+    perform public.act_on_approval(r.id, 'approve', 'Fine', null, case when (select require_signature from public.approval_requests where id = r.id)
+                                                                 then 'data:image/png;base64,AAAA' end);
+  end loop;
+end $$;
+
+do $$
+declare v_big uuid; v_small uuid;
+begin
+  perform pg_temp.as_emp('EMP-2847');
+  v_big := pg_temp.raise_request('Capital Expenditure Request', 'EMP-2847',
+    '{"Project": "Data centre", "Classification": "Budgetary", "Amount": "2000000", "Justification": "Capacity"}');
+  v_small := pg_temp.raise_request('Capital Expenditure Request', 'EMP-2847',
+    '{"Project": "Printers", "Classification": "Budgetary", "Amount": "400000", "Justification": "Old ones"}');
+  if exists (select 1 from public.notifications where entity_id in (v_big, v_small) and recipient_id = 'EMP-0700' and kind = 'submission.raised') then
+    raise exception 'FAIL: the CFO, who asked to hear of approvals only, was told a request was raised';
+  end if;
+  perform pg_temp.approve_all(v_big);
+  perform pg_temp.approve_all(v_small);
+  if (select status from public.form_submissions where id = v_big) <> 'completed' then raise exception 'FAIL: the large request did not complete'; end if;
+  if not exists (select 1 from public.notifications where entity_id = v_big and recipient_id = 'EMP-0700' and kind = 'watch.approved') then
+    raise exception 'FAIL: the CFO was not told a 2,000,000 capital expenditure was approved';
+  end if;
+  if exists (select 1 from public.notifications where entity_id = v_small and recipient_id = 'EMP-0700' and kind = 'watch.approved') then
+    raise exception 'FAIL: the CFO was told of a 400,000 one, below his condition';
+  end if;
+end $$;
+do $$ begin raise notice 'pass: a watcher is told on the events they name, and only when the answers meet their condition'; end $$;
+
+-- =====================================================================
+-- 10. Trackers
+-- =====================================================================
+do $$
+declare v_id uuid; v_sub uuid; v_n int;
+begin
+  if (select count(*) from public.trackers where tenant_id = current_setting('t.tpl')::uuid) <> 3 then
+    raise exception 'FAIL: an evaluation does not start with its three trackers';
+  end if;
+  perform pg_temp.as_emp('EMP-2847');
+  select count(*) into v_n from public.tracker_rows('{"forms": ["Employee Exit Clearance"]}');
+  if v_n < 1 or exists (select 1 from public.tracker_rows('{"forms": ["Employee Exit Clearance"]}') r where r.form <> 'Employee Exit Clearance') then
+    raise exception 'FAIL: a tracker for one form shows others, or none';
+  end if;
+  if exists (select 1 from public.tracker_rows('{"overdue": true}') r where not r.overdue) then
+    raise exception 'FAIL: the overdue tracker shows something not overdue';
+  end if;
+
+  v_id := public.save_tracker(null, 'My leave', null, 'me', '{"forms": ["Leave Application"]}');
+  select id into v_sub from public.form_submissions where tenant_id = current_setting('t.tpl')::uuid and submitted_by = 'EMP-2847' order by submitted_at desc limit 1;
+  perform public.set_tracker_reminder(v_sub, (now() at time zone 'Asia/Dhaka')::date, 'Chase finance');
+  if (select remind_on from public.tracker_rows('{}') r where r.id = v_sub) is null then
+    raise exception 'FAIL: the tracker does not show Tom his reminder';
+  end if;
+  perform pg_temp.as_emp('EMP-1134');
+  if not pg_temp.refused(format($q$select public.save_tracker(%L, 'Mine now', null, 'everyone', '{}')$q$, v_id)) then
+    raise exception 'FAIL: Sam changed Tom''s tracker';
+  end if;
+  if (select remind_on from public.tracker_rows('{}') r where r.id = v_sub) is not null then
+    raise exception 'FAIL: Sam sees Tom''s reminder';
+  end if;
+
+  perform pg_temp.as_emp('');
+  v_n := app.tracker_reminders_due();
+  if v_n < 1 or not exists (select 1 from public.notifications where recipient_id = 'EMP-2847' and kind = 'tracker.reminder' and entity_id = v_sub
+                                                                  and body = 'Chase finance') then
+    raise exception 'FAIL: the reminder due today did not reach Tom';
+  end if;
+  if app.tracker_reminders_due() <> 0 then raise exception 'FAIL: a reminder was sent twice'; end if;
+end $$;
+begin;
+  set local role app_api;
+  select pg_temp.as_emp('EMP-1134');
+  do $$ begin
+    if exists (select 1 from public.trackers where name = 'My leave') then raise exception 'FAIL: Sam can see a tracker Tom kept for himself'; end if;
+    if (select count(*) from public.trackers where shared_with = 'everyone') <> 2 then raise exception 'FAIL: the shared trackers are not shown to everyone'; end if;
+  end $$;
+  select pg_temp.as_emp('EMP-0831');
+  do $$ begin
+    if not exists (select 1 from public.trackers where name = 'ABC declarations') then raise exception 'FAIL: Compliance cannot see its department''s tracker'; end if;
+  end $$;
+  reset role;
+commit;
+do $$ begin raise notice 'pass: trackers filter requests, are kept for their owner, department or everyone, and remind on the day asked'; end $$;
+
+-- =====================================================================
+-- 11. Push to a phone
+-- =====================================================================
+do $$
+declare v_sub uuid; o record;
+begin
+  perform pg_temp.as_emp('EMP-2847');
+  v_sub := pg_temp.raise_request('Leave Application', 'EMP-2847', '{}');
+  if exists (select 1 from public.push_outbox where tenant_id = current_setting('t.tpl')::uuid) then
+    raise exception 'FAIL: a push was queued for somebody with no device';
+  end if;
+  insert into public.push_subscriptions (tenant_id, employee_id, endpoint, p256dh, auth)
+  values (current_setting('t.tpl')::uuid, 'EMP-1134', 'https://push.example.test/sam-phone', 'k', 'a');
+  perform app.notify('EMP-1134', 'approval.turn', 'Your approval is needed', 'Leave Application is waiting on you.', 'form_submission', v_sub);
+  perform app.notify('EMP-1134', 'note.added', 'A note on a request', 'Tom added a note.', 'form_submission', v_sub);
+  select * into o from public.push_outbox where employee_id = 'EMP-1134' and url = '/approvals';
+  if not found or o.status <> 'queued' or o.title <> 'Your approval is needed' then
+    raise exception 'FAIL: an approval waiting was not queued for Sam''s phone, opening his queue';
+  end if;
+  if not exists (select 1 from public.push_outbox where employee_id = 'EMP-1134' and url = '/status/' || v_sub) then
+    raise exception 'FAIL: a note was not queued for Sam''s phone, opening the request';
+  end if;
+  begin
+    set local role app_api;
+    perform 1 from public.push_subscriptions;
+    if found then raise exception 'FAIL: the application''s role reads devices'; end if;
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+end $$;
+do $$ begin raise notice 'pass: a notification is queued for the recipient''s phone, opening what it is about; nobody without a device gets one'; end $$;
 
 -- Tidy: the evaluation goes, and everything it held with it.
 delete from public.tenants where id = current_setting('t.tpl')::uuid;

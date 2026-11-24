@@ -2,7 +2,9 @@ import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router"
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { Bell, KeyRound, ShieldCheck, Smartphone } from "lucide-react";
+import { canInstall, disablePush, enablePush, install, isIos, isStandalone, onInstallChange, pushState, type PushState } from "@/lib/push-client";
+import { testPush } from "@/lib/push-fn";
 import {
   changePassword, confirmMfaSetup, disableMfa, mfaStatus, startMfaSetup, type MfaStatus,
 } from "@/lib/auth-fn";
@@ -64,6 +66,8 @@ function AccountPage() {
           </div>
         </Card>
       )}
+
+      {!must && <DeviceCard />}
 
       {mfa?.directory ? (
         <Card title="Password">
@@ -230,6 +234,66 @@ function MfaCard({ status, username, onChange }: { status: MfaStatus; username: 
           <div><Button tone="brand" busy={busy} onClick={begin}>Set up two-step sign-in</Button></div>
         </div>
       )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------
+// This phone or computer: the app installed, and notifications on it.
+// ---------------------------------------------------------------------
+function DeviceCard() {
+  const [state, setState] = useState<PushState | null>(null);
+  const [installable, setInstallable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const refresh = async () => { setState(await pushState().catch(() => "unsupported" as const)); setInstallable(canInstall()); };
+  useEffect(() => { void refresh(); return onInstallChange(() => setInstallable(canInstall())); }, []);
+
+  const WORD: Record<PushState, { tone: "green" | "zinc" | "red" | "amber"; text: string }> = {
+    on: { tone: "green", text: "On" }, off: { tone: "zinc", text: "Off" }, blocked: { tone: "red", text: "Blocked" }, unsupported: { tone: "amber", text: "Not here" },
+  };
+  return (
+    <Card
+      title={<span className="inline-flex items-center gap-2"><Smartphone size={15} /> This phone or computer</span>}
+      aside={state ? <Pill tone={WORD[state].tone}>Notifications {WORD[state].text.toLowerCase()}</Pill> : undefined}
+    >
+      <div className="flex flex-col gap-3" style={{ fontSize: 13, color: "#52525B" }} data-testid="device-card">
+        <p style={{ margin: 0 }}>
+          Approvals, decisions, notes and reminders arrive here as notifications, even with the app closed — for whoever you
+          are acting as. {isStandalone() ? "This is the installed app." : "Installing the app puts it on the home screen, full screen."}
+        </p>
+        {state === "blocked" && <Notice tone="red">Notifications are blocked for this site. Allow them in the browser's settings, then turn them on here.</Notice>}
+        {state === "unsupported" && (
+          <Notice tone="amber">{isIos() && !isStandalone()
+            ? "On an iPhone: tap Share, then Add to Home Screen, open the app from there, and turn notifications on in this card."
+            : "This browser cannot show notifications."}</Notice>
+        )}
+        <div className="flex gap-2 flex-wrap">
+          {installable && !isStandalone() && (
+            <Button onClick={async () => { if (await install()) toast.success("Installed — open it from the home screen"); }}>Install the app</Button>
+          )}
+          {state === "off" && (
+            <Button tone="brand" busy={busy} onClick={async () => {
+              setBusy(true);
+              const r = await enablePush();
+              setBusy(false);
+              if (r.ok) toast.success("Notifications are on for this device"); else toast.error(r.error ?? "That did not work");
+              await refresh();
+            }}><Bell size={13} /> Turn on notifications</Button>
+          )}
+          {state === "on" && (
+            <>
+              <Button busy={busy} onClick={async () => {
+                setBusy(true);
+                const r = await testPush();
+                setBusy(false);
+                if (r.ok && r.sent) toast.success("Sent — it should arrive in a moment");
+                else toast.error(r.ok ? "No device took it; turn notifications off and on again" : r.error);
+              }}>Send a test</Button>
+              <Button onClick={async () => { await disablePush(); toast.success("Notifications are off for this device"); await refresh(); }}>Turn off</Button>
+            </>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }

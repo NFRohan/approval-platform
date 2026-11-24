@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BrandMark } from "./Sidebar";
 import { Bell, ChevronRight, HelpCircle, KeyRound, LogOut } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
@@ -38,6 +39,7 @@ const SECTION: Record<string, string> = {
   admin: "Administration",
   account: "Your account",
   developers: "API documentation",
+  trackers: "Trackers",
 };
 
 const LEAF: Record<string, string> = {
@@ -52,6 +54,7 @@ const LEAF: Record<string, string> = {
   email: "Email",
   integrations: "Integrations",
   calendar: "Working calendar",
+  checklists: "Clearance checklists",
   audit: "Audit centre",
 };
 
@@ -361,7 +364,7 @@ function AccountMenu() {
       {session.isStaff && (
         <Link
           to="/staff"
-          className="inline-flex items-center gap-1.5 rounded-lg"
+          className="hidden md:inline-flex items-center gap-1.5 rounded-lg"
           style={{
             padding: "5px 10px", fontSize: 12, fontWeight: 500,
             color: "var(--color-brand-600)", border: "1px solid var(--color-zinc-200)",
@@ -371,7 +374,7 @@ function AccountMenu() {
           <KeyRound size={13} /> Evaluations
         </Link>
       )}
-      <div className="text-right" style={{ lineHeight: 1.25 }}>
+      <div className="text-right hidden md:block" style={{ lineHeight: 1.25 }}>
         <div className="text-[12px] font-medium text-zinc-900">{session.username}</div>
       </div>
       <button
@@ -427,10 +430,15 @@ export function TopBar() {
 
   return (
     <div
-      className="h-16 shrink-0 flex items-center gap-6 bg-white border-b relative"
-      style={{ padding: "0 28px", borderColor: "var(--color-zinc-200)" }}
+      className="app-topbar shrink-0 flex items-center gap-3 md:gap-6 bg-white border-b relative"
+      style={{ borderColor: "var(--color-zinc-200)" }}
     >
-      <div className="flex items-center gap-2 shrink-0">
+      {/* On a phone: the app's mark and the page's name, nothing else. */}
+      <div className="flex md:hidden items-center gap-2 min-w-0">
+        <BrandMark size={28} style={{ borderRadius: 8, flexShrink: 0 }} />
+        <span className="text-[15px] font-semibold text-zinc-900 truncate">{crumbs.length ? crumbs[crumbs.length - 1].label : "Home"}</span>
+      </div>
+      <div className="hidden md:flex items-center gap-2 shrink-0">
         <Link to="/" className="text-[11px] text-zinc-400 hover:text-zinc-600">
           Home
         </Link>
@@ -448,9 +456,11 @@ export function TopBar() {
         ))}
       </div>
 
-      <GlobalSearch />
+      <div className="hidden md:contents">
+        <GlobalSearch />
+      </div>
 
-      <div className="ml-auto flex items-center gap-2 relative">
+      <div className="ml-auto flex items-center gap-1 md:gap-2 relative">
         <button
           ref={bellRef}
           onClick={() => setNotifOpen((v) => !v)}
@@ -475,14 +485,14 @@ export function TopBar() {
           </span>}
         </button>
         <button
-          className="inline-flex items-center justify-center rounded-lg cursor-pointer"
+          className="hidden md:inline-flex items-center justify-center rounded-lg cursor-pointer"
           style={{ width: 36, height: 36 }}
         >
           <HelpCircle size={16} style={{ color: "var(--color-zinc-700)" }} />
         </button>
-        <span className="mx-1" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
+        <span className="mx-1 hidden md:block" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
         <RoleSwitcher />
-        <span className="mx-1" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
+        <span className="mx-1 hidden md:block" style={{ width: 1, height: 22, background: "var(--color-zinc-200)" }} />
         <AccountMenu />
 
         {notifOpen && (

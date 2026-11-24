@@ -84,6 +84,35 @@ $$;
 -- is what lets a demonstration show the difference. Without one (the
 -- seed, scripts, the test suites) a tenant admin holds them all, as
 -- before roles existed.
+-- The active roles somebody holds: given to them, or to a group they
+-- are in (role_groups, db/009_sow_gaps.sql). Defined where it is used
+-- first; the groups are added once their table exists.
+drop function if exists app.held_roles(text);
+create or replace function app.held_roles(p_employee text, p_tenant uuid default null)
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select r.id
+    from public.employee_roles er
+    join public.roles r on r.id = er.role_id and r.tenant_id = er.tenant_id
+   where er.tenant_id = coalesce(p_tenant, app.current_tenant())
+     and er.employee_id = p_employee
+     and r.status = 'active'
+$$;
+
+create or replace function app.holds_role(p_employee text, p_role uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select p_employee is not null and exists (select 1 from app.held_roles(p_employee) h where h = p_role)
+$$;
+
 create or replace function app.has_permission(p_permission text)
 returns boolean
 language sql
@@ -104,11 +133,9 @@ as $$
       false
     else exists (
       select 1
-        from public.employee_roles er
-        join public.roles r on r.id = er.role_id and r.tenant_id = er.tenant_id
-       where er.tenant_id = app.current_tenant()
-         and er.employee_id = app.current_employee()
-         and r.status = 'active'
+        from public.roles r
+       where r.tenant_id = app.current_tenant()
+         and r.id in (select app.held_roles(app.current_employee()))
          and p_permission = any (r.permissions))
   end
 $$;
@@ -379,9 +406,17 @@ begin
   if v.auth_source = 'ldap' then
     raise exception '% signs in with the directory password; reset it there', v.username;
   end if;
-  update public.app_users
+  -- The hashes live in vault.credentials (db/009_sow_gaps.sql); the
+  -- one being replaced joins the history there.
+  update vault.credentials
      set password_history = (array[password_hash] || password_history)[1:5],
-         password_hash = p_hash, must_change_pw = true, password_changed_at = now(),
+         password_hash = p_hash, updated_at = now()
+   where user_id = p_user;
+  if not found then
+    insert into vault.credentials (user_id, password_hash) values (p_user, p_hash);
+  end if;
+  update public.app_users
+     set must_change_pw = true, password_changed_at = now(),
          failed_attempts = 0, locked_at = null
    where id = p_user;
   perform app.audit('password_reset', 'app_user', p_user, v.username);
@@ -716,12 +751,17 @@ as $$
   select app.current_employee() is null
       or app.has_permission('forms.build')
       or coalesce((
-           select t.audience_departments is null
-               or cardinality(t.audience_departments) = 0
+           -- Open to everyone when it names neither departments nor
+           -- roles; otherwise to whoever is in one of the departments or
+           -- holds one of the roles (db/009_sow_gaps.sql).
+           select (coalesce(cardinality(t.audience_departments), 0) = 0
+                   and coalesce(cardinality(t.audience_roles), 0) = 0)
                or exists (select 1 from public.employees e
                            where e.tenant_id = t.tenant_id
                              and e.employee_id = app.current_employee()
-                             and e.department = any (t.audience_departments))
+                             and e.department = any (coalesce(t.audience_departments, '{}')))
+               or exists (select 1 from unnest(coalesce(t.audience_roles, '{}')) r
+                           where app.holds_role(app.current_employee(), r))
              from public.form_templates t
             where t.id = p_template and t.tenant_id = app.current_tenant()), true)
 $$;

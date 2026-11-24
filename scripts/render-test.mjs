@@ -132,7 +132,7 @@ const PATHS = [
   // Stage 5: campaigns.
   '/campaigns', `/campaigns/${campaignId}`,
   // Stage 6: integrations, the audit centre and the API's documentation.
-  '/admin/integrations', '/admin/audit', '/developers', '/admin/calendar', '/admin/checklists',
+  '/admin/integrations', '/admin/audit', '/developers', '/admin/calendar', '/admin/checklists', '/trackers',
 ];
 
 let failed = 0;

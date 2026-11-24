@@ -45,7 +45,14 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      // An app on a phone: installable, full screen, in the brand's colour.
+      { name: "theme-color", content: "#4F46E5" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
+      { name: "apple-mobile-web-app-title", content: "Approvals" },
+      { name: "application-name", content: "Approvals" },
       { title: "Admin Services Portal" },
       { name: "description", content: "Internal services portal for administrative requests and approvals" },
       { name: "author", content: "the organisation" },
@@ -58,6 +65,8 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },

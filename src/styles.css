@@ -255,3 +255,19 @@
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
 }
+
+/* ------------------------------------------------------------------
+   The phone: a top bar clear of the notch, content clear of the tab bar,
+   and no tap highlight or rubber-band behind a fixed bar.
+   ------------------------------------------------------------------ */
+.app-topbar { height: 64px; padding: 0 28px; }
+@media (max-width: 767.98px) {
+  .app-topbar { height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 14px; }
+  .app-main { padding-bottom: calc(var(--tab-bar, 60px) + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+  html, body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+  .row-actions > button { min-height: 42px; padding-left: 14px !important; padding-right: 14px !important; }
+  .row-actions > button:first-child { flex: 1 1 100%; font-size: 15px !important; }
+  [data-testid="tracker-filters"] > * { width: 100% !important; }
+  [data-testid="tracker-list"] { flex-direction: row; overflow-x: auto; }
+  [data-testid="tracker-list"] > button { flex: 0 0 auto; }
+}
