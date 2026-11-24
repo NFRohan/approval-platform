@@ -180,16 +180,35 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* Thin scrollbars, dark enough to find: on white, a mid grey that
+     darkens under the pointer; in the dark sidebar (.scroll-dark), a grey
+     that stands off both the panel and the white page beside it. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-zinc-400) transparent;
+  }
   .scroll-thin::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   .scroll-thin::-webkit-scrollbar-thumb {
-    background: var(--color-zinc-200);
+    background: var(--color-zinc-300);
     border-radius: 9999px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--color-zinc-400);
   }
   .scroll-thin::-webkit-scrollbar-track {
     background: transparent;
+  }
+  .scroll-thin.scroll-dark {
+    scrollbar-color: var(--color-zinc-600) transparent;
+  }
+  .scroll-thin.scroll-dark::-webkit-scrollbar-thumb {
+    background: var(--color-zinc-600);
+  }
+  .scroll-thin.scroll-dark::-webkit-scrollbar-thumb:hover {
+    background: var(--color-zinc-500);
   }
 
   /* Form Builder canvas background — dotted grid */

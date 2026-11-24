@@ -490,7 +490,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
       )}
 
       {/* nav */}
-      <nav className="scroll-thin flex-1 overflow-auto py-2">
+      <nav className="scroll-thin scroll-dark flex-1 overflow-auto py-2">
         {nav.map((sec) => (
           <div key={sec.section} className="mb-2.5">
             {!collapsed && (
