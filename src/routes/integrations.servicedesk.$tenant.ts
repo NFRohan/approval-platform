@@ -39,6 +39,11 @@ export const Route = createFileRoute("/integrations/servicedesk/$tenant")({
           // A webhook set up as a form post: id=123&subject=…
           body = Object.fromEntries(new URLSearchParams(raw));
         }
+        // ServiceDesk's "Parameters" may arrive on the address instead
+        // (?id=…); what the body says wins.
+        const query = Object.fromEntries([...new URL(request.url).searchParams].filter(([k]) => k !== "key"));
+        if (body && typeof body === "object" && !Array.isArray(body)) body = { ...query, ...(body as object) };
+        else body = query;
         const ticket = normaliseTicket(body);
         if (!ticket) return reply(400, { error: "the body names no ticket id" });
         try {
