@@ -1965,7 +1965,7 @@ begin
   -- tenant at once.
   select id into v_other from public.form_submissions
    where tenant_id = app.current_tenant()
-     and (upper(ref_number) = upper(trim(p_other)) or id::text = lower(trim(p_other)))
+     and (ref_number = upper(trim(p_other)) or id::text = lower(trim(p_other)))
    limit 1;
   if v_other is null then
     raise exception 'there is no request %', trim(p_other);

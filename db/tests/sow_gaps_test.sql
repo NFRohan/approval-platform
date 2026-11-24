@@ -514,6 +514,33 @@ begin
 end $$;
 do $$ begin raise notice 'pass: a notification is queued for the recipient''s phone, opening what it is about; nobody without a device gets one'; end $$;
 
+-- =====================================================================
+-- 12. Each request's steps, summed up, stay true
+-- =====================================================================
+do $$
+declare v_bad int;
+begin
+  -- After everything above: raised, approved, rejected, forwarded,
+  -- returned, cleared from ServiceDesk. The kept sums are what the steps say.
+  select count(*) into v_bad
+    from public.form_submissions s
+    left join public.submission_stats st on st.submission_id = s.id
+    left join lateral (
+      select count(*) filter (where r.status <> 'skipped') total,
+             count(*) filter (where r.status in ('approved', 'rejected')) done,
+             max(r.acted_at) last_acted,
+             min(r.deadline_at) filter (where r.status = 'pending') next_deadline
+        from public.approval_requests r where r.submission_id = s.id
+    ) a on true
+   where s.tenant_id = current_setting('t.tpl')::uuid
+     -- A request with no steps (a migrated ticket) needs no row: it reads as none.
+     and ((st.submission_id is null and a.total + a.done > 0)
+          or st.steps_total <> a.total or st.steps_done <> a.done
+          or st.last_acted_at is distinct from a.last_acted or st.next_deadline is distinct from a.next_deadline);
+  if v_bad > 0 then raise exception 'FAIL: % requests'' step sums disagree with their steps', v_bad; end if;
+end $$;
+do $$ begin raise notice 'pass: every request''s step sums, kept as its steps change, agree with the steps'; end $$;
+
 -- Tidy: the evaluation goes, and everything it held with it.
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
 

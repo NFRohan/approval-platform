@@ -50,6 +50,102 @@ update public.approval_requests r
  where r.opened_at is null and r.status <> 'waiting';
 
 -- ---------------------------------------------------------------------
+-- Each request's steps, summed up (public.submission_stats).
+--
+-- Recomputed for a request whenever one of its steps is added, changed
+-- or removed — a handful of rows each time — so a report over two
+-- million requests joins one row each rather than aggregating some two
+-- million steps on every run.
+-- ---------------------------------------------------------------------
+create or replace function app.refresh_submission_stats(p_submission uuid)
+returns void
+language sql
+security definer
+set search_path = public, app, pg_temp
+as $$
+  insert into public.submission_stats as x
+    (submission_id, tenant_id, steps_total, steps_done, last_acted_at, waiting_on, waiting_since, next_deadline, current_stage, late_steps)
+  select s.id, s.tenant_id,
+         count(r.id) filter (where r.status <> 'skipped'),
+         count(r.id) filter (where r.status in ('approved', 'rejected')),
+         max(r.acted_at),
+         string_agg(distinct ae.name, ', ') filter (where r.status in ('pending', 'clarification')),
+         min(r.opened_at) filter (where r.status in ('pending', 'clarification')),
+         min(r.deadline_at) filter (where r.status = 'pending'),
+         min(coalesce(r.stage_label, r.lane_label)) filter (where r.status in ('pending', 'clarification')),
+         count(r.id) filter (where r.acted_at > r.deadline_at)
+    from public.form_submissions s
+    left join public.approval_requests r on r.submission_id = s.id and r.tenant_id = s.tenant_id
+    left join public.employees ae on ae.employee_id = r.approver_user_id and ae.tenant_id = r.tenant_id
+   where s.id = p_submission
+   group by s.id, s.tenant_id
+  on conflict (submission_id) do update set
+    steps_total = excluded.steps_total, steps_done = excluded.steps_done, last_acted_at = excluded.last_acted_at,
+    waiting_on = excluded.waiting_on, waiting_since = excluded.waiting_since, next_deadline = excluded.next_deadline,
+    current_stage = excluded.current_stage, late_steps = excluded.late_steps
+$$;
+
+create or replace function app.submission_stats_on_step()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+begin
+  if tg_op <> 'INSERT' and old.submission_id is not null then perform app.refresh_submission_stats(old.submission_id); end if;
+  if tg_op <> 'DELETE' and new.submission_id is not null
+     and (tg_op = 'INSERT' or new.submission_id is distinct from old.submission_id) then
+    perform app.refresh_submission_stats(new.submission_id);
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists approval_requests_submission_stats on public.approval_requests;
+create trigger approval_requests_submission_stats
+  after insert or update or delete on public.approval_requests
+  for each row execute function app.submission_stats_on_step();
+
+-- Every request at once: after a bulk load, and on every apply, so a
+-- request from before this existed has its row.
+create or replace function app.rebuild_submission_stats(p_tenant uuid default null)
+returns integer
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_n int;
+begin
+  insert into public.submission_stats as x
+    (submission_id, tenant_id, steps_total, steps_done, last_acted_at, waiting_on, waiting_since, next_deadline, current_stage, late_steps)
+  select s.id, s.tenant_id,
+         count(r.id) filter (where r.status <> 'skipped'),
+         count(r.id) filter (where r.status in ('approved', 'rejected')),
+         max(r.acted_at),
+         string_agg(distinct ae.name, ', ') filter (where r.status in ('pending', 'clarification')),
+         min(r.opened_at) filter (where r.status in ('pending', 'clarification')),
+         min(r.deadline_at) filter (where r.status = 'pending'),
+         min(coalesce(r.stage_label, r.lane_label)) filter (where r.status in ('pending', 'clarification')),
+         count(r.id) filter (where r.acted_at > r.deadline_at)
+    from public.form_submissions s
+    left join public.approval_requests r on r.submission_id = s.id and r.tenant_id = s.tenant_id
+    left join public.employees ae on ae.employee_id = r.approver_user_id and ae.tenant_id = r.tenant_id
+   where p_tenant is null or s.tenant_id = p_tenant
+   group by s.id, s.tenant_id
+  on conflict (submission_id) do update set
+    steps_total = excluded.steps_total, steps_done = excluded.steps_done, last_acted_at = excluded.last_acted_at,
+    waiting_on = excluded.waiting_on, waiting_since = excluded.waiting_since, next_deadline = excluded.next_deadline,
+    current_stage = excluded.current_stage, late_steps = excluded.late_steps;
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
+
+select app.rebuild_submission_stats();
+
+drop policy if exists submission_stats_member_read on public.submission_stats;
+create policy submission_stats_member_read on public.submission_stats for select to app_api
+  using (tenant_id = (select app.current_tenant()) and (select app.is_member()));
+
+-- ---------------------------------------------------------------------
 -- One row per request.
 -- ---------------------------------------------------------------------
 drop view if exists public.report_requests;
@@ -65,32 +161,31 @@ select s.id,
        s.status,
        s.priority,
        s.flag,
-       app.submission_amount(s.id)                        as amount,
+       -- The form's first money answer, as app.submission_amount reads it,
+       -- without building every answer for every row; dropped by the
+       -- planner when a query does not ask for the amount.
+       coalesce((select app.leading_number(v.value)
+                   from public.form_fields f
+                   join public.submission_values v on v.submission_id = s.id and v.tenant_id = s.tenant_id and v.field_name = f.field_name
+                  where f.form_template_id = s.form_template_id and f.field_type = 'money'
+                  order by f.order_index nulls last, f.id limit 1), 0) as amount,
        s.submitted_at,
        -- A ticket migrated from another system was decided there.
-       coalesce(st.decided_at, s.closed_at)               as decided_at,
-       case when coalesce(st.decided_at, s.closed_at) is not null
-            then round(extract(epoch from coalesce(st.decided_at, s.closed_at) - s.submitted_at) / 86400.0, 1) end
+       coalesce(case when s.status in ('completed', 'rejected') then st.last_acted_at end, s.closed_at) as decided_at,
+       case when coalesce(case when s.status in ('completed', 'rejected') then st.last_acted_at end, s.closed_at) is not null
+            then round(extract(epoch from coalesce(case when s.status in ('completed', 'rejected') then st.last_acted_at end, s.closed_at)
+                                          - s.submitted_at) / 86400.0, 1) end
                                                           as cycle_days,
        coalesce(st.steps_total, 0)                        as steps_total,
        coalesce(st.steps_done, 0)                         as steps_done,
        st.waiting_on,
-       coalesce(st.overdue, false)                        as overdue,
+       coalesce(st.next_deadline < now(), false)          as overdue,
        coalesce(st.late_steps, 0)                         as late_steps
   from public.form_submissions s
   join public.form_templates ft on ft.id = s.form_template_id and ft.tenant_id = s.tenant_id
   left join public.employees e on e.employee_id = s.submitted_by and e.tenant_id = s.tenant_id
-  left join lateral (
-    select count(*) filter (where r.status <> 'skipped')                        as steps_total,
-           count(*) filter (where r.status in ('approved', 'rejected'))         as steps_done,
-           case when s.status in ('completed', 'rejected') then max(r.acted_at) end as decided_at,
-           string_agg(distinct ae.name, ', ') filter (where r.status in ('pending', 'clarification')) as waiting_on,
-           bool_or(r.status = 'pending' and r.deadline_at < now())               as overdue,
-           count(*) filter (where r.acted_at > r.deadline_at)                    as late_steps
-      from public.approval_requests r
-      left join public.employees ae on ae.employee_id = r.approver_user_id and ae.tenant_id = r.tenant_id
-     where r.submission_id = s.id and r.tenant_id = s.tenant_id
-  ) st on true
+  -- Each request's steps, summed up as they change (submission_stats).
+  left join public.submission_stats st on st.submission_id = s.id and st.tenant_id = s.tenant_id
  where s.status <> 'draft';
 
 -- ---------------------------------------------------------------------
@@ -175,19 +270,19 @@ do $p$
 begin
   drop policy if exists email_templates_read on public.email_templates;
   create policy email_templates_read on public.email_templates
-    for select to app_api using (tenant_id = app.current_tenant() and app.is_member());
+    for select to app_api using (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 
   drop policy if exists email_outbox_read on public.email_outbox;
   create policy email_outbox_read on public.email_outbox
     for select to app_api
-    using (tenant_id = app.current_tenant() and app.is_member()
+    using (tenant_id = (select app.current_tenant()) and (select app.is_member())
            and (recipient_id = app.current_employee()
                 or app.has_permission('notifications.manage') or app.has_permission('audit.view')));
 
   drop policy if exists report_templates_read on public.report_templates;
   create policy report_templates_read on public.report_templates
     for select to app_api
-    using (tenant_id = app.current_tenant() and app.is_member()
+    using (tenant_id = (select app.current_tenant()) and (select app.is_member())
            and (app.has_permission('reports.view') or app.has_permission('reports.manage')));
 end $p$;
 

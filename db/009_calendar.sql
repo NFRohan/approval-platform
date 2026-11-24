@@ -21,7 +21,7 @@ do $p$
 begin
   drop policy if exists holidays_member_read on public.holidays;
   create policy holidays_member_read on public.holidays for select to app_api
-    using (tenant_id = app.current_tenant() and app.is_member());
+    using (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 end $p$;
 
 -- The government's list, by year.

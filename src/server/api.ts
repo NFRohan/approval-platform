@@ -127,7 +127,7 @@ function intParam(url: URL, name: string, dflt: number, max: number): number {
 async function findRequest(c: pg.PoolClient, ref: string): Promise<{ id: string; status: string; submitted_by: string | null; form_template_id: string }> {
   const { rows: [s] } = await c.query(
     `select id, status, submitted_by, form_template_id from public.form_submissions
-      where ${UUID.test(ref) ? 'id = $1::uuid' : 'upper(ref_number) = upper($1)'}`, [ref]);
+      where ${UUID.test(ref) ? 'id = $1::uuid' : 'ref_number = upper($1)'}`, [ref]);
   if (!s) throw new ApiError(404, `no request ${ref}`);
   return s;
 }
@@ -231,10 +231,17 @@ const routes: Route[] = [
               or exists (select 1 from public.approval_events ev where ev.subject_id = s.id and ev.created_at >= $5))
          and ($6 or s.archived_at is null)`;
       const args = [status, form, requester, since, updated, archived];
-      const { rows: [n] } = await c.query(`select count(*)::int n ${where}`, args);
+      // Counted exactly up to 10,000; beyond that the count would cost more
+      // than the page, so it says "at least" (total_at_least).
+      const { rows: [n] } = await c.query(`select count(*)::int n from (select 1 ${where} limit 10001) x`, args);
       const { rows } = await c.query(
-        `select app.request_json(s.id) r ${where} order by s.submitted_at desc, s.id limit $7 offset $8`, [...args, limit, offset]);
-      return { body: { data: rows.map((r) => r.r), paging: { limit, offset, next_offset: offset + rows.length < n.n ? offset + rows.length : null, total: n.n } } };
+        `select app.request_json(s.id) r ${where} order by s.submitted_at desc, s.id limit $7 offset $8`, [...args, limit + 1, offset]);
+      const more = rows.length > limit;
+      const page = rows.slice(0, limit);
+      return { body: { data: page.map((r) => r.r), paging: {
+        limit, offset, next_offset: more ? offset + page.length : null,
+        total: n.n <= 10000 ? n.n : null, ...(n.n > 10000 ? { total_at_least: 10000 } : {}),
+      } } };
     }),
   },
   {
@@ -390,18 +397,24 @@ const routes: Route[] = [
       const status = url.searchParams.get('status') || 'pending';
       const approver = url.searchParams.get('approver') || null;
       const limit = Math.max(1, intParam(url, 'limit', 100, 500));
+      // The steps first, in deadline order straight off their index, then
+      // what each belongs to: joining every open step to its request
+      // before keeping twenty was the slow part at a million requests.
       const { rows } = await c.query(
-        `select ar.id, ar.step_index + 1 as step, ar.stage_label as stage, ar.lane_label as lane, ar.status,
+        `with q as (
+           select ar.* from public.approval_requests ar
+            where ar.status = $1 and ($2::text is null or ar.approver_user_id = $2) and ar.submission_id is not null
+            order by ar.deadline_at nulls last, ar.opened_at limit $3)
+         select ar.id, ar.step_index + 1 as step, ar.stage_label as stage, ar.lane_label as lane, ar.status,
                 jsonb_build_object('employee_id', ar.approver_user_id, 'name', e.name) as approver,
                 ar.opened_at, ar.deadline_at, ar.acted_at, ar.require_signature,
                 jsonb_build_object('id', s.id, 'reference', s.ref_number, 'form', t.name, 'requester', s.submitted_by,
                                    'submitted_at', s.submitted_at, 'priority', s.priority) as request
-           from public.approval_requests ar
+           from q ar
            join public.form_submissions s on s.id = ar.submission_id
            join public.form_templates t on t.id = s.form_template_id
            left join public.employees e on e.employee_id = ar.approver_user_id and e.tenant_id = ar.tenant_id
-          where ar.status = $1 and ($2::text is null or ar.approver_user_id = $2)
-          order by ar.deadline_at nulls last, ar.opened_at limit $3`, [status, approver, limit]);
+          order by ar.deadline_at nulls last, ar.opened_at`, [status, approver, limit]);
       return { body: { data: rows } };
     }),
   },

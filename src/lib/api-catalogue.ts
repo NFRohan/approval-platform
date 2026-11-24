@@ -62,7 +62,7 @@ export const ENDPOINTS: Endpoint[] = [
   {
     id: 'list-requests', group: 'Requests', method: 'GET', path: '/requests', scope: 'requests:read',
     summary: 'List requests',
-    description: 'Newest first, a page at a time. Archived requests — and tickets migrated from ManageEngine — are left out unless you ask for them. For an ERP that keeps itself in step, poll with updated_since, or listen for webhooks instead.',
+    description: 'Newest first, a page at a time. Archived requests — and tickets migrated from ManageEngine — are left out unless you ask for them. For an ERP that keeps itself in step, poll with updated_since, or listen for webhooks instead. paging.total is exact up to 10,000; above that it is null and total_at_least says 10,000 — follow next_offset.',
     params: [
       { name: 'status', in: 'query', description: 'draft, submitted, in_progress, on_hold, completed, rejected or cancelled', example: 'completed' },
       { name: 'form', in: 'query', description: "A form's id or exact name", example: 'Travel & Expense Reimbursement' },

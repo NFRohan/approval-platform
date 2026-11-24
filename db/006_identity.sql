@@ -167,7 +167,7 @@ begin
     execute format($f$
       create policy %1$s_member_read on public.%1$I
         for select to app_api
-        using (tenant_id = app.current_tenant() and app.is_member())
+        using (tenant_id = (select app.current_tenant()) and (select app.is_member()))
     $f$, t);
   end loop;
 
@@ -178,8 +178,8 @@ begin
     execute format($f$
       create policy %1$s_builder_write on public.%1$I
         for all to app_api
-        using (tenant_id = app.current_tenant() and app.is_member() and app.has_permission('forms.build'))
-        with check (tenant_id = app.current_tenant() and app.is_member() and app.has_permission('forms.build'))
+        using (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.has_permission('forms.build'))
+        with check (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.has_permission('forms.build'))
     $f$, t);
   end loop;
 
@@ -190,8 +190,8 @@ begin
   execute $f$
     create policy employees_org_write on public.employees
       for all to app_api
-      using (tenant_id = app.current_tenant() and app.is_member() and app.has_permission('org.manage'))
-      with check (tenant_id = app.current_tenant() and app.is_member() and app.has_permission('org.manage'))
+      using (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.has_permission('org.manage'))
+      with check (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.has_permission('org.manage'))
   $f$;
 
   execute 'drop policy if exists departments_member_write on public.departments';
@@ -199,8 +199,8 @@ begin
   execute $f$
     create policy departments_org_write on public.departments
       for all to app_api
-      using (tenant_id = app.current_tenant() and app.is_member() and app.has_permission('org.manage'))
-      with check (tenant_id = app.current_tenant() and app.is_member() and app.has_permission('org.manage'))
+      using (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.has_permission('org.manage'))
+      with check (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.has_permission('org.manage'))
   $f$;
 end $id$;
 
@@ -865,7 +865,7 @@ begin
   drop policy if exists directory_syncs_read on public.directory_syncs;
   create policy directory_syncs_read on public.directory_syncs
     for select to app_api
-    using (tenant_id = app.current_tenant() and app.is_member()
+    using (tenant_id = (select app.current_tenant()) and (select app.is_member())
            and (app.has_permission('org.manage') or app.has_permission('audit.view')));
 end $ds$;
 

@@ -145,7 +145,7 @@ begin
     execute format($f$
       create policy %1$s_member_read on public.%1$I
         for select to app_api
-        using (tenant_id = app.current_tenant() and app.is_member())
+        using (tenant_id = (select app.current_tenant()) and (select app.is_member()))
     $f$, t);
 
     execute format('drop policy if exists %1$s_member_write on public.%1$I', t);
@@ -158,8 +158,8 @@ begin
       execute format($f$
         create policy %1$s_member_write on public.%1$I
           for all to app_api
-          using (tenant_id = app.current_tenant() and app.is_member())
-          with check (tenant_id = app.current_tenant() and app.is_member())
+          using (tenant_id = (select app.current_tenant()) and (select app.is_member()))
+          with check (tenant_id = (select app.current_tenant()) and (select app.is_member()))
       $f$, t);
     end if;
   end loop;
@@ -168,24 +168,24 @@ end $$;
 drop policy if exists activity_log_member_insert on public.activity_log;
 create policy activity_log_member_insert on public.activity_log
   for insert to app_api
-  with check (tenant_id = app.current_tenant() and app.is_member());
+  with check (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 
 -- The chain's own history, for the same reason: what happened to a
 -- request is added to and read, never rewritten.
 drop policy if exists approval_events_member_insert on public.approval_events;
 create policy approval_events_member_insert on public.approval_events
   for insert to app_api
-  with check (tenant_id = app.current_tenant() and app.is_member());
+  with check (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 
 -- Notes on a request and the document access log: added to and read,
 -- never rewritten.
 drop policy if exists ticket_notes_member_insert on public.ticket_notes;
 create policy ticket_notes_member_insert on public.ticket_notes
   for insert to app_api
-  with check (tenant_id = app.current_tenant() and app.is_member());
+  with check (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 drop policy if exists attachment_access_member_insert on public.attachment_access;
 create policy attachment_access_member_insert on public.attachment_access
   for insert to app_api
-  with check (tenant_id = app.current_tenant() and app.is_member());
+  with check (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 
 commit;

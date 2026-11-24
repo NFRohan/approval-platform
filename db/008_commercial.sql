@@ -70,11 +70,11 @@ begin
   foreach t in array array['campaigns', 'campaign_actuals', 'campaign_coupons', 'campaign_extensions'] loop
     execute format('drop policy if exists %1$s_member_read on public.%1$I', t);
     execute format($f$create policy %1$s_member_read on public.%1$I for select to app_api
-                      using (tenant_id = app.current_tenant() and app.is_member())$f$, t);
+                      using (tenant_id = (select app.current_tenant()) and (select app.is_member()))$f$, t);
   end loop;
   drop policy if exists inbound_mail_read on public.inbound_mail;
   create policy inbound_mail_read on public.inbound_mail for select to app_api
-    using (tenant_id = app.current_tenant() and app.is_member()
+    using (tenant_id = (select app.current_tenant()) and (select app.is_member())
            and (app.has_permission('notifications.manage') or app.has_permission('audit.view') or app.has_permission('org.manage')));
 end $p$;
 

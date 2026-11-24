@@ -2026,4 +2026,32 @@ create table if not exists public.push_outbox (
 );
 create index if not exists push_outbox_queued_idx on public.push_outbox(created_at) where status = 'queued';
 
+-- At scale (two million requests, docs/PERFORMANCE.md): each request's
+-- steps summed up once, kept current by a trigger on its steps, so the
+-- reports, analytics and trackers read one row per request instead of
+-- aggregating its steps every time (db/007_reports.sql).
+create table if not exists public.submission_stats (
+  submission_id uuid primary key,
+  tenant_id     uuid not null references public.tenants(id) on delete cascade,
+  steps_total   integer not null default 0,
+  steps_done    integer not null default 0,
+  last_acted_at timestamptz,
+  waiting_on    text,
+  waiting_since timestamptz,
+  next_deadline timestamptz,
+  current_stage text,
+  late_steps    integer not null default 0,
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete cascade
+);
+create index if not exists submission_stats_deadline_idx on public.submission_stats(tenant_id, next_deadline);
+-- References are upper case: one typed in any case is upper-cased and
+-- found through form_submissions_ref_idx. (upper() on the column would
+-- not be: row-level security keeps a non-leakproof function from an index.)
+drop index if exists public.form_submissions_ref_upper_idx;
+-- Requests by where they are: what is open, what was rejected.
+create index if not exists form_submissions_status_idx on public.form_submissions(tenant_id, status);
+-- An approval queue, in deadline order, without sorting every open step.
+create index if not exists approval_requests_queue_idx
+  on public.approval_requests(tenant_id, status, deadline_at, opened_at);
+
 commit;

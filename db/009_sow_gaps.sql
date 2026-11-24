@@ -25,7 +25,7 @@ begin
   foreach t in array array['checklist_items', 'checklist_ticks', 'servicedesk_tasks'] loop
     execute format('drop policy if exists %1$s_member_read on public.%1$I', t);
     execute format($f$create policy %1$s_member_read on public.%1$I for select to app_api
-                      using (tenant_id = app.current_tenant() and app.is_member())$f$, t);
+                      using (tenant_id = (select app.current_tenant()) and (select app.is_member()))$f$, t);
   end loop;
 end $p$;
 
@@ -675,7 +675,7 @@ end $$;
 -- =====================================================================
 drop policy if exists role_groups_member_read on public.role_groups;
 create policy role_groups_member_read on public.role_groups for select to app_api
-  using (tenant_id = app.current_tenant() and app.is_member());
+  using (tenant_id = (select app.current_tenant()) and (select app.is_member()));
 
 create or replace function app.held_roles(p_employee text, p_tenant uuid default null)
 returns setof uuid
@@ -804,14 +804,14 @@ create trigger approval_events_watchers after insert on public.approval_events
 -- =====================================================================
 drop policy if exists trackers_member_read on public.trackers;
 create policy trackers_member_read on public.trackers for select to app_api
-  using (tenant_id = app.current_tenant() and app.is_member()
+  using (tenant_id = (select app.current_tenant()) and (select app.is_member())
          and (shared_with = 'everyone' or owner_id = app.current_employee()
               or (shared_with = 'department' and department = (select e.department from public.employees e
                                                                  where e.tenant_id = trackers.tenant_id
                                                                    and e.employee_id = app.current_employee()))));
 drop policy if exists tracker_reminders_own_read on public.tracker_reminders;
 create policy tracker_reminders_own_read on public.tracker_reminders for select to app_api
-  using (tenant_id = app.current_tenant() and app.is_member() and employee_id = app.current_employee());
+  using (tenant_id = (select app.current_tenant()) and (select app.is_member()) and employee_id = app.current_employee());
 
 -- Requests as a tracker shows them: where each is, with whom, since when,
 -- and the reminder the person looking has set on it.
@@ -827,16 +827,13 @@ as $$
   with f as (
     select coalesce(p_filters, '{}'::jsonb) as j
   ),
+  -- Where each request stands, kept current as its steps change
+  -- (submission_stats, db/007_reports.sql).
   open_steps as (
-    select ar.submission_id,
-           string_agg(distinct coalesce(e.name, ar.approver_user_id), ', ') as with_whom,
-           min(ar.stage_label) as stage,
-           min(ar.opened_at) as waiting_since,
-           min(ar.deadline_at) as due_at
-      from public.approval_requests ar
-      left join public.employees e on e.tenant_id = ar.tenant_id and e.employee_id = ar.approver_user_id
-     where ar.tenant_id = app.current_tenant() and ar.submission_id is not null and ar.status in ('pending', 'clarification')
-     group by ar.submission_id
+    select st.submission_id, st.waiting_on as with_whom, st.current_stage as stage,
+           st.waiting_since, st.next_deadline as due_at
+      from public.submission_stats st
+     where st.tenant_id = app.current_tenant() and st.waiting_on is not null
   )
   select s.id, s.ref_number, t.name, t.category, s.submitted_by, re.name, re.department,
          s.status, coalesce(s.priority, 'normal'), s.flag, s.submitted_at,
@@ -846,9 +843,11 @@ as $$
     join public.form_templates t on t.id = s.form_template_id and t.tenant_id = s.tenant_id
     left join public.employees re on re.tenant_id = s.tenant_id and re.employee_id = s.submitted_by
     left join open_steps o on o.submission_id = s.id
-    left join lateral (select x.remind_on, x.note from public.tracker_reminders x
-                        where x.submission_id = s.id and x.employee_id = app.current_employee() and x.sent_at is null
-                        order by x.remind_on limit 1) tr on true
+    -- The reminders of the person looking: a handful, joined once.
+    left join (select distinct on (x.submission_id) x.submission_id, x.remind_on, x.note
+                 from public.tracker_reminders x
+                where x.tenant_id = app.current_tenant() and x.employee_id = app.current_employee() and x.sent_at is null
+                order by x.submission_id, x.remind_on) tr on tr.submission_id = s.id
     cross join f
    where s.tenant_id = app.current_tenant()
      and s.status <> 'draft' and s.archived_at is null
@@ -862,7 +861,8 @@ as $$
      and (coalesce(f.j ->> 'to', '') = '' or (s.submitted_at at time zone 'Asia/Dhaka')::date <= (f.j ->> 'to')::date)
      and (coalesce(f.j ->> 'search', '') = ''
           or concat_ws(' ', s.ref_number, s.legacy_ref, t.name, re.name, s.submitted_by) ilike '%' || (f.j ->> 'search') || '%')
-   order by coalesce(o.due_at < now(), false) desc, o.due_at nulls last, s.submitted_at desc
+   -- Earliest deadline first: the overdue are the earliest, so they lead.
+   order by o.due_at nulls last, s.submitted_at desc
    limit 1000
 $$;
 

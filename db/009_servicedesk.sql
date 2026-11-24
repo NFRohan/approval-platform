@@ -20,7 +20,7 @@ begin
   foreach t in array array['servicedesk_links', 'servicedesk_events'] loop
     execute format('drop policy if exists %1$s_read on public.%1$I', t);
     execute format($f$create policy %1$s_read on public.%1$I for select to app_api
-                      using (tenant_id = app.current_tenant() and app.is_member()
+                      using (tenant_id = (select app.current_tenant()) and (select app.is_member())
                              and (app.has_permission('integrations.manage') or app.has_permission('audit.view')))$f$, t);
   end loop;
 end $p$;
