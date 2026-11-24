@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { signIn, changePassword, verifySignInCode } from "@/lib/auth-fn";
 import { PasswordRules } from "@/components/PasswordRules";
@@ -30,8 +30,6 @@ const inputStyle: React.CSSProperties = {
 };
 
 function LoginPage() {
-  const navigate = useNavigate();
-  const router = useRouter();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -81,19 +79,18 @@ function LoginPage() {
     // Staff hold no tenant, so the prospect screens have nothing to show
     // them — landing there means a dashboard of zeroes under somebody
     // else's name. Their work is the console.
-    await goIn(result.isStaff ? "/staff" : "/");
+    goIn(result.isStaff ? "/staff" : "/");
   }
 
-  async function goIn(to: "/" | "/staff") {
+  // A fresh page load, not a router navigation. Re-running the router's
+  // checks on this page rebuilt it mid-way — the form came back, empty,
+  // while the dashboard loaded. Loaded afresh, the server draws the next
+  // screen with the session, and the browser keeps this one up, saying
+  // what is happening, until it is ready.
+  function goIn(to: "/" | "/staff") {
     setArriving(to);
-    try {
-      // The router cached a "no session" answer on the way in.
-      await router.invalidate();
-      await navigate({ to, replace: true });
-    } catch {
-      setArriving(null);
-      setError("Signed in, but the next page did not load. Try again.");
-    }
+    // One frame first, so "Signing you in" is what stays on screen.
+    requestAnimationFrame(() => setTimeout(() => window.location.replace(to), 0));
   }
 
   async function submitCode(e: React.FormEvent) {
@@ -133,7 +130,7 @@ function LoginPage() {
       return;
     }
     toast.success("Password changed");
-    await goIn("/");
+    goIn("/");
   }
 
   return (
