@@ -15,6 +15,7 @@ import { buildTimeline, type ChainRow } from "@/lib/timeline";
 import { answerQuestion, cancelSubmission, copySubmission, recallSubmission } from "@/lib/chain";
 import { CcPanel, DocumentsPanel, LinksPanel, NotesPanel } from "@/components/ticket/TicketPanels";
 import { ProcessMap } from "@/components/ProcessMap";
+import { ClearanceChecklist } from "@/components/ClearanceChecklist";
 import { fmtDateTime as fmtDateTimeLib } from "@/lib/dates";
 import { Archive } from "lucide-react";
 import { unarchiveSubmission } from "@/lib/audit-fn";
@@ -84,6 +85,9 @@ const EVENT_TEXT: Record<string, string> = {
   migrated: "— brought over and archived",
   raised_from_servicedesk: "— raised from ServiceDesk Plus",
   email_received: "— an email was added",
+  checklist_ticked: "ticked",
+  checklist_unticked: "unticked",
+  clearance_ticket: "— IT clearance ticket raised in ServiceDesk Plus",
 };
 
 type ApprovalRow = ChainRow & {
@@ -760,6 +764,13 @@ function StatusPage() {
           )}
         </div>
       )}
+
+      {/* What each department checks before it clears (exit clearance). */}
+      <ClearanceChecklist
+        submissionId={submissionId}
+        title="Clearance checklist"
+        style={{ border: "1px solid #E4E4E7", padding: "14px 16px", background: "#fff", borderRadius: 12, marginBottom: 24 }}
+      />
 
       {/* Questions between approvers */}
       {queries.length > 0 && (

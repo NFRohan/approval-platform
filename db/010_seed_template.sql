@@ -828,6 +828,12 @@ select app.seed_sign_ins(app.current_tenant());
 -- purchase tickets.
 select app.seed_servicedesk(app.current_tenant());
 select app.seed_servicedesk(d.id) from public.tenants d where d.kind = 'demo';
+-- The SOW's remaining forms, the exit clearance checklists, 12-hourly
+-- Business Finance reminders and the IT clearance link (009_sow_gaps).
+-- Idempotent: an evaluation issued before keeps what it has and gains
+-- what it lacks.
+select app.seed_sow_gaps(app.current_tenant());
+select app.seed_sow_gaps(d.id) from public.tenants d where d.kind = 'demo';
 -- Notices, stationery and maintenance had their chains built once for
 -- every organisation in the database: the seed builds them as the owner,
 -- and the rule lookup did not name the organisation (fixed in

@@ -25,7 +25,7 @@ import {
   Mail,
   Megaphone as CampaignIcon,
   type LucideIcon,
- Plug, ScrollText, CalendarDays } from "lucide-react";
+ Plug, ScrollText, CalendarDays, ListChecks } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useCurrentUser, type CurrentUser } from "@/contexts/CurrentUserContext";
 import { db } from "@/lib/db";
@@ -167,6 +167,7 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
   if (can("roles.manage") || can("roles.approve")) admin.push({ id: "roles", label: "Roles", Icon: ShieldCheck, to: "/admin/roles" });
   if (can("org.manage")) admin.push({ id: "people", label: "People & Directory", Icon: Network, to: "/admin/people" });
   if (can("org.manage")) admin.push({ id: "calendar", label: "Working Calendar", Icon: CalendarDays, to: "/admin/calendar" });
+  if (can("org.manage") || can("forms.settings")) admin.push({ id: "checklists", label: "Clearance Checklists", Icon: ListChecks, to: "/admin/checklists" });
   if (can("notifications.manage") || can("audit.view")) admin.push({ id: "email", label: "Email", Icon: Mail, to: "/admin/email" });
   if (can("integrations.manage") || can("audit.view")) admin.push({ id: "integrations", label: "Integrations", Icon: Plug, to: "/admin/integrations" });
   if (can("audit.view") || can("records.manage")) admin.push({ id: "audit", label: "Audit Centre", Icon: ScrollText, to: "/admin/audit" });

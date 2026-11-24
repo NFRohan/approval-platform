@@ -32,7 +32,7 @@ export const Route = createFileRoute("/builder/approvers")({
 //
 // `label` is what is saved on the rule and what the engine reads;
 // app.rule_role in db/005_chain.sql is the list of roles it knows.
-type AutoApprover = AutoEntry & { label: string; _requires?: string; ruleId?: string; requireSignature?: boolean };
+type AutoApprover = AutoEntry & { label: string; _requires?: string; ruleId?: string; requireSignature?: boolean; remindHours?: number | null };
 
 const ALL_AUTO_APPROVERS: AutoApprover[] = [
   {
@@ -70,7 +70,7 @@ const ALL_AUTO_APPROVERS: AutoApprover[] = [
   },
 ];
 
-type SavedRule = { label: string; user_id: string | null; deadlineDays: number; ruleId: string; requireSignature: boolean };
+type SavedRule = { label: string; user_id: string | null; deadlineDays: number; ruleId: string; requireSignature: boolean; remindHours: number | null };
 
 // The organisational roles a rule can name; see app.resolve_role.
 const ROLE_LABELS = new Set(["line_manager", "skip_level", "department_head", "hrbp", "cxo"]);
@@ -106,16 +106,18 @@ function ApproversStep() {
   // What kind of NFA it is, and the words that find it.
   const [classification, setClassification] = useState("");
   const [keywords, setKeywords] = useState("");
+  // "Manually assigning different approvers only within a hierarchy."
+  const [withinLine, setWithinLine] = useState(false);
 
   useEffect(() => {
     (async () => {
       const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }, { data: tpls }] = await Promise.all([
-        db.from("form_templates").select("name, followup_template_id, audience_departments, classification, keywords").eq("id", templateId).maybeSingle(),
+        db.from("form_templates").select("name, followup_template_id, audience_departments, classification, keywords, forward_within_line").eq("id", templateId).maybeSingle(),
         db.from("form_fields").select("field_type, field_name, order_index").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
         db.from("approval_rules")
-          .select("id, approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag")
+          .select("id, approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag, remind_hours")
           .eq("form_template_id", templateId)
           .order("step_index")
           .order("position"),
@@ -125,6 +127,7 @@ function ApproversStep() {
       setAudience(((tpl as { audience_departments?: string[] | null } | null)?.audience_departments) ?? []);
       setClassification((tpl as { classification?: string | null } | null)?.classification ?? "");
       setKeywords(((tpl as { keywords?: string[] | null } | null)?.keywords ?? []).join(", "));
+      setWithinLine(!!(tpl as { forward_within_line?: boolean | null } | null)?.forward_within_line);
       void db.from("departments").select("name").order("name").then(({ data }) =>
         setDepartments(((data ?? []) as { name: string }[]).map((d) => d.name)));
       setFollowup((tpl as { followup_template_id?: string | null } | null)?.followup_template_id ?? "");
@@ -148,7 +151,7 @@ function ApproversStep() {
         approver_user_id: string | null; deadline_days: number | null; label: string | null;
         step_index: number | null; quorum: number | null; stage_label: string | null; lane: string | null;
         condition: { field?: string; op?: string; value?: string } | null;
-        require_signature: boolean | null; flag: string | null;
+        require_signature: boolean | null; flag: string | null; remind_hours: number | null;
       };
       const byStage = new Map<number, SavedManual[]>();
       for (const r of (rules ?? []) as (SavedManual & { is_auto_added: boolean | null })[]) {
@@ -180,6 +183,7 @@ function ApproversStep() {
                 label: isRole ? null : r.label,
                 requireSignature: !!r.require_signature,
                 flag: r.flag,
+                remindHours: r.remind_hours ?? null,
                 deadlineDays: r.deadline_days ?? 7,
                 track: r.lane ?? "",
                 condition: r.condition?.field
@@ -196,6 +200,7 @@ function ApproversStep() {
               .map((r) => ({
                 label: r.label ?? "", user_id: r.approver_user_id, deadlineDays: r.deadline_days ?? 7,
                 ruleId: r.id as string, requireSignature: !!r.require_signature,
+                remindHours: (r as { remind_hours?: number | null }).remind_hours ?? null,
               }))
           : null,
       );
@@ -253,10 +258,11 @@ function ApproversStep() {
       const def = ALL_AUTO_APPROVERS.find((a) => a.label === role && (role === "line_manager" || role === "slab_finance"));
       // The person on a line-manager rule is the fallback for somebody
       // with no manager on record, so it is kept.
-      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays, ruleId: r.ruleId, requireSignature: r.requireSignature };
+      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays, ruleId: r.ruleId, requireSignature: r.requireSignature, remindHours: r.remindHours };
       return named({
         ruleId: r.ruleId,
         requireSignature: r.requireSignature,
+        remindHours: r.remindHours,
         id: `saved-auto-${i}`,
         user_id: r.user_id,
         label: r.label,
@@ -310,6 +316,7 @@ function ApproversStep() {
         deadline_days: a.deadlineDays ?? 7,
         is_auto_added: true,
         label: a.label,
+        remind_hours: a.remindHours ?? null,
       })),
     ].map((r, i) => ({ ...r, step_index: i, position: 0 }));
 
@@ -337,6 +344,7 @@ function ApproversStep() {
             condition: a.condition && a.condition.field ? a.condition : null,
             require_signature: !!a.requireSignature,
             flag: a.flag?.trim() || null,
+            remind_hours: a.remindHours ?? null,
           };
         }),
       );
@@ -354,6 +362,7 @@ function ApproversStep() {
         followup_template_id: followup || null, audience_departments: audience.length ? audience : null,
         classification: classification || null,
         keywords: [...new Set(keywords.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean))],
+        forward_within_line: withinLine,
       })
       .eq("id", templateId);
     if (fuErr) {
@@ -461,6 +470,16 @@ function ApproversStep() {
                 <input value={keywords} onChange={(e) => setKeywords(e.target.value)} aria-label="Keywords" placeholder="Keywords, separated by commas"
                   className="rounded-md bg-white" style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", flex: 1, minWidth: 240 }} />
               </div>
+              <label className="flex items-start gap-2 mt-3" style={{ fontSize: 13, color: "#3F3F46" }}>
+                <input type="checkbox" checked={withinLine} onChange={(e) => setWithinLine(e.target.checked)}
+                  aria-label="Forward only within the reporting line" style={{ marginTop: 3 }} />
+                <span>
+                  Forward only within the reporting line
+                  <span style={{ display: "block", fontSize: 12, color: "#71717A" }}>
+                    An approver may pass their step to the people above or below them, and nobody else.
+                  </span>
+                </span>
+              </label>
             </section>
             <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="audience">
               <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Who can raise it</div>

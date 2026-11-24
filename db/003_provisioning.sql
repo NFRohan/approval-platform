@@ -190,9 +190,9 @@ begin
 
   insert into _m select id, gen_random_uuid() from public.form_templates where tenant_id = v_tpl;
   insert into public.form_templates (id, tenant_id, name, category, created_by, status, created_at,
-                                     audience_departments, classification, keywords, on_approval)
+                                     audience_departments, classification, keywords, on_approval, forward_within_line)
   select m.new, v_new, t.name, t.category, t.created_by, t.status, t.created_at,
-         t.audience_departments, t.classification, t.keywords, t.on_approval
+         t.audience_departments, t.classification, t.keywords, t.on_approval, t.forward_within_line
     from public.form_templates t join _m m on m.old = t.id
    where t.tenant_id = v_tpl;
 
@@ -218,10 +218,10 @@ begin
   -- template join is a left one.
   insert into public.approval_rules (id, tenant_id, subject_type, form_template_id, approver_user_id, deadline_days,
                                      is_auto_added, label, step_index, quorum, condition, stage_label, lane, position,
-                                     require_signature, flag)
+                                     require_signature, flag, remind_hours)
   select m.new, v_new, r.subject_type, mt.new, r.approver_user_id, r.deadline_days,
          r.is_auto_added, r.label, r.step_index, r.quorum, r.condition, r.stage_label, r.lane, r.position,
-         r.require_signature, r.flag
+         r.require_signature, r.flag, r.remind_hours
     from public.approval_rules r
     join _m m  on m.old  = r.id
     left join _m mt on mt.old = r.form_template_id
@@ -364,8 +364,8 @@ begin
   -- outward: exactly one is set on any given row, so the other three
   -- resolve to null and the arc is preserved on the far side.
   insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
-  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at, opened_at)
-  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at, a.opened_at
+  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at, opened_at, remind_hours)
+  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at, a.opened_at, a.remind_hours
     from public.approval_requests a
     join      _m m   on m.old   = a.id
     left join _m ms  on ms.old  = a.submission_id
@@ -464,6 +464,21 @@ begin
           format('Minted %s for %s, expires %s', p_username, p_name, v_exp),
           jsonb_build_object('tenant_id', v_new, 'username', p_username));
 
+  -- Clearance checklists, and what has been ticked on them.
+  insert into _m select id, gen_random_uuid() from public.checklist_items where tenant_id = v_tpl;
+  insert into public.checklist_items (id, tenant_id, form_template_id, track, item, position, active, created_by, created_at)
+  select m.new, v_new, mt.new, c.track, c.item, c.position, c.active, c.created_by, c.created_at
+    from public.checklist_items c
+    join _m m  on m.old  = c.id
+    join _m mt on mt.old = c.form_template_id
+   where c.tenant_id = v_tpl;
+  insert into public.checklist_ticks (tenant_id, submission_id, item_id, done_by, done_at, note)
+  select v_new, ms.new, mi.new, k.done_by, k.done_at, k.note
+    from public.checklist_ticks k
+    join _m ms on ms.old = k.submission_id
+    join _m mi on mi.old = k.item_id
+   where k.tenant_id = v_tpl;
+
   -- The working calendar, with any days the template's administrators
   -- have moved.
   insert into public.holidays (tenant_id, on_date, name, kind, provisional, created_by, created_at, moved_from)
@@ -474,6 +489,7 @@ begin
   -- between organisations, so these are made rather than copied.
   perform app.seed_integration(v_new);
   perform app.seed_servicedesk(v_new);
+  perform app.seed_sow_gaps(v_new);
 
   -- Mail goes out again for whatever this transaction does next.
   perform set_config('app.no_mail', 'false', true);

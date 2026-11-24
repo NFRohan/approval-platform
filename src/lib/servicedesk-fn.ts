@@ -45,6 +45,12 @@ export type ServicedeskSettings = {
   auth_mode: 'authtoken' | 'oauth'; oauth_accounts_url: string | null; oauth_client_id: string | null;
   oauth_signed_in: boolean; oauth_access_expires: string | null;
   last_poll_result: { seen: number; raised: number; ignored: number; refused: number; error?: string } | null;
+  // A leaver's IT clearance, raised as a ticket there and cleared from it.
+  clearance_enabled: boolean; clearance_form: string | null; clearance_track: string | null; clearance_category: string | null;
+};
+export type ClearanceTask = {
+  id: string; submission_id: string; reference: string | null; leaver: string | null; ticket_id: string | null;
+  status: 'opening' | 'open' | 'cleared' | 'failed'; ticket_status: string | null; created_at: string; cleared_at: string | null;
 };
 export type ServicedeskEvent = {
   id: string; direction: 'in' | 'out'; kind: string; ticket_id: string | null; submission_id: string | null; reference: string | null;
@@ -53,7 +59,7 @@ export type ServicedeskEvent = {
 };
 
 export const loadServicedesk = createServerFn({ method: 'GET' })
-  .handler(async (): Promise<Result<{ settings: ServicedeskSettings; events: ServicedeskEvent[]; forms: string[]; canManage: boolean; slug: string }>> => {
+  .handler(async (): Promise<Result<{ settings: ServicedeskSettings; events: ServicedeskEvent[]; tasks: ClearanceTask[]; forms: string[]; canManage: boolean; slug: string }>> => {
     try {
       return await run(async (c) => {
         await c.query('select app.seed_servicedesk(app.current_tenant())').catch(() => {});
@@ -66,6 +72,13 @@ export const loadServicedesk = createServerFn({ method: 'GET' })
                   e.http_status, e.error, e.payload::text as payload, e.response, e.created_at, e.done_at
              from public.servicedesk_events e left join public.form_submissions s on s.id = e.submission_id
             order by e.seq desc limit 150`);
+        const { rows: tasks } = await c.query(
+          `select k.id, k.submission_id, s.ref_number as reference, e.name as leaver, k.ticket_id, k.status, k.ticket_status,
+                  k.created_at, k.cleared_at
+             from public.servicedesk_tasks k
+             left join public.form_submissions s on s.id = k.submission_id
+             left join public.employees e on e.tenant_id = s.tenant_id and e.employee_id = s.submitted_by
+            order by k.created_at desc limit 50`);
         if (!l) throw Object.assign(new Error('the ServiceDesk link is not readable with your permissions'), { code: 'P0001' });
         return {
           ok: true as const,
@@ -81,7 +94,10 @@ export const loadServicedesk = createServerFn({ method: 'GET' })
             last_poll_at: iso(l.last_poll_at), last_poll_result: l.last_poll_result,
             auth_mode: l.auth_mode, oauth_accounts_url: l.oauth_accounts_url, oauth_client_id: l.oauth_client_id,
             oauth_signed_in: !!l.oauth_refresh_sealed, oauth_access_expires: iso(l.oauth_access_expires),
+            clearance_enabled: !!l.clearance_enabled, clearance_form: l.clearance_form, clearance_track: l.clearance_track,
+            clearance_category: l.clearance_category,
           },
+          tasks: tasks.map((k) => ({ ...k, created_at: iso(k.created_at)!, cleared_at: iso(k.cleared_at) })) as ClearanceTask[],
           events: ev.map((e) => ({ ...e, created_at: iso(e.created_at)!, done_at: iso(e.done_at) })) as ServicedeskEvent[],
         };
       });
@@ -103,6 +119,19 @@ export const saveServicedesk = createServerFn({ method: 'POST' })
         !!data.enabled, data.base_url ?? '', token, !!data.allow_self_signed, data.default_form ?? null,
         JSON.stringify((data.form_map ?? []).filter((r) => r.match?.trim() || r.form)), data.approved_closure ?? '', data.rejected_closure ?? '', secret,
       ]));
+      return { ok: true };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+/** A leaver's IT clearance through ServiceDesk: on or off, for which form and track. */
+export const saveServicedeskClearance = createServerFn({ method: 'POST' })
+  .inputValidator((input: { enabled: boolean; form: string | null; track: string | null; category: string | null }) => input)
+  .handler(async ({ data }): Promise<Result> => {
+    try {
+      await run((c) => c.query('select public.save_servicedesk_clearance($1, $2, $3, $4)',
+        [!!data.enabled, data.form ?? null, data.track ?? null, data.category ?? null]));
       return { ok: true };
     } catch (err) {
       return refusal(err);

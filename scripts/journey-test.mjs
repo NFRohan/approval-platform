@@ -188,6 +188,14 @@ try {
         );
         break;
       }
+      // A department's clearance checklist is ticked first, as its
+      // approver would (db/009_sow_gaps.sql).
+      await q(`insert into public.checklist_ticks (tenant_id, submission_id, item_id, done_by)
+                select ar.tenant_id, ar.submission_id, i.id, ar.approver_user_id from public.approval_requests ar
+                  join public.form_submissions s on s.id = ar.submission_id
+                  join public.checklist_items i on i.tenant_id = ar.tenant_id and i.form_template_id = s.form_template_id and i.active
+                                               and i.track = app.checklist_track(ar.lane_label, ar.stage_label)
+                 where ar.id = $1 on conflict do nothing`, [live.id]);
       // A step can require a drawn signature (Stage 2).
       await q(`select public.act_on_approval($1, 'approve', null, $2, $3)`,
         [live.id, live.approver_user_id, live.require_signature ? SIGNATURE : null]);

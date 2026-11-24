@@ -220,6 +220,19 @@ console.log(NL + 'integration' + NL);
     [await tryAll(cloud, 'close', { request: { closure_info: { closure_code: { name: 'Success' }, closure_comments: 'ok' } } }),
      mock.store.get('7001').status.name, mock.store.get('7001').closure_info?.closure_code?.name],
     ['status Closed', 'Closed', 'Success']);
+  // A leaver's IT clearance: a new ticket, as the requester, and its number back.
+  {
+    const payload = { task: 'x', request: { subject: 'IT clearance: Tom Bexley (EMP-2847)', description: '<p>Leaving</p>',
+                                            requester: { email_id: 'tom.bexley@example.com', name: 'Tom Bexley' } } };
+    const [first] = sd.attemptsFor('create', '', payload, true);
+    const res = await sd.sdpCall(cloud, first.method, first.path, first.input);
+    const id = res.json?.request?.id;
+    check('a clearance ticket is raised as the leaver, and its number comes back',
+      [sd.sdpOk(res).ok, !!id, mock.store.get(String(id))?.subject, mock.store.get(String(id))?.requester?.email_id],
+      [true, true, 'IT clearance: Tom Bexley (EMP-2847)', 'tom.bexley@example.com']);
+    check('...tried as the technician if ServiceDesk does not know the leaver',
+      sd.attemptsFor('create', '', payload, true).map((a) => a.label), ['request', 'request as the technician']);
+  }
   check('the client secret is sent to Zoho\'s accounts servers only',
     ['https://accounts.zoho.in', 'https://accounts.zohocloud.ca', 'https://accounts.zoho.in.evil.test', 'http://accounts.zoho.com'].map((u) => sd.ZOHO_ACCOUNTS.test(u)),
     [true, true, false, false]);

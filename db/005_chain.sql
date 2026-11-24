@@ -621,7 +621,8 @@ create or replace function app.plan_chain(
   stage_label text,
   lane_label  text,
   require_signature boolean,
-  flag        text
+  flag        text,
+  remind_hours int
 )
 language plpgsql
 stable
@@ -648,6 +649,7 @@ declare
   c_llbl  text[] := '{}';
   c_sig   boolean[] := '{}';
   c_flag  text[] := '{}';
+  c_rem   int[]  := '{}';
 begin
   if p_subject_type = 'form_submission' then
     v_amount := app.amount_in(p_form_template_id, p_answers);
@@ -655,7 +657,8 @@ begin
 
   for r in
     select ar.approver_user_id, ar.deadline_days, ar.label, ar.step_index,
-           ar.quorum, ar.condition, ar.stage_label, ar.lane, ar.require_signature, ar.flag
+           ar.quorum, ar.condition, ar.stage_label, ar.lane, ar.require_signature, ar.flag,
+           ar.remind_hours
       from public.approval_rules ar
      where ar.subject_type = p_subject_type
        -- This organisation's rules. Row-level security says so for the
@@ -687,6 +690,7 @@ begin
         c_llbl  := array_append(c_llbl, null::text);
         c_sig   := array_append(c_sig, r.require_signature);
         c_flag  := array_append(c_flag, r.flag);
+        c_rem   := array_append(c_rem, r.remind_hours);
       end loop;
       v_prev_idx := null;
       continue;
@@ -730,12 +734,13 @@ begin
     c_llbl  := array_append(c_llbl, r.lane);
     c_sig   := array_append(c_sig, r.require_signature);
     c_flag  := array_append(c_flag, r.flag);
+    c_rem   := array_append(c_rem, r.remind_hours);
   end loop;
 
   return query
   with c as (
-    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl, c_sig, c_flag)
-             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, sig, flg, ord)
+    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl, c_sig, c_flag, c_rem)
+             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, sig, flg, rem, ord)
   ),
   -- A rule with no approver is configuration never finished; skipping it
   -- is better than a step nobody can act on. Nobody approves their own.
@@ -793,7 +798,7 @@ begin
          (row_number() over (partition by g.phase, g.ln order by g.ord) - 1)::int,
          g.appr, g.dd,
          case when pq.quo is not null and pq.quo < pq.nl then pq.quo end,
-         pq.slbl, g.llbl, coalesce(g.sig, false), g.flg
+         pq.slbl, g.llbl, coalesce(g.sig, false), g.flg, g.rem
     from g
     join num  on num.phase = g.phase
     join lnum on lnum.phase = g.phase and lnum.ln = g.ln
@@ -824,7 +829,7 @@ as $$
            'step_index', p.step_index, 'lane', p.lane, 'lane_step', p.lane_step,
            'approver', p.approver, 'days', p.days, 'quorum', p.quorum,
            'stage_label', p.stage_label, 'lane_label', p.lane_label,
-           'require_signature', p.require_signature, 'flag', p.flag)
+           'require_signature', p.require_signature, 'flag', p.flag, 'remind_hours', p.remind_hours)
            order by p.step_index, p.lane, p.lane_step), '[]'::jsonb)
     from app.plan_chain('form_submission', p_form_template_id, p_requester,
                         coalesce(p_answers, '{}'::jsonb)) p
@@ -879,7 +884,7 @@ begin
   insert into public.approval_requests
     (submission_id, notice_id, stationery_request_id, maintenance_request_id,
      approver_user_id, step_index, lane, lane_step, status, deadline_at,
-     quorum, stage_label, lane_label, require_signature)
+     quorum, stage_label, lane_label, require_signature, remind_hours)
   select
     case when p_subject_type = 'form_submission'     then p_subject_id end,
     case when p_subject_type = 'notice'              then p_subject_id end,
@@ -891,7 +896,7 @@ begin
                                               when 'urgent' then ceil(p.days / 2.0)::int
                                               when 'high'   then p.days - 1
                                               else p.days end)),
-    p.quorum, p.stage_label, p.lane_label, p.require_signature
+    p.quorum, p.stage_label, p.lane_label, p.require_signature, p.remind_hours
   from app.plan_chain(p_subject_type, p_form_template_id, v_requester, v_answers) p;
 
   get diagnostics n = row_count;
@@ -1145,6 +1150,9 @@ begin
         raise exception 'that signature is too large';
       end if;
     end if;
+    -- A track with a checklist clears only once every item is ticked
+    -- (db/009_sow_gaps.sql).
+    perform app.assert_checklist_done(p_request_id);
 
     update public.approval_requests
        set status = 'approved', acted_at = now(), comment = coalesce(p_comment, comment),
@@ -1417,6 +1425,9 @@ begin
   if not exists (select 1 from public.employees where employee_id = p_to) then
     raise exception 'no employee with id %', p_to;
   end if;
+  -- Some forms forward only within the approver's reporting line
+  -- (db/009_sow_gaps.sql).
+  perform app.assert_forward_allowed(p_request_id, p_to);
 
   update public.approval_requests
      set approver_user_id = p_to,

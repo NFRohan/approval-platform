@@ -15,7 +15,11 @@
   "crons": [
     {
       "path": "/cron/directory-sync",
-      "schedule": "0 20 * * *"
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/cron/reminders",
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/cron/daily",

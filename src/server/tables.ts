@@ -57,7 +57,9 @@ export const TABLES: Record<string, TableDef> = {
       // Stage 1: a phase (step_index) runs lanes in parallel, each a
       // sequence of lane_step.
       'lane', 'lane_step', 'lane_label', 'quorum', 'stage_label',
-      'require_signature', 'signature', 'signed_at'],
+      'require_signature', 'signature', 'signed_at',
+      // Remind at this interval until decided (db/009_sow_gaps.sql).
+      'remind_hours'],
     [],
     [],
   ),
@@ -65,11 +67,11 @@ export const TABLES: Record<string, TableDef> = {
     ['id', 'subject_type', 'form_template_id', 'approver_user_id',
       'deadline_days', 'is_auto_added', 'label', 'step_index',
       'quorum', 'condition', 'stage_label', 'lane', 'position',
-      'require_signature', 'flag'],
+      'require_signature', 'flag', 'remind_hours'],
     ['subject_type', 'form_template_id', 'approver_user_id',
       'deadline_days', 'is_auto_added', 'label', 'step_index',
       'quorum', 'condition', 'stage_label', 'lane', 'position',
-      'require_signature', 'flag'],
+      'require_signature', 'flag', 'remind_hours'],
     ['condition'],
   ),
   // Read only: the engine writes the trail, and nothing else may.
@@ -211,9 +213,10 @@ export const TABLES: Record<string, TableDef> = {
   ),
   form_templates: T(
     ['id', 'name', 'category', 'created_by', 'status', 'created_at',
-      'followup_template_id', 'audience_departments', 'classification', 'keywords', 'on_approval'],
+      'followup_template_id', 'audience_departments', 'classification', 'keywords', 'on_approval',
+      'forward_within_line'],
     ['name', 'category', 'created_by', 'status', 'followup_template_id',
-      'audience_departments', 'classification', 'keywords'],
+      'audience_departments', 'classification', 'keywords', 'forward_within_line'],
     [],
   ),
   item_stock: T(
@@ -354,6 +357,14 @@ export const RPCS: Record<string, readonly string[]> = {
   load_public_holidays:       ['p_year'],
   working_days_from:          ['p_from', 'p_days'],
   merge_departments:          ['p_from', 'p_into'],
+  // What the SOW still asked for (db/009_sow_gaps.sql): clearance
+  // checklists, ticked by whoever holds the track and set by authorised
+  // users; who a step may be forwarded to.
+  tick_checklist:             ['p_submission', 'p_item', 'p_done', 'p_note'],
+  checklist_for:              ['p_submission'],
+  checklist_config:           ['p_form'],
+  save_checklist:             ['p_form', 'p_track', 'p_items'],
+  forward_candidates:         ['p_request'],
 
   reserve_stock:       ['p_item_id', 'p_venue_id', 'p_qty'],
   release_reservation: ['p_item_id', 'p_venue_id', 'p_qty'],

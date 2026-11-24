@@ -172,13 +172,13 @@ function Directory({ status, onDone }: { status: DirectoryStatus | null; onDone:
     >
       {!status?.configured ? (
         <p style={{ fontSize: 13, color: "#52525B", margin: 0 }}>
-          No directory is connected to this organisation. Once one is, people are synced from it every night and
+          No directory is connected to this organisation. Once one is, people are synced from it every night at 04:00 and
           on demand here, and accounts can sign in with their directory password.
         </p>
       ) : (
         <div className="flex flex-col gap-3">
           <p style={{ fontSize: 13, color: "#52525B", margin: 0 }}>
-            Synced every night automatically. Sync now to pick up today's joiners and leavers.
+            Synced every night at 04:00, inside the 03:00–08:00 import window. Sync now to pick up today's joiners and leavers.
           </p>
           <label className="flex items-center gap-2" style={{ fontSize: 13 }}>
             <input type="checkbox" checked={markLeft} onChange={(e) => { setMarkLeft(e.target.checked); setPreview(null); }} />

@@ -6,6 +6,7 @@ import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Copy, FileText, Download, Search } from "lucide-react";
 import { toCsv, downloadCsv } from "@/lib/csv";
+import { downloadSheet } from "@/lib/sheet-fn";
 import { fmtDate } from "@/lib/dates";
 import { todayInOrg } from "@/lib/workdays";
 import { copySubmission } from "@/lib/chain";
@@ -120,19 +121,31 @@ function SubmissionsPage() {
     });
   }, [rows, query, status, from, to]);
 
+  const EXPORT_COLUMNS = [
+    { key: "ref_number", label: "Reference" },
+    { key: "formName", label: "Form Name" },
+    { key: "requesterName", label: "Raised by" },
+    { key: "status", label: "Status" },
+    { key: "priority", label: "Priority" },
+    { key: "submitted", label: "Submitted" },
+  ] as const;
+  const exportName = `${tab === "mine" ? "my-submissions" : tab === "copied" ? "copied-to-me" : "archive"}-${todayInOrg()}`;
   function handleExportCsv() {
-    const csv = toCsv(
-      shown.map((r) => ({ ...r, submitted: fmtDate(r.submitted_at) })),
-      [
-        { key: "ref_number", label: "Reference" },
-        { key: "formName", label: "Form Name" },
-        { key: "requesterName", label: "Raised by" },
-        { key: "status", label: "Status" },
-        { key: "priority", label: "Priority" },
-        { key: "submitted", label: "Submitted" },
-      ],
-    );
-    downloadCsv(`${tab === "mine" ? "my-submissions" : tab === "copied" ? "copied-to-me" : "archive"}-${todayInOrg()}.csv`, csv);
+    const csv = toCsv(shown.map((r) => ({ ...r, submitted: fmtDate(r.submitted_at) })), EXPORT_COLUMNS.map((c) => ({ ...c })));
+    downloadCsv(`${exportName}.csv`, csv);
+  }
+  // The same rows, as an Excel workbook.
+  async function handleExportExcel() {
+    try {
+      await downloadSheet(`${exportName}.xlsx`, tab === "mine" ? "My submissions" : tab === "copied" ? "Copied to me" : "Archive",
+        EXPORT_COLUMNS.map((c) => ({ ...c })),
+        shown.map((r) => ({
+          ref_number: r.ref_number ?? null, formName: r.formName ?? null, requesterName: r.requesterName ?? null,
+          status: r.status ?? null, priority: r.priority ?? null, submitted: fmtDate(r.submitted_at),
+        })));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "The workbook could not be made");
+    }
   }
 
   async function copy(r: Row) {
@@ -157,13 +170,22 @@ function SubmissionsPage() {
           </p>
         </div>
         {shown.length > 0 && (
-          <button
-            onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 rounded-md shrink-0"
-            style={{ padding: "8px 14px", fontSize: 13, background: "#fff", border: "1px solid #E4E4E7", color: "#3F3F46", cursor: "pointer" }}
-          >
-            <Download size={13} /> Export CSV
-          </button>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => void handleExportExcel()}
+              className="inline-flex items-center gap-1.5 rounded-md"
+              style={{ padding: "8px 14px", fontSize: 13, background: "#fff", border: "1px solid #E4E4E7", color: "#3F3F46", cursor: "pointer" }}
+            >
+              <Download size={13} /> Export Excel
+            </button>
+            <button
+              onClick={handleExportCsv}
+              className="inline-flex items-center gap-1.5 rounded-md"
+              style={{ padding: "8px 14px", fontSize: 13, background: "#fff", border: "1px solid #E4E4E7", color: "#3F3F46", cursor: "pointer" }}
+            >
+              <Download size={13} /> Export CSV
+            </button>
+          </div>
         )}
       </div>
 

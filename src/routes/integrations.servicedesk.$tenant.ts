@@ -11,7 +11,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { timingSafeEqual } from "node:crypto";
 import { getPool } from "@/server/db";
-import { completeTicket, normaliseTicket, receiveTicket, type Link } from "@/server/servicedesk";
+import { completeTicket, handleClearanceTicket, normaliseTicket, receiveTicket, type Link } from "@/server/servicedesk";
 import { kickMailer } from "@/server/mailer";
 import { logAppError } from "@/server/logs";
 
@@ -47,6 +47,13 @@ export const Route = createFileRoute("/integrations/servicedesk/$tenant")({
         const ticket = normaliseTicket(body);
         if (!ticket) return reply(400, { error: "the body names no ticket id" });
         try {
+          // One of the tickets raised here for a leaver's IT clearance:
+          // what it says now (a trigger on edits calls this too) may clear it.
+          const clearance = await handleClearanceTicket(link.tenant_id, link, ticket);
+          if (clearance) {
+            await kickMailer(link.tenant_id);
+            return reply(200, clearance);
+          }
           const full = await completeTicket(link, ticket);
           const out = await receiveTicket(link.tenant_id, full, "webhook");
           await kickMailer(link.tenant_id);

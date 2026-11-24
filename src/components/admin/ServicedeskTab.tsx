@@ -4,8 +4,9 @@ import { toast } from "sonner";
 import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, Plug, Plus, RefreshCw, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
-  connectServicedeskCloud, fetchServicedeskNow, loadServicedesk, retryServicedeskEvent, saveServicedesk, simulateServicedeskTicket, testServicedesk,
-  type FormMapRow, type ServicedeskEvent, type ServicedeskSettings,
+  connectServicedeskCloud, fetchServicedeskNow, loadServicedesk, retryServicedeskEvent, saveServicedesk, saveServicedeskClearance,
+  simulateServicedeskTicket, testServicedesk,
+  type ClearanceTask, type FormMapRow, type ServicedeskEvent, type ServicedeskSettings,
 } from "@/lib/servicedesk-fn";
 import { Button, Card, Field, Notice, Pill, fmtWhen, inputStyle } from "@/components/admin/kit";
 
@@ -21,6 +22,7 @@ const STATUS: Record<string, { tone: "green" | "red" | "amber" | "zinc" | "brand
 const KIND: Record<string, string> = {
   webhook: "Ticket from webhook", fetched: "Ticket fetched", simulated: "Ticket typed in",
   note: "Note on the ticket", resolution: "Resolution", close: "Ticket closed",
+  create: "IT clearance ticket raised", clearance: "IT clearance ticket checked",
 };
 
 type Draft = {
@@ -45,6 +47,7 @@ export function ServicedeskTab() {
   const [settings, setSettings] = useState<ServicedeskSettings | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [events, setEvents] = useState<ServicedeskEvent[]>([]);
+  const [tasks, setTasks] = useState<ClearanceTask[]>([]);
   const [forms, setForms] = useState<string[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [busy, setBusy] = useState("");
@@ -56,7 +59,7 @@ export function ServicedeskTab() {
   const load = useCallback(async () => {
     const r = await loadServicedesk();
     if (!r.ok) return void toast.error(r.error);
-    setSettings(r.settings); setEvents(r.events); setForms(r.forms); setCanManage(r.canManage);
+    setSettings(r.settings); setEvents(r.events); setTasks(r.tasks); setForms(r.forms); setCanManage(r.canManage);
     setDraft((d) => {
       if (d) return d;
       // A cloud link, or an address that is a cloud portal, opens on the cloud.
@@ -303,6 +306,8 @@ export function ServicedeskTab() {
         {canManage && <TryTicket forms={draft.form_map} onDone={load} />}
       </div>
 
+      <ClearanceCard settings={settings} forms={forms} tasks={tasks} canManage={canManage} onSaved={load} />
+
       <Card title="Every exchange" style={{ marginTop: 16 }} aside={<Button small onClick={() => void load()}><RefreshCw size={12} /> Refresh</Button>}>
         {!settings.enabled && events.some((e) => e.status === "skipped") && (
           <Notice tone="zinc">Not connected, so what would have been written back to ServiceDesk is kept here, marked <em>Not connected</em>. Connect, then retry any of them.</Notice>
@@ -314,7 +319,12 @@ export function ServicedeskTab() {
             </tr></thead>
             <tbody>
               {events.map((e) => {
-                const s = STATUS[e.status] ?? STATUS.queued;
+                const s = e.kind === "clearance"
+                  ? (() => {
+                      const out = (() => { try { return JSON.parse(e.payload)?.outcome as string | undefined; } catch { return undefined; } })();
+                      return out === "cleared" ? { tone: "green" as const, word: "Cleared" } : { tone: "zinc" as const, word: out === "still open" ? "Still open" : "Noted" };
+                    })()
+                  : STATUS[e.status] ?? STATUS.queued;
                 return (
                   <Fragment key={e.id}>
                     <tr style={{ borderTop: "1px solid #F4F4F5", cursor: "pointer" }} onClick={() => setOpen(open === e.id ? null : e.id)}>
@@ -404,6 +414,80 @@ function TryTicket({ forms, onDone }: { forms: FormMapRow[]; onDone: () => Promi
           </span>
         )}
       </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------
+// A leaver's IT clearance: the exit clearance's IT track raises a ticket
+// in ServiceDesk, and the track clears when the ticket is resolved there.
+// ---------------------------------------------------------------------
+const TASK: Record<ClearanceTask["status"], { tone: "green" | "red" | "amber" | "zinc" | "brand"; word: string }> = {
+  opening: { tone: "amber", word: "Raising" }, open: { tone: "brand", word: "Open in ServiceDesk" },
+  cleared: { tone: "green", word: "Cleared" }, failed: { tone: "red", word: "Not raised" },
+};
+
+function ClearanceCard({ settings, forms, tasks, canManage, onSaved }: {
+  settings: ServicedeskSettings; forms: string[]; tasks: ClearanceTask[]; canManage: boolean; onSaved: () => Promise<void> | void;
+}) {
+  const [d, setD] = useState({
+    enabled: settings.clearance_enabled, form: settings.clearance_form ?? "Employee Exit Clearance",
+    track: settings.clearance_track ?? "Product & Technology", category: settings.clearance_category ?? "",
+  });
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    const r = await saveServicedeskClearance({ data: { enabled: d.enabled, form: d.form, track: d.track, category: d.category || null } });
+    setBusy(false);
+    if (!r.ok) return void toast.error(r.error);
+    toast.success(d.enabled ? "Saved — the next leaver's IT clearance goes to ServiceDesk" : "Saved — IT clearance stays here");
+    await onSaved();
+  };
+  return (
+    <Card title="IT clearance for leavers" style={{ marginTop: 16 }} aside={<Pill tone={settings.clearance_enabled ? "green" : "zinc"}>{settings.clearance_enabled ? "On" : "Off"}</Pill>}>
+      <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 10 }}>
+        When a leaver's IT track opens, a ticket is raised in ServiceDesk for IT to recover equipment and close accounts.
+        When it is resolved there, the track's checklist is ticked and the track clears here, with the ticket number on the history.
+        A ServiceDesk trigger on <em>Edit</em> calling the same webhook tells this side at once; otherwise each look for new tickets checks them.
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "auto 1.2fr 1fr 1fr auto", alignItems: "end" }}>
+        <Field label="On">
+          <Switch aria-label="IT clearance through ServiceDesk" checked={d.enabled} disabled={!canManage} onCheckedChange={(v) => setD({ ...d, enabled: v })} />
+        </Field>
+        <Field label="Form">
+          <select aria-label="Clearance form" style={inputStyle} value={d.form} disabled={!canManage} onChange={(e) => setD({ ...d, form: e.target.value })}>
+            {forms.map((f) => <option key={f}>{f}</option>)}
+          </select>
+        </Field>
+        <Field label="Track that is IT's">
+          <input aria-label="Clearance track" style={inputStyle} value={d.track} disabled={!canManage} onChange={(e) => setD({ ...d, track: e.target.value })} />
+        </Field>
+        <Field label="Category there (optional)">
+          <input aria-label="Clearance category" style={inputStyle} value={d.category} disabled={!canManage} placeholder="e.g. User Administration" onChange={(e) => setD({ ...d, category: e.target.value })} />
+        </Field>
+        {canManage && <Button tone="brand" busy={busy} onClick={() => void save()} name="save-clearance">Save</Button>}
+      </div>
+      {tasks.length > 0 && (
+        <table className="w-full mt-4" style={{ fontSize: 12.5, borderCollapse: "collapse" }} data-testid="clearance-tasks">
+          <thead><tr style={{ color: MUTED, fontSize: 11.5, textAlign: "left" }}>
+            {["Leaver", "Request", "Ticket", "There", "Here", "Raised"].map((h) => <th key={h} style={{ padding: "6px 8px", fontWeight: 500 }}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {tasks.map((k) => (
+              <tr key={k.id} style={{ borderTop: "1px solid #F4F4F5" }}>
+                <td style={{ padding: "7px 8px", color: INK }}>{k.leaver ?? "—"}</td>
+                <td style={{ padding: "7px 8px" }}>
+                  <Link to="/status/$submissionId" params={{ submissionId: k.submission_id }} style={{ color: "#4338CA" }}>{k.reference ?? "Open"}</Link>
+                </td>
+                <td style={{ padding: "7px 8px", ...mono }}>{k.ticket_id ? `#${k.ticket_id}` : "—"}</td>
+                <td style={{ padding: "7px 8px", color: MUTED }}>{k.ticket_status ?? "—"}</td>
+                <td style={{ padding: "7px 8px" }}><Pill tone={TASK[k.status].tone}>{TASK[k.status].word}</Pill></td>
+                <td style={{ padding: "7px 8px", color: MUTED }}>{fmtWhen(k.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </Card>
   );
 }

@@ -23,6 +23,7 @@ import { Route as StationeryRouteImport } from './routes/stationery'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as AdminAuditRouteImport } from './routes/admin.audit'
 import { Route as AdminCalendarRouteImport } from './routes/admin.calendar'
+import { Route as AdminChecklistsRouteImport } from './routes/admin.checklists'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin.integrations'
 import { Route as AdminPeopleRouteImport } from './routes/admin.people'
@@ -38,6 +39,7 @@ import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$cam
 import { Route as CertificateSubmissionIdRouteImport } from './routes/certificate.$submissionId'
 import { Route as CronDailyRouteImport } from './routes/cron.daily'
 import { Route as CronDirectorySyncRouteImport } from './routes/cron.directory-sync'
+import { Route as CronRemindersRouteImport } from './routes/cron.reminders'
 import { Route as ExportsAuditRouteImport } from './routes/exports.audit'
 import { Route as FilesAttachmentIdRouteImport } from './routes/files.$attachmentId'
 import { Route as FormsIndexRouteImport } from './routes/forms.index'
@@ -128,6 +130,11 @@ const AdminCalendarRoute = AdminCalendarRouteImport.update({
   path: '/admin/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminChecklistsRoute = AdminChecklistsRouteImport.update({
+  id: '/admin/checklists',
+  path: '/admin/checklists',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminEmailRoute = AdminEmailRouteImport.update({
   id: '/admin/email',
   path: '/admin/email',
@@ -201,6 +208,11 @@ const CronDailyRoute = CronDailyRouteImport.update({
 const CronDirectorySyncRoute = CronDirectorySyncRouteImport.update({
   id: '/cron/directory-sync',
   path: '/cron/directory-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CronRemindersRoute = CronRemindersRouteImport.update({
+  id: '/cron/reminders',
+  path: '/cron/reminders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExportsAuditRoute = ExportsAuditRouteImport.update({
@@ -315,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/submissions': typeof SubmissionsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/calendar': typeof AdminCalendarRoute
+  '/admin/checklists': typeof AdminChecklistsRoute
   '/admin/email': typeof AdminEmailRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/people': typeof AdminPeopleRoute
@@ -328,6 +341,7 @@ export interface FileRoutesByFullPath {
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
+  '/cron/reminders': typeof CronRemindersRoute
   '/exports/audit': typeof ExportsAuditRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
@@ -365,6 +379,7 @@ export interface FileRoutesByTo {
   '/submissions': typeof SubmissionsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/calendar': typeof AdminCalendarRoute
+  '/admin/checklists': typeof AdminChecklistsRoute
   '/admin/email': typeof AdminEmailRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/people': typeof AdminPeopleRoute
@@ -378,6 +393,7 @@ export interface FileRoutesByTo {
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
+  '/cron/reminders': typeof CronRemindersRoute
   '/exports/audit': typeof ExportsAuditRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
@@ -416,6 +432,7 @@ export interface FileRoutesById {
   '/submissions': typeof SubmissionsRoute
   '/admin/audit': typeof AdminAuditRoute
   '/admin/calendar': typeof AdminCalendarRoute
+  '/admin/checklists': typeof AdminChecklistsRoute
   '/admin/email': typeof AdminEmailRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/people': typeof AdminPeopleRoute
@@ -429,6 +446,7 @@ export interface FileRoutesById {
   '/certificate/$submissionId': typeof CertificateSubmissionIdRoute
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
+  '/cron/reminders': typeof CronRemindersRoute
   '/exports/audit': typeof ExportsAuditRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
@@ -468,6 +486,7 @@ export interface FileRouteTypes {
     | '/submissions'
     | '/admin/audit'
     | '/admin/calendar'
+    | '/admin/checklists'
     | '/admin/email'
     | '/admin/integrations'
     | '/admin/people'
@@ -481,6 +500,7 @@ export interface FileRouteTypes {
     | '/certificate/$submissionId'
     | '/cron/daily'
     | '/cron/directory-sync'
+    | '/cron/reminders'
     | '/exports/audit'
     | '/files/$attachmentId'
     | '/forms/$formId'
@@ -518,6 +538,7 @@ export interface FileRouteTypes {
     | '/submissions'
     | '/admin/audit'
     | '/admin/calendar'
+    | '/admin/checklists'
     | '/admin/email'
     | '/admin/integrations'
     | '/admin/people'
@@ -531,6 +552,7 @@ export interface FileRouteTypes {
     | '/certificate/$submissionId'
     | '/cron/daily'
     | '/cron/directory-sync'
+    | '/cron/reminders'
     | '/exports/audit'
     | '/files/$attachmentId'
     | '/forms/$formId'
@@ -568,6 +590,7 @@ export interface FileRouteTypes {
     | '/submissions'
     | '/admin/audit'
     | '/admin/calendar'
+    | '/admin/checklists'
     | '/admin/email'
     | '/admin/integrations'
     | '/admin/people'
@@ -581,6 +604,7 @@ export interface FileRouteTypes {
     | '/certificate/$submissionId'
     | '/cron/daily'
     | '/cron/directory-sync'
+    | '/cron/reminders'
     | '/exports/audit'
     | '/files/$attachmentId'
     | '/forms/$formId'
@@ -619,6 +643,7 @@ export interface RootRouteChildren {
   SubmissionsRoute: typeof SubmissionsRoute
   AdminAuditRoute: typeof AdminAuditRoute
   AdminCalendarRoute: typeof AdminCalendarRoute
+  AdminChecklistsRoute: typeof AdminChecklistsRoute
   AdminEmailRoute: typeof AdminEmailRoute
   AdminIntegrationsRoute: typeof AdminIntegrationsRoute
   AdminPeopleRoute: typeof AdminPeopleRoute
@@ -630,6 +655,7 @@ export interface RootRouteChildren {
   CertificateSubmissionIdRoute: typeof CertificateSubmissionIdRoute
   CronDailyRoute: typeof CronDailyRoute
   CronDirectorySyncRoute: typeof CronDirectorySyncRoute
+  CronRemindersRoute: typeof CronRemindersRoute
   ExportsAuditRoute: typeof ExportsAuditRoute
   FilesAttachmentIdRoute: typeof FilesAttachmentIdRoute
   FormsFormIdRoute: typeof FormsFormIdRoute
@@ -753,6 +779,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/checklists': {
+      id: '/admin/checklists'
+      path: '/admin/checklists'
+      fullPath: '/admin/checklists'
+      preLoaderRoute: typeof AdminChecklistsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/email': {
       id: '/admin/email'
       path: '/admin/email'
@@ -856,6 +889,13 @@ declare module '@tanstack/react-router' {
       path: '/cron/directory-sync'
       fullPath: '/cron/directory-sync'
       preLoaderRoute: typeof CronDirectorySyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cron/reminders': {
+      id: '/cron/reminders'
+      path: '/cron/reminders'
+      fullPath: '/cron/reminders'
+      preLoaderRoute: typeof CronRemindersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exports/audit': {
@@ -1023,6 +1063,7 @@ const rootRouteChildren: RootRouteChildren = {
   SubmissionsRoute: SubmissionsRoute,
   AdminAuditRoute: AdminAuditRoute,
   AdminCalendarRoute: AdminCalendarRoute,
+  AdminChecklistsRoute: AdminChecklistsRoute,
   AdminEmailRoute: AdminEmailRoute,
   AdminIntegrationsRoute: AdminIntegrationsRoute,
   AdminPeopleRoute: AdminPeopleRoute,
@@ -1034,6 +1075,7 @@ const rootRouteChildren: RootRouteChildren = {
   CertificateSubmissionIdRoute: CertificateSubmissionIdRoute,
   CronDailyRoute: CronDailyRoute,
   CronDirectorySyncRoute: CronDirectorySyncRoute,
+  CronRemindersRoute: CronRemindersRoute,
   ExportsAuditRoute: ExportsAuditRoute,
   FilesAttachmentIdRoute: FilesAttachmentIdRoute,
   FormsFormIdRoute: FormsFormIdRoute,

@@ -45,6 +45,8 @@ export type StageApprover = {
   requireSignature?: boolean;
   /** Raised on the request when this step is part of its route — e.g. "Exceptional". */
   flag?: string | null;
+  /** Remind whoever holds the step every this many hours until it is decided; null for no such reminder. */
+  remindHours?: number | null;
 };
 
 export type Stage = {

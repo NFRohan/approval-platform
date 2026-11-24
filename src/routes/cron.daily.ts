@@ -47,6 +47,10 @@ export async function dailyRound() {
       // here: it relies on row-level security, which does not apply to
       // the owner this runs as, so it would remind across organisations.
       const { rows: [r] } = await client.query("select app.daily_reminders() as r");
+      // Steps that remind at an interval ("every 12 hours"); the half-day
+      // round (/cron/reminders) sends the others.
+      const { rows: [iv] } = await client.query("select app.interval_reminders() as n");
+      r.r.due_soon += iv.n;
       // Campaigns start on their day and finish after their last.
       await client.query("select app.campaign_daily()");
       // "Archiving yearly, purging at 10 years": settled requests past

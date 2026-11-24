@@ -252,6 +252,73 @@ export async function completeTicket(link: Link, t: Ticket): Promise<Ticket> {
   return normaliseTicket(r.json) ?? t;
 }
 
+/** One transaction as the organisation, run as the owner, as the inbound routes do. */
+async function inTenant<T>(tenantId: string, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query('begin');
+    await asTenant(client, tenantId);
+    const out = await fn(client);
+    await client.query('commit');
+    return out;
+  } catch (err) {
+    await client.query('rollback').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ---------------------------------------------------------------------
+// IT clearance (db/009_sow_gaps.sql)
+//
+// A leaver's IT track raises a ticket here (a queued 'create'); what
+// ServiceDesk then says of that ticket — by its webhook, or when this
+// side looks — clears the track once it is resolved or closed.
+// ---------------------------------------------------------------------
+
+/** Ticket numbers that are clearance tickets still open, so the intake leaves them alone. */
+async function clearanceTickets(tenantId: string): Promise<Set<string>> {
+  const { rows } = await getPool().query<{ ticket_id: string }>(
+    `select ticket_id from public.servicedesk_tasks where tenant_id = $1 and ticket_id is not null`, [tenantId]);
+  return new Set(rows.map((r) => r.ticket_id));
+}
+
+/** What ServiceDesk says of a clearance ticket; null if it is not one. */
+export async function clearanceUpdate(tenantId: string, ticketId: string, status: string | null): Promise<Record<string, unknown> | null> {
+  return inTenant(tenantId, async (c) =>
+    (await c.query('select app.servicedesk_clearance_update($1, $2) as r', [ticketId, status ?? ''])).rows[0].r);
+}
+
+/**
+ * A ticket ServiceDesk told us about, if it is a clearance ticket: its
+ * status is fetched (a webhook may send only the id) and acted on.
+ */
+export async function handleClearanceTicket(tenantId: string, link: Link, t: Ticket): Promise<Record<string, unknown> | null> {
+  if (!(await clearanceTickets(tenantId)).has(t.id)) return null;
+  let status = t.status;
+  if (connected(link)) {
+    const r = await sdpCall(link, 'GET', `/api/v3/requests/${encodeURIComponent(t.id)}`);
+    if (sdpOk(r).ok) status = normaliseTicket(r.json)?.status ?? status;
+  }
+  return clearanceUpdate(tenantId, t.id, status);
+}
+
+/** Look at each open clearance ticket: resolved there, the track clears here. */
+export async function checkClearances(tenantId: string, link: Link): Promise<{ checked: number; cleared: number }> {
+  const out = { checked: 0, cleared: 0 };
+  const { rows } = await getPool().query<{ ticket_id: string }>(
+    `select ticket_id from public.servicedesk_tasks where tenant_id = $1 and status = 'open' and ticket_id is not null`, [tenantId]);
+  for (const k of rows) {
+    const r = await sdpCall(link, 'GET', `/api/v3/requests/${encodeURIComponent(k.ticket_id)}`);
+    if (!sdpOk(r).ok) continue;
+    out.checked++;
+    const res = await clearanceUpdate(tenantId, k.ticket_id, normaliseTicket(r.json)?.status ?? null);
+    if (res?.outcome === 'cleared') out.cleared++;
+  }
+  return out;
+}
+
 export async function receiveTicket(tenantId: string, t: Ticket, via: string): Promise<Record<string, unknown>> {
   const client = await getPool().connect();
   try {
@@ -286,10 +353,13 @@ export async function pollServicedesk(tenantId: string): Promise<{ seen: number;
     const ok = sdpOk(r);
     if (!ok.ok) throw new Error(ok.message);
     const list = ((r.json?.requests as unknown[]) ?? []).map(normaliseTicket).filter(Boolean) as Ticket[];
+    // Tickets this side raised for a leaver's IT clearance are not requests for approval.
+    const ours = await clearanceTickets(tenantId);
     for (const brief of list) {
       if (brief.created_ms !== null && brief.created_ms <= cursor) break;
-      out.seen++;
       if (brief.created_ms !== null) newest = Math.max(newest, brief.created_ms);
+      if (ours.has(brief.id)) continue;
+      out.seen++;
       if (brief.status && CLOSED.test(brief.status)) { out.ignored++; continue; }
       const full = await sdpCall(link, 'GET', `/api/v3/requests/${encodeURIComponent(brief.id)}`);
       const t = sdpOk(full).ok ? normaliseTicket(full.json) ?? brief : brief;
@@ -299,6 +369,7 @@ export async function pollServicedesk(tenantId: string): Promise<{ seen: number;
       else out.ignored++;
     }
     cursor = newest;
+    await checkClearances(tenantId, link);
   } catch (err) {
     out.error = err instanceof Error ? err.message : String(err);
   }
@@ -341,12 +412,12 @@ export async function drainServicedesk(opts: { tenantId?: string | null; only?: 
         out.skipped++;
         continue;
       }
-      let status: number | null = null, body = '', error: string | null = null;
+      let status: number | null = null, body = '', error: string | null = null, json: Record<string, unknown> | null = null;
       // The forms this edition documents first; the other's if refused.
       for (const a of attemptsFor(e.kind, e.ticket_id, e.payload, link.auth_mode === 'oauth')) {
         try {
           const r = await sdpCall(link, a.method, a.path, a.input);
-          status = r.status; body = r.body;
+          status = r.status; body = r.body; json = r.json;
           const ok = sdpOk(r);
           error = ok.ok ? null : ok.message;
           if (ok.ok) { body = `[${a.label}] ${body}`; break; }
@@ -357,9 +428,18 @@ export async function drainServicedesk(opts: { tenantId?: string | null; only?: 
           break;
         }
       }
+      // A ticket raised is only raised once its number is known.
+      let created: string | null = null;
+      if (!error && e.kind === 'create') {
+        const id = (json?.request as { id?: unknown } | undefined)?.id;
+        created = id !== undefined && id !== null && /^[A-Za-z0-9_-]{1,40}$/.test(String(id)) ? String(id) : null;
+        if (!created) error = 'ServiceDesk did not say what the new ticket is';
+      }
       if (!error) {
-        await pool.query(`update public.servicedesk_events set status = 'sent', http_status = $2, response = $3, error = null, done_at = now() where id = $1`,
-          [e.id, status, body.slice(0, 1000)]);
+        await pool.query(`update public.servicedesk_events set status = 'sent', http_status = $2, response = $3, error = null, done_at = now(),
+                                 ticket_id = coalesce($4, ticket_id) where id = $1`,
+          [e.id, status, body.slice(0, 1000), created]);
+        if (created) await pool.query('select app.servicedesk_task_opened($1, $2)', [e.payload.task, created]);
         out.sent++;
       } else {
         const last = e.attempts > RETRY_MINUTES.length;
@@ -368,6 +448,7 @@ export async function drainServicedesk(opts: { tenantId?: string | null; only?: 
                   next_attempt_at = now() + make_interval(mins => $6) where id = $1`,
           [e.id, last ? 'failed' : 'queued', status, body.slice(0, 1000) || null, error.slice(0, 500),
            RETRY_MINUTES[Math.min(e.attempts - 1, RETRY_MINUTES.length - 1)]]);
+        if (last && e.kind === 'create') await pool.query('select app.servicedesk_task_failed($1)', [e.payload.task]);
         if (last) out.failed++; else out.retrying++;
       }
     }
@@ -404,6 +485,17 @@ export function attemptsFor(kind: string, ticket: string, payload: Record<string
     const onprem: Attempt = { label: 'resolutions', method: 'POST', path: `${base}/resolutions`, input: { resolution } };
     const inCloud: Attempt = { label: 'request.resolution', method: 'PUT', path: base, input: { request: { resolution } } };
     return cloud ? [inCloud, onprem] : [onprem, inCloud];
+  }
+  if (kind === 'create') {
+    // A new ticket for a leaver's IT clearance: as the requester if
+    // ServiceDesk knows them, else as the technician; with its category
+    // if the desk has it, else without.
+    const request = (payload.request ?? {}) as Record<string, unknown>;
+    const { requester, category, ...bare } = request;
+    const tries: Attempt[] = [{ label: 'request', method: 'POST', path: '/api/v3/requests', input: { request } }];
+    if (category) tries.push({ label: 'request without category', method: 'POST', path: '/api/v3/requests', input: { request: { ...bare, ...(requester ? { requester } : {}) } } });
+    if (requester) tries.push({ label: 'request as the technician', method: 'POST', path: '/api/v3/requests', input: { request: bare } });
+    return tries;
   }
   if (kind === 'close') {
     const info = ((payload.request as Record<string, unknown> | undefined)?.closure_info ?? {}) as Record<string, unknown>;

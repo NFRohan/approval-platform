@@ -17,6 +17,7 @@ import { todayInOrg } from "@/lib/workdays";
 import { listAttachments, type AttachmentInfo } from "@/lib/attachment-fn";
 import { AttachmentLink } from "@/components/AttachmentLink";
 import { SignaturePad } from "@/components/SignaturePad";
+import { ClearanceChecklist } from "@/components/ClearanceChecklist";
 import { fmtDate as fmtDateLib } from "@/lib/dates";
 
 export const Route = createFileRoute("/approvals")({
@@ -172,6 +173,9 @@ function ApprovalsInbox() {
   const [comment, setComment] = useState("");
   const [personId, setPersonId] = useState("");
   const [people, setPeople] = useState<{ employee_id: string; name: string; designation: string | null }[]>([]);
+  // Who a step may be forwarded to, where its form keeps forwarding inside
+  // the approver's reporting line; null where anybody will do.
+  const [forwardOnly, setForwardOnly] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // The rest of the chain the open dialog is about: who already approved
   // (somebody to return it to) and who else is on it (somebody to ask).
@@ -574,7 +578,9 @@ function ApprovalsInbox() {
       p_signature: signature ?? null,
     });
     if (error) {
-      toast.error(error.message);
+      toast.error(error.message.charAt(0).toUpperCase() + error.message.slice(1));
+      // An unticked checklist: open the row, where the checklist is.
+      if (/checklist/i.test(error.message) && expanded !== row.id) void toggleExpand(row);
       return false;
     }
 
@@ -1006,7 +1012,12 @@ function ApprovalsInbox() {
                         onClick={() => {
                           setComment("");
                           setPersonId("");
+                          setForwardOnly(null);
                           setModal({ kind: "forward", row: r });
+                          void db.rpc("forward_candidates", { p_request: r.id }).then(({ data }) => {
+                            const c = data as { restricted?: boolean; ids?: string[] } | null;
+                            setForwardOnly(c?.restricted ? c.ids ?? [] : null);
+                          });
                         }}
                         className="rounded-md font-medium bg-white"
                         style={{
@@ -1135,6 +1146,10 @@ function ApprovalsInbox() {
                       </div>
                     )}
                     {r.submission_id && (
+                      <ClearanceChecklist submissionId={r.submission_id} onlyMine
+                        style={{ padding: "12px 18px 0", borderTop: "1px solid #F0F0F0" }} />
+                    )}
+                    {r.submission_id && (
                       <div style={{ padding: "12px 18px", borderTop: "1px solid #F0F0F0" }}>
                         <Link
                           to="/status/$submissionId"
@@ -1229,6 +1244,7 @@ function ApprovalsInbox() {
                 {people
                   // Sending it to whoever already holds it does nothing.
                   .filter((e) => e.employee_id !== modal?.row.approver_user_id)
+                  .filter((e) => modal?.kind !== "forward" || !forwardOnly || forwardOnly.includes(e.employee_id))
                   .map((e) => (
                     <option key={e.employee_id} value={e.employee_id}>
                       {e.name}
@@ -1238,7 +1254,9 @@ function ApprovalsInbox() {
               </select>
               <span style={{ fontSize: 11.5, color: "#A1A1AA" }}>
                 {modal?.kind === "forward"
-                  ? "The step keeps its place in the chain; only who answers it changes."
+                  ? forwardOnly
+                    ? "This form forwards only within the reporting line: the people above and below whoever holds the step."
+                    : "The step keeps its place in the chain; only who answers it changes."
                   : "They are asked first. It comes back to you once they have reviewed it."}
               </span>
             </label>

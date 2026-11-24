@@ -1844,4 +1844,78 @@ alter table public.servicedesk_events add column if not exists seq bigint genera
 create index if not exists servicedesk_events_tenant_idx on public.servicedesk_events(tenant_id, created_at desc);
 create index if not exists servicedesk_events_queued_idx on public.servicedesk_events(next_attempt_at) where status = 'queued';
 
+-- =====================================================================
+-- What the SOW still asked for (db/009_sow_gaps.sql).
+-- =====================================================================
+
+-- "T+2 working days for review with a reminder every 12 hours": a step
+-- may remind its approver at an interval until it is decided. The rule
+-- says how often; each step built from it carries the figure.
+alter table public.approval_rules    add column if not exists remind_hours integer;
+alter table public.approval_requests add column if not exists remind_hours integer;
+do $$ begin
+  alter table public.approval_rules add constraint approval_rules_remind_hours_check
+    check (remind_hours is null or remind_hours between 1 and 168);
+exception when duplicate_object then null; end $$;
+
+-- "Manually assigning different approvers only within a hierarchy": a
+-- form may keep forwarding inside the approver's own reporting line.
+alter table public.form_templates add column if not exists forward_within_line boolean not null default false;
+
+-- "Checklist of handover, property recovery, official portals", with
+-- "checklists per division configured by authorised users": items per
+-- track of a form (a lane's name, or a stage's where it has one lane),
+-- ticked once per request by whoever holds that track's step. A step is
+-- not approved while its track has items unticked.
+create table if not exists public.checklist_items (
+  id               uuid primary key default gen_random_uuid(),
+  tenant_id        uuid not null default app.current_tenant()
+                     references public.tenants(id) on delete cascade,
+  form_template_id uuid not null,
+  track            text not null,
+  item             text not null,
+  position         integer not null default 0,
+  active           boolean not null default true,
+  created_by       text,
+  created_at       timestamptz not null default now(),
+  unique (id, tenant_id),
+  foreign key (form_template_id, tenant_id)
+    references public.form_templates(id, tenant_id) on delete cascade
+);
+create index if not exists checklist_items_form_idx on public.checklist_items(tenant_id, form_template_id, track);
+
+create table if not exists public.checklist_ticks (
+  tenant_id     uuid not null default app.current_tenant()
+                  references public.tenants(id) on delete cascade,
+  submission_id uuid not null,
+  item_id       uuid not null,
+  done_by       text not null,
+  done_at       timestamptz not null default now(),
+  note          text,
+  primary key (submission_id, item_id),
+  foreign key (submission_id, tenant_id) references public.form_submissions(id, tenant_id) on delete cascade,
+  foreign key (item_id, tenant_id) references public.checklist_items(id, tenant_id) on delete cascade
+);
+
+-- "ManageEngine notification for IT clearance, and receiving its
+-- completion": when a leaver's IT track opens, a ticket is raised in
+-- ServiceDesk; when it is resolved there, the track clears here.
+alter table public.servicedesk_links add column if not exists clearance_enabled  boolean not null default false;
+alter table public.servicedesk_links add column if not exists clearance_form     text;
+alter table public.servicedesk_links add column if not exists clearance_track    text;
+alter table public.servicedesk_links add column if not exists clearance_category text;
+
+create table if not exists public.servicedesk_tasks (
+  id                  uuid primary key default gen_random_uuid(),
+  tenant_id           uuid not null references public.tenants(id) on delete cascade,
+  approval_request_id uuid not null unique,
+  submission_id       uuid not null,
+  ticket_id           text,
+  status              text not null default 'opening' check (status in ('opening', 'open', 'cleared', 'failed')),
+  ticket_status       text,
+  created_at          timestamptz not null default now(),
+  cleared_at          timestamptz
+);
+create index if not exists servicedesk_tasks_ticket_idx on public.servicedesk_tasks(tenant_id, ticket_id);
+
 commit;

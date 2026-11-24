@@ -138,6 +138,24 @@ export function StageEditor({
                       />
                       working days
                     </label>
+                    <label className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: "#71717A" }}
+                      title="Remind whoever holds the step at this interval until it is decided, e.g. every 12 hours">
+                      remind every
+                      <input
+                        type="number"
+                        min={1}
+                        max={168}
+                        value={a.remindHours ?? ""}
+                        placeholder="—"
+                        onChange={(e) => {
+                          const n = Number(e.target.value);
+                          setApprover(stage.id, a.id, { remindHours: e.target.value === "" || !n ? null : Math.min(168, Math.max(1, Math.round(n))) });
+                        }}
+                        aria-label="Remind every so many hours"
+                        style={{ ...input, width: 52 }}
+                      />
+                      h
+                    </label>
                     <button
                       onClick={() =>
                         setApprover(stage.id, a.id, {
