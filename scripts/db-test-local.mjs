@@ -106,6 +106,20 @@ if (!only || 'reapply'.includes(only)) {
     if (rows[0].n !== 2) throw new Error(`re-applying left ${rows[0].n} evaluations, not 2`);
     console.log('  pass: every migration re-applies over a database with evaluations in it');
     total += 1;
+    // The template is rebuilt with evaluations beside it: its notices,
+    // stationery and maintenance must be built from its own rules only,
+    // once — not once for every organisation there is.
+    const { rows: dup } = await db.query(
+      `select count(*)::int as n from (
+         -- A copy sat in a parallel track of its own, so the lane is not
+         -- what tells copies apart: these chains have no parallel tracks.
+         select subject_id, step_index, approver_user_id
+           from public.approval_requests
+          where subject_type in ('notice', 'stationery_request', 'maintenance_request')
+          group by 1, 2, 3, tenant_id having count(*) > 1) d`);
+    if (dup[0].n !== 0) throw new Error(`${dup[0].n} approval steps are there more than once`);
+    console.log('  pass: rebuilt beside evaluations, the template builds each chain from its own rules, once');
+    total += 1;
   } catch (err) {
     console.log('  FAIL: re-applying over evaluations: ' + err.message);
     failed += 1;

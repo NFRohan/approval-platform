@@ -183,7 +183,7 @@ function ApprovalsInbox() {
     { id: string; subject_id: string; subject_type: string; asked_by: string; question: string; created_at: string }[]
   >([]);
   const [qAnswers, setQAnswers] = useState<Record<string, string>>({});
-  const [upcoming, setUpcoming] = useState<{ id: string; submissionId: string | null; label: string }[]>([]);
+  const [upcoming, setUpcoming] = useState<{ id: string; submissionId: string | null; label: string; href: string | null }[]>([]);
   // A step that asks for a signature opens the pad instead of approving.
   const [signing, setSigning] = useState<Row | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
@@ -449,12 +449,38 @@ function ApprovalsInbox() {
         aheadInfo[x.id] = { ref: x.ref_number, form: (t2 ?? []).find((t) => t.id === x.form_template_id)?.name ?? null };
       });
     }
+    // Notices, stationery, maintenance and movement orders coming my way
+    // are named the way the queue names them; it only looked up its own.
+    const aheadOf = (t: string) => Array.from(new Set((ahead ?? [])
+      .filter((a) => a.subject_type === t && !a.submission_id && a.subject_id && !subjectLabels[a.subject_id as string])
+      .map((a) => a.subject_id as string)));
+    const [aNotices, aStationery, aMaintenance, aMoves] = await Promise.all([
+      aheadOf("notice").length ? db.from("notices").select("id, title").in("id", aheadOf("notice")) : Promise.resolve({ data: [] }),
+      aheadOf("stationery_request").length ? db.from("stationery_requests").select("id, kind, name").in("id", aheadOf("stationery_request")) : Promise.resolve({ data: [] }),
+      aheadOf("maintenance_request").length ? db.from("maintenance_requests").select("id, ref_number, location").in("id", aheadOf("maintenance_request")) : Promise.resolve({ data: [] }),
+      aheadOf("movement_order").length ? db.from("movement_orders").select("id, ref_number, item_name").in("id", aheadOf("movement_order")) : Promise.resolve({ data: [] }),
+    ]);
+    ((aNotices.data ?? []) as { id: string; title: string | null }[]).forEach((n) => { subjectLabels[n.id] = `Notice · ${n.title ?? "untitled"}`; });
+    ((aStationery.data ?? []) as { id: string; kind: string | null; name: string | null }[]).forEach((r) => {
+      const kind = r.kind === "business_card" ? "Business card" : r.kind === "stamp_seal" ? "Stamp and seal" : "Stationery";
+      subjectLabels[r.id] = r.name ? `${kind} · ${r.name}` : kind;
+    });
+    ((aMaintenance.data ?? []) as { id: string; ref_number: string | null; location: string | null }[]).forEach((m) => {
+      subjectLabels[m.id] = `Maintenance · ${[m.ref_number, m.location].filter(Boolean).join(" — ") || "request"}`;
+    });
+    ((aMoves.data ?? []) as { id: string; ref_number: string | null; item_name: string | null }[]).forEach((m) => {
+      subjectLabels[m.id] = `Movement order · ${[m.ref_number, m.item_name].filter(Boolean).join(" — ") || "order"}`;
+    });
+    const PAGE: Record<string, string> = { stationery_request: "/stationery", maintenance_request: "/maintenance", movement_order: "/movement-orders" };
     setUpcoming((ahead ?? []).map((a) => ({
       id: a.id as string,
       submissionId: a.submission_id as string | null,
       label: a.submission_id
         ? `${aheadInfo[a.submission_id]?.form ?? "Request"} · ${aheadInfo[a.submission_id]?.ref ?? ""}`
         : subjectLabels[a.subject_id as string] ?? "Request",
+      href: a.submission_id ? null
+        : a.subject_type === "notice" && a.subject_id ? `/notices/${a.subject_id}`
+        : PAGE[a.subject_type as string] ?? null,
     })));
     setLoading(false);
   }, [currentUser.employee_id]);
@@ -1140,6 +1166,8 @@ function ApprovalsInbox() {
                 <Link key={u.id} to="/status/$submissionId" params={{ submissionId: u.submissionId }} style={{ fontSize: 13, color: "#4338CA" }}>
                   {u.label}
                 </Link>
+              ) : u.href ? (
+                <a key={u.id} href={u.href} style={{ fontSize: 13, color: "#4338CA" }}>{u.label}</a>
               ) : (
                 <span key={u.id} style={{ fontSize: 13, color: "#3F3F46" }}>{u.label}</span>
               ),

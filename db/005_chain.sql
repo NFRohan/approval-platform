@@ -658,6 +658,11 @@ begin
            ar.quorum, ar.condition, ar.stage_label, ar.lane, ar.require_signature, ar.flag
       from public.approval_rules ar
      where ar.subject_type = p_subject_type
+       -- This organisation's rules. Row-level security says so for the
+       -- application, but the seed and the intake of tickets and mail run
+       -- as the owner, which it does not bind: a notice's chain there was
+       -- built from every organisation's notice rules at once.
+       and ar.tenant_id = app.current_tenant()
        and (p_subject_type <> 'form_submission'
             or ar.form_template_id = p_form_template_id)
      -- position is the reading order across the whole phase; the lane

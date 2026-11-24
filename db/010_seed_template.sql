@@ -828,6 +828,56 @@ select app.seed_sign_ins(app.current_tenant());
 -- purchase tickets.
 select app.seed_servicedesk(app.current_tenant());
 select app.seed_servicedesk(d.id) from public.tenants d where d.kind = 'demo';
+-- Notices, stationery and maintenance had their chains built once for
+-- every organisation in the database: the seed builds them as the owner,
+-- and the rule lookup did not name the organisation (fixed in
+-- 005_chain.sql). Each copy became a parallel track of its own, so an
+-- evaluation cloned while that was so has every step several times over,
+-- side by side. These chains have no parallel tracks, so a step is a
+-- copy whatever its track: the first track is kept, with whatever was
+-- decided on it, and the copies' history and notifications go too.
+create temp table _dup_steps on commit drop as
+  select a.id from public.approval_requests a
+   where a.subject_type in ('notice', 'stationery_request', 'maintenance_request', 'movement_order')
+     and exists (select 1 from public.approval_requests b
+                  where b.tenant_id = a.tenant_id and b.subject_id = a.subject_id and b.subject_type = a.subject_type
+                    and b.step_index = a.step_index
+                    and b.approver_user_id is not distinct from a.approver_user_id
+                    and (coalesce(b.lane, 0), b.created_at, b.id) < (coalesce(a.lane, 0), a.created_at, a.id));
+delete from public.approval_events e using _dup_steps d where e.request_id = d.id;
+delete from public.approval_requests r using _dup_steps d where r.id = d.id;
+-- A phase approved on one copy only never opened the next: with the
+-- copies gone, a chain whose every earlier step is decided and nothing
+-- open has its next phase opened, as the engine would have.
+update public.approval_requests w
+   set status = 'pending', opened_at = now(),
+       deadline_at = app.add_working_days(now(), coalesce((select r.deadline_days from public.approval_rules r
+                                                             where r.tenant_id = w.tenant_id and r.subject_type = w.subject_type
+                                                               and r.step_index = w.step_index limit 1), 3), w.tenant_id)
+ where w.subject_type in ('notice', 'stationery_request', 'maintenance_request', 'movement_order')
+   and w.status = 'waiting'
+   and w.step_index = (select min(x.step_index) from public.approval_requests x
+                        where x.tenant_id = w.tenant_id and x.subject_id = w.subject_id and x.status = 'waiting')
+   and not exists (select 1 from public.approval_requests x
+                    where x.tenant_id = w.tenant_id and x.subject_id = w.subject_id
+                      and x.status in ('pending', 'clarification', 'rejected'))
+   and not exists (select 1 from public.approval_requests x
+                    where x.tenant_id = w.tenant_id and x.subject_id = w.subject_id
+                      and x.step_index < w.step_index and x.status not in ('approved', 'skipped'));
+
+-- The events with no step of their own (submitted, completed), and the
+-- notifications, told the same thing at the same moment several times.
+delete from public.approval_events a using public.approval_events b
+ where a.tenant_id = b.tenant_id and a.subject_id = b.subject_id
+   and a.subject_type in ('notice', 'stationery_request', 'maintenance_request', 'movement_order')
+   and a.action = b.action and a.actor_id is not distinct from b.actor_id and a.comment is not distinct from b.comment
+   and a.request_id is not distinct from b.request_id and a.created_at = b.created_at and a.id > b.id;
+delete from public.notifications a using public.notifications b
+ where a.tenant_id = b.tenant_id and a.entity_id = b.entity_id
+   and a.entity_type in ('notice', 'stationery_request', 'maintenance_request', 'movement_order')
+   and a.recipient_id is not distinct from b.recipient_id and a.kind = b.kind and a.title is not distinct from b.title
+   and a.created_at = b.created_at and a.id > b.id;
+
 -- A ticket finds its requester by email, so evaluations issued before
 -- people had work addresses get them, by the same rule.
 update public.employees e
