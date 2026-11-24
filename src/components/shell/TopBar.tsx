@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, ChevronRight, HelpCircle, KeyRound, LogOut } from "lucide-react";
-import { Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { RoleSwitcher } from "./RoleSwitcher";
 import { GlobalSearch } from "./GlobalSearch";
 import { db } from "@/lib/db";
@@ -347,7 +347,6 @@ function NotificationsDropdown({
 // asking for an extension rather than discovering the problem.
 // ---------------------------------------------------------------------
 function AccountMenu() {
-  const router = useRouter();
   // The root route already holds the session; asking again here showed a
   // stale one after switching persona.
   const { session } = useCurrentUser();
@@ -387,9 +386,11 @@ function AccountMenu() {
       <button
         onClick={async () => {
           setLeaving(true);
-          await signOut();
-          await router.invalidate();
-          window.location.href = "/login";
+          // Straight to a fresh sign-in page. Asking the router to check
+          // again here redrew this screen with nobody signed in, and the
+          // parts of it that need a person failed — the error screen showed
+          // until the sign-in page arrived.
+          try { await signOut(); } finally { window.location.replace("/login"); }
         }}
         disabled={leaving}
         title="Sign out"

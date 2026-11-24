@@ -603,8 +603,7 @@ export function Sidebar({ defaultCollapsed = false }: { defaultCollapsed?: boole
               title="Logout"
               onClick={async () => {
                 setLeaving(true);
-                await signOut();
-                window.location.href = "/login";
+                try { await signOut(); } finally { window.location.replace("/login"); }
               }}
               disabled={leaving}
               className="inline-flex items-center justify-center rounded-md cursor-pointer"
