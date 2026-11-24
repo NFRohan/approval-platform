@@ -26,13 +26,18 @@ import http from 'node:http';
 import https from 'node:https';
 import type pg from 'pg';
 import { getPool } from './db';
-import { openSecret } from './totp';
+import { openSecret, sealSecret } from './totp';
 import { assertReachable } from './webhooks';
 
 export type Link = {
   tenant_id: string; enabled: boolean; base_url: string | null; token_sealed: string | null; allow_self_signed: boolean;
   poll_cursor: string | null;
+  // ServiceDesk Plus Cloud: Zoho OAuth instead of a technician key.
+  auth_mode?: 'authtoken' | 'oauth';
+  oauth_accounts_url?: string | null; oauth_client_id?: string | null; oauth_secret_sealed?: string | null;
+  oauth_refresh_sealed?: string | null; oauth_access_sealed?: string | null; oauth_access_expires?: string | Date | null;
 };
+type CallLink = Pick<Link, 'base_url' | 'token_sealed' | 'allow_self_signed'> & Partial<Link>;
 
 export type Ticket = {
   id: string; subject: string; description: string; requester_email: string | null; requester_name: string | null;
@@ -44,12 +49,82 @@ export type SdpResult = { status: number; body: string; json: Record<string, unk
 
 const ACCEPT = 'application/vnd.manageengine.sdp.v3+json';
 
-/** One call to ServiceDesk. Throws only when nothing came back at all. */
-export async function sdpCall(link: Pick<Link, 'base_url' | 'token_sealed' | 'allow_self_signed'>, method: 'GET' | 'POST' | 'PUT',
-  path: string, inputData?: unknown): Promise<SdpResult> {
+// ---------------------------------------------------------------------
+// Zoho OAuth, for ServiceDesk Plus Cloud.
+//
+// A Self Client in Zoho's API console issues a short-lived code; the
+// code is swapped once for a refresh token, which never expires and is
+// kept sealed; the refresh token buys an access token for an hour at a
+// time (at most ten in ten minutes, so it is kept and reused). Calls
+// carry it as "Authorization: Zoho-oauthtoken <token>".
+// ---------------------------------------------------------------------
+export const ZOHO_ACCOUNTS = /^https:\/\/accounts\.(zoho\.(com|eu|in|com\.au|jp|sa|uk)|zohocloud\.ca)$/;
+
+export type ZohoToken = { access_token?: string; refresh_token?: string; expires_in?: number; api_domain?: string; error?: string };
+
+export async function zohoToken(accountsUrl: string, params: Record<string, string>, inQuery = false): Promise<ZohoToken> {
+  // The client secret goes to Zoho and nowhere else. (A test's stand-in
+  // accounts server is allowed where private addresses are.)
+  if (!ZOHO_ACCOUNTS.test(accountsUrl) && process.env.OUTBOUND_ALLOW_PRIVATE !== '1') throw new Error('that is not a Zoho accounts server');
+  const form = new URLSearchParams(params).toString();
+  const res = await fetch(accountsUrl + '/oauth/v2/token' + (inQuery ? '?' + form : ''), {
+    method: 'POST',
+    headers: inQuery ? {} : { 'content-type': 'application/x-www-form-urlencoded' },
+    body: inQuery ? undefined : form,
+    signal: AbortSignal.timeout(10_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as ZohoToken;
+  if (!res.ok && !json.error) json.error = `Zoho answered ${res.status}`;
+  return json;
+}
+
+/** An access token for a cloud link: the one kept, or a fresh one. */
+async function accessToken(link: CallLink, force: boolean): Promise<string> {
+  const expires = link.oauth_access_expires ? new Date(link.oauth_access_expires).getTime() : 0;
+  const kept = openSecret(link.oauth_access_sealed);
+  if (!force && kept && expires > Date.now() + 120_000) return kept;
+  const refresh = openSecret(link.oauth_refresh_sealed);
+  if (!refresh || !link.oauth_accounts_url || !link.oauth_client_id) throw new Error('ServiceDesk is not connected: sign in with Zoho first');
+  const t = await zohoToken(link.oauth_accounts_url, {
+    grant_type: 'refresh_token', client_id: link.oauth_client_id, client_secret: openSecret(link.oauth_secret_sealed) ?? '', refresh_token: refresh,
+  });
+  if (!t.access_token) {
+    throw new Error(t.error === 'invalid_code' ? 'Zoho no longer accepts the sign-in (the refresh token was revoked) — sign in again'
+      : `Zoho would not renew the sign-in: ${t.error ?? 'no token'}`);
+  }
+  const until = new Date(Date.now() + (t.expires_in ?? 3600) * 1000);
+  link.oauth_access_sealed = sealSecret(t.access_token);
+  link.oauth_access_expires = until;
+  if (link.tenant_id) {
+    await getPool().query('update public.servicedesk_links set oauth_access_sealed = $2, oauth_access_expires = $3 where tenant_id = $1',
+      [link.tenant_id, link.oauth_access_sealed, until]).catch(() => {});
+  }
+  return t.access_token;
+}
+
+async function authHeaders(link: CallLink, force: boolean): Promise<Record<string, string>> {
+  if (link.auth_mode === 'oauth') return { authorization: `Zoho-oauthtoken ${await accessToken(link, force)}` };
   const token = openSecret(link.token_sealed);
-  if (!link.base_url || !token) throw new Error('ServiceDesk is not connected: no address or technician key');
-  const url = new URL(link.base_url.replace(/\/$/, '') + path);
+  if (!token) throw new Error('ServiceDesk is not connected: no technician key');
+  return { authtoken: token };
+}
+
+/** One call to ServiceDesk. Throws only when nothing came back at all. */
+export async function sdpCall(link: CallLink, method: 'GET' | 'POST' | 'PUT', path: string, inputData?: unknown): Promise<SdpResult> {
+  if (!link.base_url) throw new Error('ServiceDesk is not connected: no address');
+  const first = await sdpOnce(link, method, path, inputData, await authHeaders(link, false));
+  if (first.status !== 401 || link.auth_mode !== 'oauth') return first;
+  // A cloud token can be withdrawn before its hour is up: renew it once.
+  const fresh = await authHeaders(link, true);
+  const second = await sdpOnce(link, method, path, inputData, fresh);
+  if (second.status !== 401) return second;
+  // Zoho's own pages write the header "Bearer"; ServiceDesk's write
+  // "Zoho-oauthtoken". The second is tried first.
+  return sdpOnce(link, method, path, inputData, { authorization: fresh.authorization.replace('Zoho-oauthtoken', 'Bearer') });
+}
+
+async function sdpOnce(link: CallLink, method: 'GET' | 'POST' | 'PUT', path: string, inputData: unknown, auth: Record<string, string>): Promise<SdpResult> {
+  const url = new URL(link.base_url!.replace(/\/$/, '') + path);
   await assertReachable(url.toString(), 'the ServiceDesk link');
   const encoded = inputData === undefined ? null : 'input_data=' + encodeURIComponent(JSON.stringify(inputData));
   if (encoded && method === 'GET') url.search = encoded;
@@ -60,7 +135,7 @@ export async function sdpCall(link: Pick<Link, 'base_url' | 'token_sealed' | 'al
     const req = mod.request(url, {
       method,
       headers: {
-        authtoken: token,
+        ...auth,
         accept: ACCEPT,
         'content-type': 'application/x-www-form-urlencoded',
         'user-agent': 'AMS-ServiceDesk/1.0',
@@ -96,7 +171,7 @@ export function sdpOk(r: SdpResult): { ok: boolean; message: string } {
   const first = (Array.isArray(rs) ? rs[0] : rs) as { status?: string; messages?: { message?: string; type?: string }[] } | undefined;
   const ok = r.status >= 200 && r.status < 300 && (first ? first.status === 'success' : !!r.json);
   const message = first?.messages?.map((m) => m.message).filter(Boolean).join('; ')
-    || (ok ? 'success' : r.status === 401 ? 'the technician key was refused' : `ServiceDesk answered ${r.status}`);
+    || (ok ? 'success' : r.status === 401 ? 'the sign-in was refused' : `ServiceDesk answered ${r.status}`);
   return { ok, message };
 }
 
@@ -154,6 +229,12 @@ export function normaliseTicket(raw: unknown): Ticket | null {
   };
 }
 
+/** Has the link somewhere to call, and a way to sign in there? */
+export function connected(link: Partial<Link> | null | undefined): boolean {
+  if (!link?.base_url) return false;
+  return link.auth_mode === 'oauth' ? !!link.oauth_refresh_sealed : !!link.token_sealed;
+}
+
 /** Set the organisation for a transaction run as the owner, as the inbound routes do. */
 export async function asTenant(client: pg.PoolClient, tenantId: string) {
   await client.query(
@@ -164,7 +245,7 @@ export async function asTenant(client: pg.PoolClient, tenantId: string) {
 /** A ticket, in full: the webhook may have sent only its id. */
 export async function completeTicket(link: Link, t: Ticket): Promise<Ticket> {
   if (t.requester_email || t.requester_name) return t;
-  if (!link.base_url || !link.token_sealed) return t;
+  if (!connected(link)) return t;
   const r = await sdpCall(link, 'GET', `/api/v3/requests/${encodeURIComponent(t.id)}`);
   const ok = sdpOk(r);
   if (!ok.ok) throw new Error(`fetching ticket #${t.id}: ${ok.message}`);
@@ -255,7 +336,7 @@ export async function drainServicedesk(opts: { tenantId?: string | null; only?: 
     if (!rows.length) break;
     for (const e of rows) {
       const { rows: [link] } = await pool.query<Link>('select * from public.servicedesk_links where tenant_id = $1', [e.tenant_id]);
-      if (!link?.enabled || !link.base_url || !link.token_sealed) {
+      if (!link?.enabled || !connected(link)) {
         await pool.query(`update public.servicedesk_events set status = 'skipped', error = 'ServiceDesk is not connected', done_at = now() where id = $1`, [e.id]);
         out.skipped++;
         continue;

@@ -189,8 +189,8 @@ begin
   if not pg_temp.refused($q$select public.save_servicedesk(true, 'https://sd.example.test', null, false, null, '[]', 'Success', 'Rejected', null)$q$) then
     raise exception 'FAIL: the link was connected without a technician key';
   end if;
-  if not pg_temp.refused($q$select public.save_servicedesk(false, 'https://sd.example.test/app/path', null, false, null, '[]', 'Success', 'Rejected', null)$q$) then
-    raise exception 'FAIL: an address with a path was taken';
+  if not pg_temp.refused($q$select public.save_servicedesk(false, 'https://sd.example.test/?redirect=x', null, false, null, '[]', 'Success', 'Rejected', null)$q$) then
+    raise exception 'FAIL: an address with a query string was taken';
   end if;
   if not pg_temp.refused($q$select public.save_servicedesk(false, '', null, false, null, '[{"match": "Access", "form": "No such form"}]', 'Success', 'Rejected', null)$q$) then
     raise exception 'FAIL: a mapping to a form that does not exist was taken';
@@ -202,10 +202,33 @@ begin
     raise exception 'FAIL: the link was not saved as given';
   end if;
   if not exists (select 1 from public.activity_log where action = 'servicedesk_changed') then raise exception 'FAIL: changing the link was not recorded'; end if;
+
+  -- The cloud: a portal under its data centre's address, signed in through Zoho.
+  if not pg_temp.refused($q$select public.save_servicedesk(false, 'https://sdpondemand.manageengine.in/app/itdesk/api/v3/requests', null, false, null, '[]', 'Success', 'Rejected', null)$q$) then
+    raise exception 'FAIL: an address with the API path on it was taken';
+  end if;
+  perform public.save_servicedesk(false, 'https://sdpondemand.manageengine.in/app/itdesk', null, false, null, '[]', 'Success', 'Rejected', null);
+  if not pg_temp.refused($q$select public.save_servicedesk_oauth('https://accounts.zoho.in.evil.test', '1000.ABC', 'v1.s', 'v1.r')$q$) then
+    raise exception 'FAIL: a sign-in through something other than Zoho''s accounts server was taken';
+  end if;
+  perform public.save_servicedesk_oauth('https://accounts.zoho.in', '1000.ABC', 'v1.secret', 'v1.refresh');
+  if (select row(auth_mode, oauth_accounts_url, oauth_client_id) from public.servicedesk_links)
+     is distinct from row('oauth'::text, 'https://accounts.zoho.in'::text, '1000.ABC'::text) then
+    raise exception 'FAIL: the Zoho sign-in was not kept';
+  end if;
+  -- Signed in, it may connect with no technician key at all.
+  perform public.save_servicedesk(true, 'https://sdpondemand.manageengine.in/app/itdesk', null, false, null, '[]', 'Success', 'Rejected', null);
+  if not (select enabled and auth_mode = 'oauth' from public.servicedesk_links) then
+    raise exception 'FAIL: a cloud link signed in through Zoho could not be connected';
+  end if;
+  perform pg_temp.as_emp('EMP-2847');
+  if not pg_temp.refused($q$select public.save_servicedesk_oauth('https://accounts.zoho.in', '1000.ABC', 'v1.s', 'v1.r')$q$) then
+    raise exception 'FAIL: somebody without integrations.manage signed the link in';
+  end if;
 end $$;
   reset role;
 commit;
-do $$ begin raise notice 'pass: only integrations.manage changes the link, with an address, a key and real forms; the change is recorded'; end $$;
+do $$ begin raise notice 'pass: only integrations.manage changes the link, with an address, a key or a Zoho sign-in through Zoho''s own servers, and real forms; the change is recorded'; end $$;
 
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
 

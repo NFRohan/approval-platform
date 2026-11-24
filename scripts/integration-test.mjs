@@ -186,6 +186,27 @@ console.log(NL + 'integration' + NL);
   let threw = null;
   try { await sd.sdpCall({ ...link, token_sealed: null }, 'GET', '/api/v3/requests'); } catch (e) { threw = e.message; }
   check('without a key nothing is sent', /not connected/.test(threw ?? ''), true);
+
+  // The cloud: a Zoho sign-in rather than a technician key.
+  const code = await sd.zohoToken(mock.url, { grant_type: 'authorization_code', client_id: 'mock-client', client_secret: 'mock-secret', code: 'mock-code' }, true);
+  check('a Self Client code is swapped for a refresh token', typeof code.refresh_token, 'string');
+  check('...once', (await sd.zohoToken(mock.url, { grant_type: 'authorization_code', client_id: 'mock-client', client_secret: 'x', code: 'mock-code' }, true)).error, 'invalid_client_secret');
+  const cloud = {
+    base_url: mock.url + '/app/itdesk', token_sealed: null, allow_self_signed: false, auth_mode: 'oauth',
+    oauth_accounts_url: mock.url, oauth_client_id: 'mock-client', oauth_secret_sealed: totp.sealSecret('mock-secret'),
+    oauth_refresh_sealed: totp.sealSecret(code.refresh_token),
+  };
+  r = await sd.sdpCall(cloud, 'GET', '/api/v3/requests', { list_info: { row_count: 1 } });
+  check('a cloud portal is called with a Zoho access token', sd.sdpOk(r).ok, true);
+  r = await sd.sdpCall(cloud, 'GET', '/api/v3/requests', { list_info: { row_count: 1 } });
+  check('...kept for its hour rather than renewed each call', mock.oauth.refreshes, 1);
+  mock.expireAccessTokens();
+  r = await sd.sdpCall(cloud, 'GET', '/api/v3/requests', { list_info: { row_count: 1 } });
+  check('...and renewed when ServiceDesk stops taking it', [sd.sdpOk(r).ok, mock.oauth.refreshes], [true, 2]);
+  check('the client secret is sent to Zoho\'s accounts servers only',
+    ['https://accounts.zoho.in', 'https://accounts.zohocloud.ca', 'https://accounts.zoho.in.evil.test', 'http://accounts.zoho.com'].map((u) => sd.ZOHO_ACCOUNTS.test(u)),
+    [true, true, false, false]);
+
   delete process.env.OUTBOUND_ALLOW_PRIVATE;
   threw = null;
   try { await sd.sdpCall(link, 'GET', '/api/v3/requests'); } catch (e) { threw = e.message; }

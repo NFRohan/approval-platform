@@ -16,6 +16,12 @@
 //
 // GET /mock/state shows every ticket with its notes, resolution and
 // closure. The technician key is MOCK_SDP_KEY (default "mock-technician-key").
+//
+// It stands in for the cloud's sign-in too: POST /oauth/v2/token swaps the
+// code "mock-code" (client "mock-client", secret "mock-secret") for a
+// refresh token, and a refresh token for an access token, which the API
+// then takes as "Authorization: Zoho-oauthtoken <token>". Portal paths
+// (/app/<portal>/api/v3/...) are answered as the plain ones.
 // Imported by the tests as startMock().
 // =====================================================================
 
@@ -26,6 +32,7 @@ export function startMock({ port = 0, key = process.env.MOCK_SDP_KEY || 'mock-te
   let next = 1000;
   const store = new Map();
   const calls = [];
+  const oauth = { refresh: new Set(), access: new Map(), refreshes: 0 };
   const add = (t) => {
     const id = String(t.id ?? ++next);
     const now = Date.now();
@@ -53,7 +60,28 @@ export function startMock({ port = 0, key = process.env.MOCK_SDP_KEY || 'mock-te
     let raw = '';
     for await (const c of req) raw += c;
     const url = new URL(req.url, 'http://mock');
-    if (url.pathname === '/mock/state') return ok(res, { tickets: [...store.values()], calls });
+    if (url.pathname === '/mock/state') return ok(res, { tickets: [...store.values()], calls, oauth: { refreshes: oauth.refreshes } });
+    if (url.pathname === '/oauth/v2/token' && req.method === 'POST') {
+      const p = new URLSearchParams(raw);
+      url.searchParams.forEach((v, k) => p.set(k, v));
+      if (p.get('client_id') !== 'mock-client') return ok(res, { error: 'invalid_client' });
+      if (p.get('client_secret') !== 'mock-secret') return ok(res, { error: 'invalid_client_secret' });
+      const issue = () => { const t = 'mock-access-' + Math.random().toString(36).slice(2); oauth.access.set(t, Date.now() + 3600_000); return t; };
+      if (p.get('grant_type') === 'authorization_code') {
+        if (p.get('code') !== 'mock-code') return ok(res, { error: 'invalid_code' });
+        const refresh = 'mock-refresh-' + Math.random().toString(36).slice(2);
+        oauth.refresh.add(refresh);
+        return ok(res, { access_token: issue(), refresh_token: refresh, api_domain: 'https://www.zohoapis.com', token_type: 'Bearer', expires_in: 3600 });
+      }
+      if (p.get('grant_type') === 'refresh_token') {
+        if (!oauth.refresh.has(p.get('refresh_token'))) return ok(res, { error: 'invalid_code' });
+        oauth.refreshes++;
+        return ok(res, { access_token: issue(), api_domain: 'https://www.zohoapis.com', token_type: 'Bearer', expires_in: 3600 });
+      }
+      return ok(res, { error: 'unsupported_grant_type' });
+    }
+    // A cloud portal's path, answered as the plain one.
+    url.pathname = url.pathname.replace(/^\/app\/[^/]+(?=\/api\/)/, '');
     if (req.method === 'POST' && url.pathname === '/mock/tickets') {
       return ok(res, { request: brief(add(JSON.parse(raw || '{}'))) });
     }
@@ -61,7 +89,9 @@ export function startMock({ port = 0, key = process.env.MOCK_SDP_KEY || 'mock-te
     const field = url.searchParams.get('input_data') ?? new URLSearchParams(raw).get('input_data');
     try { input = field ? JSON.parse(field) : null; } catch { return fail(res, 400, 4001, 'input_data is not JSON'); }
     calls.push({ method: req.method, path: url.pathname, input, at: new Date().toISOString() });
-    if (req.headers.authtoken !== key) return fail(res, 401, 4002, 'UNAUTHORISED');
+    const bearer = /^Zoho-oauthtoken (\S+)$/.exec(req.headers.authorization ?? '')?.[1];
+    const signedIn = bearer ? (oauth.access.get(bearer) ?? 0) > Date.now() : req.headers.authtoken === key;
+    if (!signedIn) return fail(res, 401, 4002, 'UNAUTHORISED');
     if (!String(req.headers.accept ?? '').includes('application/vnd.manageengine.sdp.v3+json')) return fail(res, 400, 4000, 'Accept header missing');
 
     const m = /^\/api\/v3\/requests(?:\/([^/]+))?(?:\/(notes|resolutions|close))?$/.exec(url.pathname);
@@ -99,7 +129,9 @@ export function startMock({ port = 0, key = process.env.MOCK_SDP_KEY || 'mock-te
     return fail(res, 405, 4000, 'Method not allowed');
   });
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve({
-    url: `http://127.0.0.1:${server.address().port}`, key, store, calls, add, close: () => new Promise((r) => server.close(r)),
+    url: `http://127.0.0.1:${server.address().port}`, key, store, calls, add, oauth,
+    expireAccessTokens: () => { for (const k of oauth.access.keys()) oauth.access.set(k, 0); },
+    close: () => new Promise((r) => server.close(r)),
   })));
 }
 

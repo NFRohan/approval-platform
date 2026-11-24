@@ -275,7 +275,14 @@ become which forms. Tickets arrive by ServiceDesk's webhook (Developer Space
 `X-AMS-Secret`), or are fetched — on demand and in the daily round — for an
 edition without webhooks. Write-backs go out after every decision.
 
-ServiceDesk is usually on a private network, which outbound calls refuse;
+ServiceDesk Plus Cloud is set up on the same screen: the data centre and
+the portal's name make the address (`https://sdpondemand.manageengine.in/app/<portal>`),
+and it signs in through Zoho — a Self Client in Zoho's API console
+generates a code with the scope `SDPOnDemand.requests.ALL`, pasted once and
+swapped for a refresh token kept sealed; access tokens are renewed as they
+lapse. The client secret is only ever sent to Zoho's own accounts servers.
+
+An on-premises ServiceDesk is usually on a private network, which outbound calls refuse;
 run with `OUTBOUND_ALLOW_PRIVATE=1` where the server can reach it directly,
 or give it a public address (a tunnel). A self-signed certificate can be
 allowed per link. Without a server, `node scripts/servicedesk-mock.mjs`
@@ -294,7 +301,7 @@ npm test          # all ten, cheapest first
 | `test:identity` | 35 checks with no database: two-step codes against the RFC 6238 vectors, sealing their secrets, the password policy and a generator that always meets it, the idle timeout and the 12-hour limit, reading the HR file |
 | `test:reports` | 35 checks with no database: the report query builder builds only from its catalogue and binds every value, the CSV cannot carry a formula, the Excel file is a real workbook, the PDFs open, and emails fill and escape their templates |
 | `test:commercial` | 29 checks with no database: reading Word NFAs — business cases, labels as people write them, lakh and crore, dates in words — the top sheet's amounts in words and wrapped PO lines, and both shapes of inbound mail |
-| `test:integration` | 61 checks with no database: webhook signatures as a receiver checks them — tampered, replayed and unsigned deliveries refused — the API's answers before a key is looked up, the OpenAPI document and its agreement with the database's scopes and events, and ManageEngine exports read whichever way they spell their columns and dates, deadlines counted over the Eid break as the browser previews them, and ServiceDesk Plus tickets read in every shape it sends them, and its API called — key, input_data, notes, close — against the stand-in |
+| `test:integration` | 67 checks with no database: webhook signatures as a receiver checks them — tampered, replayed and unsigned deliveries refused — the API's answers before a key is looked up, the OpenAPI document and its agreement with the database's scopes and events, and ManageEngine exports read whichever way they spell their columns and dates, deadlines counted over the Eid break as the browser previews them, and ServiceDesk Plus tickets read in every shape it sends them, and its API called — key, input_data, notes, close, and the cloud's Zoho sign-in — against the stand-in |
 | `test:auth` | 24 checks: passwords, sessions, and whether withdrawing an evaluation takes effect on the next request |
 | `test:render` | All 36 routes rendered once, against real ids, and every persona checked against the employee table |
 | `db:test` | 189 checks: tenant isolation, the security policies, provisioning, the approval chain, the workflow shapes — parallel tracks, quorum, conditions, roles, return, recall, questions, follow-ups — the ticket: references, priority, signatures, notes, CC, links, copies, hand-over — and identity: the session decides who acts, permissions from roles, maker-checker on accounts and roles, the HR import, two-step for administrators, form audiences — and reports: months of history, the report views and who may read them, column changes approved by somebody else, every notification queued as an email, scheduled reports, reminders and escalation — and commercial: the reviewer the requester chooses, the team copied, campaigns from approved NFAs, budget alerts, extensions, coupons, merging divisions, partner mail to tickets, and older evaluations brought up to the template — and integration: keys of an evaluation's own, who may make and revoke them and a revoked key refused at once, webhooks queued for exactly what they listen for, one audit trail over every source and who may read it, retention archiving and purging by the policy without deleting a record, and migrated tickets imported once — and the working calendar: deadlines stepping over holidays, and who may keep it — and ServiceDesk Plus: mapped tickets raised once as their requester, others left alone or refused with the desk told why, every decision queued back in order, and who may change the link |

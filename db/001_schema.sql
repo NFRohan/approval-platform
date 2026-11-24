@@ -1803,6 +1803,18 @@ create table if not exists public.servicedesk_links (
   updated_at         timestamptz not null default now()
 );
 
+-- ServiceDesk Plus Cloud signs in through Zoho rather than with a
+-- technician key: a refresh token from a Self Client in Zoho's API
+-- console, swapped for an access token that lasts an hour. All sealed.
+alter table public.servicedesk_links add column if not exists auth_mode text not null default 'authtoken'
+  check (auth_mode in ('authtoken', 'oauth'));
+alter table public.servicedesk_links add column if not exists oauth_accounts_url   text;
+alter table public.servicedesk_links add column if not exists oauth_client_id      text;
+alter table public.servicedesk_links add column if not exists oauth_secret_sealed  text;
+alter table public.servicedesk_links add column if not exists oauth_refresh_sealed text;
+alter table public.servicedesk_links add column if not exists oauth_access_sealed  text;
+alter table public.servicedesk_links add column if not exists oauth_access_expires timestamptz;
+
 alter table public.form_submissions add column if not exists external_system text;
 alter table public.form_submissions add column if not exists external_ref    text;
 create unique index if not exists form_submissions_external_idx

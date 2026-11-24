@@ -51,8 +51,10 @@ as $$
 declare v_bad text; e jsonb;
 begin
   perform app.require_permission('integrations.manage');
-  if coalesce(p_base_url, '') <> '' and p_base_url !~ '^https?://[^\s/]+(:\d+)?/?$' then
-    raise exception 'the address is ServiceDesk''s own, like https://servicedesk.example.com:8080 — no path';
+  -- On premises, the server itself; in the cloud, the portal under it
+  -- (https://sdpondemand.manageengine.in/app/itdesk).
+  if coalesce(p_base_url, '') <> '' and (p_base_url !~ '^https?://[^\s/?#]+(:\d+)?(/[A-Za-z0-9._~/-]*)?$' or p_base_url ~ '/api/') then
+    raise exception 'the address is ServiceDesk''s own, like https://servicedesk.example.com:8080 or https://sdpondemand.manageengine.com/app/itdesk — without /api/v3';
   end if;
   if jsonb_typeof(coalesce(p_form_map, '[]')) <> 'array' then raise exception 'the mapping must be a list'; end if;
   for e in select * from jsonb_array_elements(coalesce(p_form_map, '[]')) loop
@@ -66,8 +68,10 @@ begin
     raise exception 'there is no published form called %', p_default_form;
   end if;
   if p_enabled and (coalesce(p_base_url, '') = '' or (p_token_sealed is null
-       and (select token_sealed from public.servicedesk_links where tenant_id = app.current_tenant()) is null)) then
-    raise exception 'connecting needs ServiceDesk''s address and a technician key';
+       and not exists (select 1 from public.servicedesk_links where tenant_id = app.current_tenant()
+                        and (token_sealed is not null and auth_mode = 'authtoken'
+                             or oauth_refresh_sealed is not null and auth_mode = 'oauth')))) then
+    raise exception 'connecting needs ServiceDesk''s address, and a technician key or a Zoho sign-in';
   end if;
 
   perform app.seed_servicedesk(app.current_tenant());
@@ -75,6 +79,8 @@ begin
      set enabled = coalesce(p_enabled, false),
          base_url = nullif(rtrim(trim(p_base_url), '/'), ''),
          token_sealed = coalesce(p_token_sealed, token_sealed),
+         -- A technician key given now means signing in with it.
+         auth_mode = case when p_token_sealed is not null then 'authtoken' else auth_mode end,
          allow_self_signed = coalesce(p_allow_self_signed, false),
          default_form = nullif(trim(p_default_form), ''),
          form_map = coalesce(p_form_map, '[]'),
@@ -301,6 +307,33 @@ drop trigger if exists approval_events_servicedesk on public.approval_events;
 create trigger approval_events_servicedesk after insert on public.approval_events
   for each row execute function app.servicedesk_on_event();
 
+-- The cloud's sign-in: Zoho's accounts server for the data centre, the
+-- Self Client's id and secret, and the refresh token the server got for
+-- the code generated there. Only Zoho's own accounts servers are taken,
+-- so the client secret can only ever be sent to Zoho.
+create or replace function public.save_servicedesk_oauth(
+  p_accounts_url text, p_client_id text, p_secret_sealed text, p_refresh_sealed text)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+begin
+  perform app.require_permission('integrations.manage');
+  if p_accounts_url !~ '^https://accounts\.(zoho\.(com|eu|in|com\.au|jp|sa|uk)|zohocloud\.ca)$' then
+    raise exception 'that is not a Zoho accounts server';
+  end if;
+  if coalesce(trim(p_client_id), '') = '' or p_refresh_sealed is null then raise exception 'the Zoho sign-in needs a client id and a refresh token'; end if;
+  perform app.seed_servicedesk(app.current_tenant());
+  update public.servicedesk_links
+     set auth_mode = 'oauth', oauth_accounts_url = p_accounts_url, oauth_client_id = trim(p_client_id),
+         oauth_secret_sealed = coalesce(p_secret_sealed, oauth_secret_sealed), oauth_refresh_sealed = p_refresh_sealed,
+         oauth_access_sealed = null, oauth_access_expires = null,
+         updated_by = app.current_employee(), updated_at = now()
+   where tenant_id = app.current_tenant();
+  perform app.audit('servicedesk_signed_in', 'tenant', null::uuid, 'Zoho sign-in through ' || p_accounts_url);
+end $$;
+
 create or replace function public.retry_servicedesk_event(p_id uuid)
 returns void
 language plpgsql
@@ -317,7 +350,8 @@ end $$;
 grant execute on function
   public.save_servicedesk(boolean, text, text, boolean, text, jsonb, text, text, text),
   public.receive_servicedesk_ticket(jsonb),
-  public.retry_servicedesk_event(uuid)
+  public.retry_servicedesk_event(uuid),
+  public.save_servicedesk_oauth(text, text, text, text)
 to app_api;
 grant execute on all functions in schema app to app_api;
 

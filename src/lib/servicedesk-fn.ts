@@ -14,7 +14,7 @@ import type pg from 'pg';
 import { withContext, resolveContext } from '@/server/db';
 import { sealSecret } from '@/server/totp';
 import { appUrl, kickMailer } from '@/server/mailer';
-import { drainServicedesk, normaliseTicket, pollServicedesk, sdpCall, sdpOk, type Link } from '@/server/servicedesk';
+import { drainServicedesk, normaliseTicket, pollServicedesk, sdpCall, sdpOk, zohoToken, type Link } from '@/server/servicedesk';
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -42,6 +42,8 @@ export type ServicedeskSettings = {
   enabled: boolean; base_url: string | null; has_token: boolean; allow_self_signed: boolean;
   default_form: string | null; form_map: FormMapRow[]; approved_closure: string; rejected_closure: string;
   inbound_url: string; inbound_secret: string | null; last_poll_at: string | null;
+  auth_mode: 'authtoken' | 'oauth'; oauth_accounts_url: string | null; oauth_client_id: string | null;
+  oauth_signed_in: boolean; oauth_access_expires: string | null;
   last_poll_result: { seen: number; raised: number; ignored: number; refused: number; error?: string } | null;
 };
 export type ServicedeskEvent = {
@@ -77,6 +79,8 @@ export const loadServicedesk = createServerFn({ method: 'GET' })
             // The secret is the caller's to give ServiceDesk: shown to whoever may change the link.
             inbound_secret: m.ok ? l.inbound_secret : null,
             last_poll_at: iso(l.last_poll_at), last_poll_result: l.last_poll_result,
+            auth_mode: l.auth_mode, oauth_accounts_url: l.oauth_accounts_url, oauth_client_id: l.oauth_client_id,
+            oauth_signed_in: !!l.oauth_refresh_sealed, oauth_access_expires: iso(l.oauth_access_expires),
           },
           events: ev.map((e) => ({ ...e, created_at: iso(e.created_at)!, done_at: iso(e.done_at) })) as ServicedeskEvent[],
         };
@@ -114,10 +118,14 @@ export const testServicedesk = createServerFn({ method: 'POST' })
         await needManage(c);
         return (await c.query<Link>(`select * from public.servicedesk_links where tenant_id = app.current_tenant()`)).rows[0];
       });
+      const typedKey = !!data.token?.trim();
       const trial = {
+        ...link,
         base_url: (data.base_url ?? '').trim().replace(/\/$/, '') || link?.base_url || null,
-        token_sealed: data.token?.trim() ? sealSecret(data.token.trim()) : link?.token_sealed ?? null,
+        token_sealed: typedKey ? sealSecret(data.token!.trim()) : link?.token_sealed ?? null,
         allow_self_signed: !!data.allow_self_signed,
+        // A key typed in is tried as a key; otherwise the link signs in as it is set to.
+        auth_mode: typedKey ? 'authtoken' as const : link?.auth_mode ?? 'authtoken',
       };
       try {
         const r = await sdpCall(trial, 'GET', '/api/v3/requests', { list_info: { row_count: 1, start_index: 1, get_total_count: true } });
@@ -173,6 +181,43 @@ export const retryServicedeskEvent = createServerFn({ method: 'POST' })
       await drainServicedesk({ tenantId: ctx.tenantId, only: data.id });
       const { rows: [e] } = await withContext(ctx, (c) => c.query('select status, error from public.servicedesk_events where id = $1', [data.id]));
       return { ok: true, status: e.status, error: e.error };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+/**
+ * ServiceDesk Plus Cloud: swap the code a Zoho Self Client generated for
+ * a refresh token, and keep it — with the client secret — sealed. The
+ * code lasts minutes and works once.
+ */
+export const connectServicedeskCloud = createServerFn({ method: 'POST' })
+  .inputValidator((input: { accounts_url: string; client_id: string; client_secret: string; code: string }) => input)
+  .handler(async ({ data }): Promise<Result<{ expires_in: number | null }>> => {
+    try {
+      const ctx = await resolveContext();
+      await withContext(ctx, needManage);
+      const accounts = String(data.accounts_url ?? '').trim().replace(/\/$/, '');
+      const clientId = String(data.client_id ?? '').trim();
+      const secret = String(data.client_secret ?? '').trim();
+      const code = String(data.code ?? '').trim();
+      if (!clientId || !secret || !code) throw Object.assign(new Error('the client id, client secret and a freshly generated code are all needed'), { code: 'P0001' });
+      let t;
+      try {
+        t = await zohoToken(accounts, { grant_type: 'authorization_code', client_id: clientId, client_secret: secret, code }, true);
+      } catch (err) {
+        throw Object.assign(new Error(err instanceof Error ? err.message : String(err)), { code: 'P0001' });
+      }
+      if (!t.refresh_token) {
+        const why = t.error === 'invalid_code' ? 'the code has expired or was used already — generate a new one'
+          : t.error === 'invalid_client' ? 'Zoho does not know that client id here — check the data centre'
+          : t.error === 'invalid_client_secret' ? 'the client secret is not right'
+          : t.error ?? 'Zoho gave no refresh token';
+        throw Object.assign(new Error(why), { code: 'P0001' });
+      }
+      await withContext(ctx, (c) => c.query('select public.save_servicedesk_oauth($1, $2, $3, $4)',
+        [accounts, clientId, sealSecret(secret), sealSecret(t.refresh_token!)]));
+      return { ok: true, expires_in: t.expires_in ?? null };
     } catch (err) {
       return refusal(err);
     }

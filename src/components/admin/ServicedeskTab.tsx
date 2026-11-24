@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Copy, Plug, Plus, RefreshCw, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
-  fetchServicedeskNow, loadServicedesk, retryServicedeskEvent, saveServicedesk, simulateServicedeskTicket, testServicedesk,
+  connectServicedeskCloud, fetchServicedeskNow, loadServicedesk, retryServicedeskEvent, saveServicedesk, simulateServicedeskTicket, testServicedesk,
   type FormMapRow, type ServicedeskEvent, type ServicedeskSettings,
 } from "@/lib/servicedesk-fn";
 import { Button, Card, Field, Notice, Pill, fmtWhen, inputStyle } from "@/components/admin/kit";
@@ -23,7 +23,23 @@ const KIND: Record<string, string> = {
   note: "Note on the ticket", resolution: "Resolution", close: "Ticket closed",
 };
 
-type Draft = Omit<ServicedeskSettings, "inbound_url" | "inbound_secret" | "last_poll_at" | "last_poll_result" | "has_token"> & { token: string };
+type Draft = {
+  enabled: boolean; base_url: string; token: string; allow_self_signed: boolean; default_form: string | null;
+  form_map: FormMapRow[]; approved_closure: string; rejected_closure: string;
+};
+
+// ServiceDesk Plus Cloud, by data centre: where its portals are, and the
+// Zoho accounts server that signs in for it.
+const CLOUD = [
+  { dc: "US", api: "https://sdpondemand.manageengine.com", accounts: "https://accounts.zoho.com" },
+  { dc: "India", api: "https://sdpondemand.manageengine.in", accounts: "https://accounts.zoho.in" },
+  { dc: "EU", api: "https://sdpondemand.manageengine.eu", accounts: "https://accounts.zoho.eu" },
+  { dc: "Australia", api: "https://servicedeskplus.net.au", accounts: "https://accounts.zoho.com.au" },
+  { dc: "Japan", api: "https://servicedeskplus.jp", accounts: "https://accounts.zoho.jp" },
+  { dc: "Canada", api: "https://servicedeskplus.ca", accounts: "https://accounts.zohocloud.ca" },
+  { dc: "Saudi Arabia", api: "https://servicedeskplus.sa", accounts: "https://accounts.zoho.sa" },
+  { dc: "UK", api: "https://servicedeskplus.uk", accounts: "https://accounts.zoho.uk" },
+];
 
 export function ServicedeskTab() {
   const [settings, setSettings] = useState<ServicedeskSettings | null>(null);
@@ -34,24 +50,45 @@ export function ServicedeskTab() {
   const [busy, setBusy] = useState("");
   const [test, setTest] = useState<{ connected: boolean; message: string; ms: number | null; tickets: number | null } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [where, setWhere] = useState<"onprem" | "cloud">("onprem");
+  const [cloud, setCloud] = useState({ dc: "US", portal: "", client_id: "", client_secret: "", code: "" });
 
   const load = useCallback(async () => {
     const r = await loadServicedesk();
     if (!r.ok) return void toast.error(r.error);
     setSettings(r.settings); setEvents(r.events); setForms(r.forms); setCanManage(r.canManage);
-    setDraft((d) => d ?? {
-      enabled: r.settings.enabled, base_url: r.settings.base_url ?? "", token: "", allow_self_signed: r.settings.allow_self_signed,
-      default_form: r.settings.default_form, form_map: r.settings.form_map, approved_closure: r.settings.approved_closure,
-      rejected_closure: r.settings.rejected_closure,
+    setDraft((d) => {
+      if (d) return d;
+      // A cloud link, or an address that is a cloud portal, opens on the cloud.
+      const c = CLOUD.find((x) => (r.settings.base_url ?? "").startsWith(x.api + "/app/") || x.accounts === r.settings.oauth_accounts_url);
+      if (r.settings.auth_mode === "oauth" || c) {
+        setWhere("cloud");
+        setCloud((v) => ({
+          ...v, dc: c?.dc ?? v.dc, client_id: r.settings.oauth_client_id ?? "",
+          portal: /\/app\/([^/]+)/.exec(r.settings.base_url ?? "")?.[1] ?? "",
+        }));
+      }
+      return {
+        enabled: r.settings.enabled, base_url: r.settings.base_url ?? "", token: "", allow_self_signed: r.settings.allow_self_signed,
+        default_form: r.settings.default_form, form_map: r.settings.form_map, approved_closure: r.settings.approved_closure,
+        rejected_closure: r.settings.rejected_closure,
+      };
     });
   }, []);
   useEffect(() => { void load(); }, [load]);
 
   if (!settings || !draft) return <div style={{ marginTop: 14, color: MUTED, fontSize: 13 }}>Loading…</div>;
 
+  const dc = CLOUD.find((x) => x.dc === cloud.dc) ?? CLOUD[0];
+  const cloudUrl = cloud.portal.trim() ? `${dc.api}/app/${cloud.portal.trim()}` : "";
+  const address = where === "cloud" ? cloudUrl : draft.base_url;
+
   const save = async (rotate = false) => {
     setBusy(rotate ? "rotate" : "save");
-    const r = await saveServicedesk({ data: { ...draft, base_url: draft.base_url ?? "", token: draft.token || null, rotate_secret: rotate } });
+    const r = await saveServicedesk({ data: {
+      ...draft, base_url: address, token: where === "onprem" ? draft.token || null : null,
+      allow_self_signed: where === "onprem" && draft.allow_self_signed, rotate_secret: rotate,
+    } });
     setBusy("");
     if (!r.ok) return void toast.error(r.error);
     toast.success(rotate ? "New secret — give it to ServiceDesk's webhook" : "Saved");
@@ -60,10 +97,24 @@ export function ServicedeskTab() {
   };
   const runTest = async () => {
     setBusy("test");
-    const r = await testServicedesk({ data: { base_url: draft.base_url ?? "", token: draft.token || null, allow_self_signed: draft.allow_self_signed } });
+    const r = await testServicedesk({ data: { base_url: address, token: where === "onprem" ? draft.token || null : null, allow_self_signed: where === "onprem" && draft.allow_self_signed } });
     setBusy("");
     if (!r.ok) return void toast.error(r.error);
     setTest(r);
+  };
+  // Cloud: the address first, then the code swapped for a refresh token.
+  const signIn = async () => {
+    if (!cloudUrl) return void toast.error("Give the portal's name first.");
+    setBusy("signin");
+    const saved = await saveServicedesk({ data: { ...draft, enabled: false, base_url: cloudUrl, token: null, allow_self_signed: false } });
+    if (!saved.ok) { setBusy(""); return void toast.error(saved.error); }
+    const r = await connectServicedeskCloud({ data: { accounts_url: dc.accounts, client_id: cloud.client_id, client_secret: cloud.client_secret, code: cloud.code } });
+    setBusy("");
+    if (!r.ok) return void toast.error(r.error);
+    toast.success("Signed in with Zoho. Test the connection, then switch it on.");
+    setCloud({ ...cloud, client_secret: "", code: "" });
+    setDraft({ ...draft, base_url: cloudUrl, enabled: false });
+    await load();
   };
   const fetchNow = async () => {
     setBusy("fetch");
@@ -103,19 +154,60 @@ export function ServicedeskTab() {
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
         <Card title="Connection" style={{ marginBottom: 0 }}>
           <div className="flex flex-col gap-3">
-            <Field label="ServiceDesk's address" hint="As technicians open it, without a path — e.g. https://servicedesk.bkash.local:8080">
-              <input aria-label="ServiceDesk address" style={inputStyle} value={draft.base_url ?? ""} disabled={!canManage}
-                onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} placeholder="https://servicedesk.example.com:8080" />
-            </Field>
-            <Field label="Technician API key" hint={<>In ServiceDesk: your profile → <em>Generate API Key</em>, for a technician who may add notes and close requests. {settings.has_token ? "One is stored; type a new one to replace it." : ""}</>}>
-              <input aria-label="Technician API key" type="password" autoComplete="off" style={inputStyle} value={draft.token} disabled={!canManage}
-                onChange={(e) => setDraft({ ...draft, token: e.target.value })} placeholder={settings.has_token ? "•••••••• stored, sealed" : "6F2A…"} />
-            </Field>
-            <label className="flex items-center gap-2" style={{ fontSize: 12.5, color: "#3F3F46" }}>
-              <input type="checkbox" aria-label="Allow a self-signed certificate" checked={draft.allow_self_signed} disabled={!canManage}
-                onChange={(e) => setDraft({ ...draft, allow_self_signed: e.target.checked })} />
-              Allow a self-signed certificate — an on-premises server usually has one
-            </label>
+            <div className="inline-flex rounded-md" style={{ border: "1px solid #E4E4E7", overflow: "hidden", alignSelf: "flex-start" }} role="radiogroup" aria-label="Where ServiceDesk runs">
+              {([["onprem", "On premises"], ["cloud", "Cloud (sdpondemand)"]] as const).map(([k, label]) => (
+                <button key={k} type="button" role="radio" aria-checked={where === k} disabled={!canManage} onClick={() => setWhere(k)}
+                  style={{ padding: "6px 12px", fontSize: 12.5, border: 0, cursor: "pointer", background: where === k ? "#18181B" : "#fff", color: where === k ? "#fff" : "#3F3F46" }}>{label}</button>
+              ))}
+            </div>
+            {where === "onprem" ? (
+              <>
+                <Field label="ServiceDesk's address" hint="As technicians open it, without a path — e.g. https://servicedesk.bkash.local:8080">
+                  <input aria-label="ServiceDesk address" style={inputStyle} value={draft.base_url ?? ""} disabled={!canManage}
+                    onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} placeholder="https://servicedesk.example.com:8080" />
+                </Field>
+                <Field label="Technician API key" hint={<>In ServiceDesk: your profile → <em>Generate API Key</em>, for a technician who may add notes and close requests. {settings.has_token ? "One is stored; type a new one to replace it." : ""}</>}>
+                  <input aria-label="Technician API key" type="password" autoComplete="off" style={inputStyle} value={draft.token} disabled={!canManage}
+                    onChange={(e) => setDraft({ ...draft, token: e.target.value })} placeholder={settings.has_token ? "•••••••• stored, sealed" : "6F2A…"} />
+                </Field>
+                <label className="flex items-center gap-2" style={{ fontSize: 12.5, color: "#3F3F46" }}>
+                  <input type="checkbox" aria-label="Allow a self-signed certificate" checked={draft.allow_self_signed} disabled={!canManage}
+                    onChange={(e) => setDraft({ ...draft, allow_self_signed: e.target.checked })} />
+                  Allow a self-signed certificate — an on-premises server usually has one
+                </label>
+              </>
+            ) : (
+              <div className="flex flex-col gap-3" data-testid="servicedesk-cloud">
+                <div className="grid gap-3" style={{ gridTemplateColumns: "140px 1fr" }}>
+                  <Field label="Data centre">
+                    <select aria-label="Data centre" style={inputStyle} value={cloud.dc} disabled={!canManage} onChange={(e) => setCloud({ ...cloud, dc: e.target.value })}>
+                      {CLOUD.map((c) => <option key={c.dc} value={c.dc}>{c.dc}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Portal" hint={<>The name in the portal's address — ESM Directory → Service Desk Instances. Calls go to <code style={mono}>{cloudUrl || `${dc.api}/app/…`}</code></>}>
+                    <input aria-label="Portal name" style={inputStyle} value={cloud.portal} disabled={!canManage} onChange={(e) => setCloud({ ...cloud, portal: e.target.value.replace(/[^A-Za-z0-9._-]/g, "") })} placeholder="itdesk" />
+                  </Field>
+                </div>
+                <div className="rounded-lg" style={{ background: "#FAFAFA", border: "1px solid #F4F4F5", padding: "10px 12px", fontSize: 12.5, color: "#3F3F46", lineHeight: 1.55 }}>
+                  {settings.oauth_signed_in
+                    ? <div className="flex items-center gap-2" style={{ color: "#14532D" }}><CheckCircle2 size={14} /> Signed in through {settings.oauth_accounts_url?.replace("https://", "")} as client {settings.oauth_client_id}. Sign in again below to replace it.</div>
+                    : <div>Sign in once, with a <strong>Self Client</strong>:</div>}
+                  <ol style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                    <li>Open <a href={dc.accounts.replace("accounts.", "api-console.")} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>{dc.accounts.replace("https://accounts.", "api-console.")}</a> → <em>Get started</em> → <strong>Self Client</strong> → Create. Copy the client id and secret.</li>
+                    <li><em>Generate Code</em>: scope <code style={mono}>SDPOnDemand.requests.ALL</code>, 10 minutes, any description; choose the ServiceDesk portal if asked.</li>
+                    <li>Paste the code here and sign in — within those minutes. The code is swapped for a refresh token, kept sealed.</li>
+                  </ol>
+                </div>
+                <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  <Field label="Client id"><input aria-label="Zoho client id" style={inputStyle} value={cloud.client_id} disabled={!canManage} onChange={(e) => setCloud({ ...cloud, client_id: e.target.value.trim() })} placeholder="1000.XXXX…" /></Field>
+                  <Field label="Client secret"><input aria-label="Zoho client secret" type="password" autoComplete="off" style={inputStyle} value={cloud.client_secret} disabled={!canManage} onChange={(e) => setCloud({ ...cloud, client_secret: e.target.value.trim() })} /></Field>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div style={{ flex: 1 }}><Field label="Generated code"><input aria-label="Zoho code" style={inputStyle} value={cloud.code} disabled={!canManage} onChange={(e) => setCloud({ ...cloud, code: e.target.value.trim() })} placeholder="1000.xxxx.yyyy" /></Field></div>
+                  {canManage && <Button tone="brand" busy={busy === "signin"} disabled={!cloud.portal || !cloud.client_id || !cloud.client_secret || !cloud.code} onClick={() => void signIn()} name="zoho-sign-in">Sign in with Zoho</Button>}
+                </div>
+              </div>
+            )}
             <label className="flex items-center gap-2" style={{ fontSize: 13, color: "#3F3F46" }}>
               <Switch checked={draft.enabled} disabled={!canManage} onCheckedChange={(v) => setDraft({ ...draft, enabled: v })} aria-label="Connected" />
               Connected — fetch new tickets and write back to them
