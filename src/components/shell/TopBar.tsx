@@ -339,12 +339,11 @@ function NotificationsDropdown({
 }
 
 // ---------------------------------------------------------------------
-// Who is signed in, how long the evaluation has left, and the way out.
+// Who is signed in, and the way out.
 //
-// The countdown is here rather than tucked away because an evaluation
-// that expires without warning reads as something breaking. Under a
-// week it turns amber, which is the point at which somebody should be
-// asking for an extension rather than discovering the problem.
+// No countdown to the evaluation's end: an organisation should see its
+// own system, not a trial among others. How long each has left is on
+// the staff console (/staff), where somebody can act on it.
 // ---------------------------------------------------------------------
 function AccountMenu() {
   // The root route already holds the session; asking again here showed a
@@ -353,7 +352,6 @@ function AccountMenu() {
   const [leaving, setLeaving] = useState(false);
 
   if (!session) return null;
-  const soon = session.daysLeft !== null && session.daysLeft <= 7;
 
   return (
     <div className="flex items-center gap-2.5">
@@ -375,13 +373,6 @@ function AccountMenu() {
       )}
       <div className="text-right" style={{ lineHeight: 1.25 }}>
         <div className="text-[12px] font-medium text-zinc-900">{session.username}</div>
-        {session.daysLeft !== null && (
-          <div style={{ fontSize: 10.5, color: soon ? "#B45309" : "var(--color-zinc-400)" }}>
-            {session.daysLeft === 0
-              ? "expires today"
-              : `${session.daysLeft} day${session.daysLeft === 1 ? "" : "s"} left`}
-          </div>
-        )}
       </div>
       <button
         onClick={async () => {
