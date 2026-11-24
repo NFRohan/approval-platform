@@ -21,7 +21,10 @@
 // code "mock-code" (client "mock-client", secret "mock-secret") for a
 // refresh token, and a refresh token for an access token, which the API
 // then takes as "Authorization: Zoho-oauthtoken <token>". Portal paths
-// (/app/<portal>/api/v3/...) are answered as the plain ones.
+// (/app/<portal>/api/v3/...) are answered as the cloud answers them: a
+// note is {request_note: ...} (a {note: ...} is EXTRA_KEY_FOUND_IN_JSON),
+// there is no /resolutions or /close, and the resolution, status and
+// closure are set on the request itself with PUT /requests/{id}.
 // Imported by the tests as startMock().
 // =====================================================================
 
@@ -80,7 +83,8 @@ export function startMock({ port = 0, key = process.env.MOCK_SDP_KEY || 'mock-te
       }
       return ok(res, { error: 'unsupported_grant_type' });
     }
-    // A cloud portal's path, answered as the plain one.
+    // A cloud portal's path: the same API, in the cloud's shapes.
+    const cloud = /^\/app\/[^/]+\/api\//.test(url.pathname);
     url.pathname = url.pathname.replace(/^\/app\/[^/]+(?=\/api\/)/, '');
     if (req.method === 'POST' && url.pathname === '/mock/tickets') {
       return ok(res, { request: brief(add(JSON.parse(raw || '{}'))) });
@@ -110,10 +114,22 @@ export function startMock({ port = 0, key = process.env.MOCK_SDP_KEY || 'mock-te
     const t = store.get(id);
     if (!t) return fail(res, 404, 4007, 'Request not found');
     if (!sub && req.method === 'GET') { const { notes, resolution, closure_info, ...full } = t; return ok(res, { request: full, response_status: success('fetched') }); }
+    const extraKey = (field) => ok(res, { response_status: { status_code: 4000, status: 'failed', messages: [{ status_code: 4001, field, type: 'failed', message: 'EXTRA_KEY_FOUND_IN_JSON' }] } }, 400);
     if (sub === 'notes' && req.method === 'POST') {
-      const note = { id: String(t.notes.length + 1), ...(input?.note ?? {}), added_time: { value: String(Date.now()) } };
+      const want = cloud ? 'request_note' : 'note';
+      const extra = Object.keys(input ?? {}).find((k) => k !== want);
+      if (extra) return extraKey(extra);
+      const note = { id: String(t.notes.length + 1), ...(input?.[want] ?? {}), added_time: { value: String(Date.now()) } };
       t.notes.push(note);
-      return ok(res, { note, response_status: { status: 'success', statuscode: '2000' } });
+      return ok(res, { [want]: note, response_status: { status: 'success', statuscode: '2000' } });
+    }
+    if (cloud && (sub === 'resolutions' || sub === 'close')) return fail(res, 404, 4007, 'Invalid URL');
+    if (!sub && req.method === 'PUT') {
+      const r = input?.request ?? {};
+      if (r.resolution) { t.resolution = r.resolution; t.status = { name: 'Resolved' }; }
+      if (r.closure_info) t.closure_info = r.closure_info;
+      if (r.status?.name) t.status = { name: r.status.name };
+      return ok(res, { request: brief(t), response_status: success('Request updated successfully') });
     }
     if (sub === 'resolutions' && req.method === 'POST') {
       t.resolution = input?.resolution ?? null;

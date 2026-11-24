@@ -203,6 +203,23 @@ console.log(NL + 'integration' + NL);
   mock.expireAccessTokens();
   r = await sd.sdpCall(cloud, 'GET', '/api/v3/requests', { list_info: { row_count: 1 } });
   check('...and renewed when ServiceDesk stops taking it', [sd.sdpOk(r).ok, mock.oauth.refreshes], [true, 2]);
+  // The cloud's shapes: each write-back as the cloud documents it, and
+  // the on-premises shape if refused.
+  const tryAll = async (link, kind, payload) => {
+    for (const a of sd.attemptsFor(kind, '7001', payload, link.auth_mode === 'oauth')) {
+      const res = await sd.sdpCall(link, a.method, a.path, a.input);
+      if (sd.sdpOk(res).ok) return a.label;
+    }
+    return null;
+  };
+  mock.add({ id: '7001', subject: 'again', requester_email: 'tom.bexley@example.com' });
+  check('a cloud note goes as request_note', await tryAll(cloud, 'note', { note: { description: 'Approved by Sam', show_to_requester: true } }), 'request_note');
+  check('...an on-premises one as note', await tryAll({ ...link }, 'note', { note: { description: 'x' } }), 'note');
+  check('a cloud resolution is set on the request', await tryAll(cloud, 'resolution', { resolution: { content: 'Approved by: Sam' } }), 'request.resolution');
+  check('a cloud ticket is closed by its status, with the closure details',
+    [await tryAll(cloud, 'close', { request: { closure_info: { closure_code: { name: 'Success' }, closure_comments: 'ok' } } }),
+     mock.store.get('7001').status.name, mock.store.get('7001').closure_info?.closure_code?.name],
+    ['status Closed', 'Closed', 'Success']);
   check('the client secret is sent to Zoho\'s accounts servers only',
     ['https://accounts.zoho.in', 'https://accounts.zohocloud.ca', 'https://accounts.zoho.in.evil.test', 'http://accounts.zoho.com'].map((u) => sd.ZOHO_ACCOUNTS.test(u)),
     [true, true, false, false]);

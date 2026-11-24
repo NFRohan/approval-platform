@@ -341,17 +341,21 @@ export async function drainServicedesk(opts: { tenantId?: string | null; only?: 
         out.skipped++;
         continue;
       }
-      const path = `/api/v3/requests/${encodeURIComponent(e.ticket_id)}`
-        + (e.kind === 'note' ? '/notes' : e.kind === 'resolution' ? '/resolutions' : e.kind === 'close' ? '/close' : '');
-      const method = e.kind === 'close' ? 'PUT' : 'POST';
       let status: number | null = null, body = '', error: string | null = null;
-      try {
-        const r = await sdpCall(link, method, path, e.payload);
-        status = r.status; body = r.body;
-        const ok = sdpOk(r);
-        if (!ok.ok) error = ok.message;
-      } catch (err) {
-        error = err instanceof Error ? err.message : String(err);
+      // The forms this edition documents first; the other's if refused.
+      for (const a of attemptsFor(e.kind, e.ticket_id, e.payload, link.auth_mode === 'oauth')) {
+        try {
+          const r = await sdpCall(link, a.method, a.path, a.input);
+          status = r.status; body = r.body;
+          const ok = sdpOk(r);
+          error = ok.ok ? null : ok.message;
+          if (ok.ok) { body = `[${a.label}] ${body}`; break; }
+          // Signing in or the server failing is not a question of shape.
+          if (r.status === 401 || r.status >= 500) break;
+        } catch (err) {
+          error = err instanceof Error ? err.message : String(err);
+          break;
+        }
       }
       if (!error) {
         await pool.query(`update public.servicedesk_events set status = 'sent', http_status = $2, response = $3, error = null, done_at = now() where id = $1`,
@@ -370,6 +374,49 @@ export async function drainServicedesk(opts: { tenantId?: string | null; only?: 
     if (opts.only) break;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------
+// The two editions take the same things in different shapes:
+//
+//   note        on premises {note: …} at /notes; the cloud {request_note: …}
+//   resolution  on premises {resolution: …} at /resolutions; the cloud on
+//               the request itself, {request: {resolution: …}}
+//   close       on premises PUT /close with closure_info; the cloud's
+//               documentation has no close call, so the request's status
+//               is set to Closed with the closure details on it
+//
+// Each is tried in the order the edition documents, and the other's
+// shape if it is refused for its shape.
+// ---------------------------------------------------------------------
+type Attempt = { label: string; method: 'POST' | 'PUT'; path: string; input: unknown };
+
+export function attemptsFor(kind: string, ticket: string, payload: Record<string, unknown>, cloud: boolean): Attempt[] {
+  const base = `/api/v3/requests/${encodeURIComponent(ticket)}`;
+  if (kind === 'note') {
+    const note = (payload.note ?? payload.request_note) as Record<string, unknown>;
+    const onprem: Attempt = { label: 'note', method: 'POST', path: `${base}/notes`, input: { note } };
+    const inCloud: Attempt = { label: 'request_note', method: 'POST', path: `${base}/notes`, input: { request_note: note } };
+    return cloud ? [inCloud, onprem] : [onprem, inCloud];
+  }
+  if (kind === 'resolution') {
+    const resolution = payload.resolution as Record<string, unknown>;
+    const onprem: Attempt = { label: 'resolutions', method: 'POST', path: `${base}/resolutions`, input: { resolution } };
+    const inCloud: Attempt = { label: 'request.resolution', method: 'PUT', path: base, input: { request: { resolution } } };
+    return cloud ? [inCloud, onprem] : [onprem, inCloud];
+  }
+  if (kind === 'close') {
+    const info = ((payload.request as Record<string, unknown> | undefined)?.closure_info ?? {}) as Record<string, unknown>;
+    const viaClose: Attempt = { label: 'close', method: 'PUT', path: `${base}/close`, input: { request: { closure_info: info } } };
+    const viaStatus: Attempt = {
+      label: 'status Closed', method: 'PUT', path: base,
+      input: { request: { status: { name: 'Closed' }, closure_info: info } },
+    };
+    // Closed with its status alone, if the closure details are what is refused.
+    const bare: Attempt = { label: 'status Closed only', method: 'PUT', path: base, input: { request: { status: { name: 'Closed' } } } };
+    return cloud ? [viaClose, viaStatus, bare] : [viaClose, viaStatus];
+  }
+  return [];
 }
 
 /** After a write: send what it queued for ServiceDesk, if anything is due. */
