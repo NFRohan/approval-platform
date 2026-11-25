@@ -55,7 +55,7 @@ export const Route = createRootRoute({
       { name: "application-name", content: "Approvals" },
       { title: "Admin Services Portal" },
       { name: "description", content: "Internal services portal for administrative requests and approvals" },
-      { name: "author", content: "the organisation" },
+      { name: "author", content: "Admin Services Portal" },
       { property: "og:title", content: "Admin Services Portal" },
       { property: "og:description", content: "Internal services portal for administrative requests and approvals" },
       { property: "og:type", content: "website" },

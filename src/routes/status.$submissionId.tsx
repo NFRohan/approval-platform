@@ -163,6 +163,8 @@ function deriveOverallStatus(rows: ApprovalRow[]): StatusKey {
 
 function StatusPage() {
   const { submissionId } = Route.useParams();
+  // A clearance — departments ticking their checklists — earns a certificate.
+  const [isClearance, setIsClearance] = useState(false);
   const { currentUser, can } = useCurrentUser();
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [form, setForm] = useState<FormRow | null>(null);
@@ -332,6 +334,13 @@ function StatusPage() {
       db.removeChannel(channel);
     };
   }, [submissionId, loadAll]);
+
+  useEffect(() => {
+    const form = submission?.form_template_id;
+    if (!form) return;
+    void db.from("checklist_items").select("id", { count: "exact", head: true }).eq("form_template_id", form)
+      .then(({ count }) => setIsClearance((count ?? 0) > 0));
+  }, [submission?.form_template_id]);
 
   if (loading) {
     return (
@@ -678,8 +687,11 @@ function StatusPage() {
         </Link>
       )}
 
-      {/* Clearance Certificate banner */}
-      {overall === "completed" && (
+      {/* Done. A clearance (a form whose departments tick checklists) ends
+          in a clearance certificate; any other request in its approval
+          record — the "PDF copy of the approved request" the scope asks
+          for, which is also emailed to the requester. */}
+      {overall === "completed" && (isClearance ? (
         <Link
           to="/certificate/$submissionId"
           params={{ submissionId }}
@@ -688,12 +700,25 @@ function StatusPage() {
         >
           <Award size={20} style={{ color: "#16A34A", flexShrink: 0 }} />
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-[14px]" style={{ color: "#15803D" }}>All approvals complete</div>
-            <div className="text-[12px]" style={{ color: "#16A34A" }}>Your company clearance certificate is ready — click to view & download</div>
+            <div className="font-semibold text-[14px]" style={{ color: "#15803D" }}>Clearance complete</div>
+            <div className="text-[12px]" style={{ color: "#16A34A" }}>Every department has cleared it — the clearance certificate is ready to view and print</div>
           </div>
-          <span className="text-[13px] font-medium shrink-0" style={{ color: "#15803D" }}>View Certificate →</span>
+          <span className="text-[13px] font-medium shrink-0" style={{ color: "#15803D" }}>View certificate →</span>
         </Link>
-      )}
+      ) : (
+        <a
+          href={`/records/${submissionId}`}
+          className="flex items-center gap-3 rounded-xl mb-6"
+          style={{ padding: "16px 20px", background: "#F0FDF4", border: "1px solid #86EFAC", textDecoration: "none" }}
+        >
+          <Award size={20} style={{ color: "#16A34A", flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[14px]" style={{ color: "#15803D" }}>All approvals complete</div>
+            <div className="text-[12px]" style={{ color: "#16A34A" }}>The approval record — who approved it and when — is ready, and was emailed to the requester</div>
+          </div>
+          <span className="text-[13px] font-medium shrink-0" style={{ color: "#15803D" }}>Approval record (PDF) →</span>
+        </a>
+      ))}
 
       {/* A draft is finished on the form, not here */}
       {submission.status === "draft" && isRequester && submission.form_template_id && (

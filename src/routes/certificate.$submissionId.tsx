@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Printer, ArrowLeft } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { db } from "@/lib/db";
+import { organisationName } from "@/lib/org-fn";
 import { fmtDate as fmtDateLib } from "@/lib/dates";
 
 export const Route = createFileRoute("/certificate/$submissionId")({
@@ -54,10 +55,13 @@ function CertificatePage() {
   const [employees, setEmployees] = useState<Record<string, EmployeeRow>>({});
   const [department, setDepartment] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [org, setOrg] = useState("");
+  // Only a clearance — departments ticking checklists — has a certificate.
+  const [isClearance, setIsClearance] = useState(true);
 
   const [refNumber, setRefNumber] = useState<string | null>(null);
   const refCode = refNumber ?? `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
-  const verifyUrl = `${window.location.origin}/status/${submissionId}`;
+  const verifyUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/status/${submissionId}`;
 
   const load = useCallback(async () => {
     const { data: sub } = await db
@@ -74,7 +78,10 @@ function CertificatePage() {
         .eq("id", sub.form_template_id)
         .maybeSingle();
       if (tpl?.name) setFormName(tpl.name);
+      const { count } = await db.from("checklist_items").select("id", { count: "exact", head: true }).eq("form_template_id", sub.form_template_id);
+      setIsClearance((count ?? 0) > 0);
     }
+    void organisationName().then(setOrg).catch(() => setOrg("Admin Services Portal"));
     setSubmittedAt(sub?.submitted_at ?? null);
 
     if (sub?.submitted_by) {
@@ -129,6 +136,23 @@ function CertificatePage() {
     );
   }
 
+  if (!isClearance) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ padding: 24 }}>
+        <div className="text-center" style={{ maxWidth: 420 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#18181B" }}>No clearance certificate for this request</div>
+          <p style={{ fontSize: 13.5, color: "#71717A", lineHeight: 1.55 }}>
+            A certificate is issued when every department has cleared a leaver. {formName || "This request"} ends in its approval record instead.
+          </p>
+          <div className="flex gap-3 justify-center mt-4">
+            <a href={`/records/${submissionId}`} className="rounded-md text-white text-sm font-medium" style={{ padding: "8px 14px", background: "var(--color-brand-500)" }}>Approval record (PDF)</a>
+            <Link to="/status/$submissionId" params={{ submissionId }} className="rounded-md text-sm font-medium" style={{ padding: "8px 14px", border: "1px solid #E4E4E7", color: "#3F3F46" }}>Back to the request</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* Controls — hidden when printing */}
@@ -162,13 +186,13 @@ function CertificatePage() {
           <div style={{ background: "#4F46E5", padding: "28px 40px 24px" }}>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-white font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>the organisation</div>
+                <div className="text-white font-bold" style={{ fontSize: 22, letterSpacing: "-0.01em" }}>{org || "\u00a0"}</div>
                 <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, marginTop: 2 }}>Internal Approval Management System</div>
               </div>
               {/* brand mark */}
+              {/* The portal's own mark: a check, for sign-off. */}
               <svg width={44} height={44} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 10, background: "rgba(255,255,255,0.15)" }}>
-                <path fill="white" d="M18 8 L30 8 L30 58.8 A22 22 0 1 1 30 77.2 L30 92 L18 92 Z"/>
-                <circle cx="50" cy="68" r="11" fill="#4F46E5"/>
+                <path d="M28 52 L44 68 L74 32" fill="none" stroke="#fff" strokeWidth={11} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
           </div>

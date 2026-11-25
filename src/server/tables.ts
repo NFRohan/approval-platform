@@ -282,6 +282,13 @@ export const TABLES: Record<string, TableDef> = {
     [],
     [],
   ),
+  // Read only: set through save_checklist. Read to tell a clearance
+  // (a form whose departments tick checklists) from any other form.
+  checklist_items: T(
+    ['id', 'form_template_id', 'track', 'item', 'position', 'active'],
+    [],
+    [],
+  ),
   // Read only: kept through save_tracker / delete_tracker and
   // set_tracker_reminder, which check who may.
   trackers: T(
