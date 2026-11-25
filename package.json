@@ -25,7 +25,8 @@
     "db:test:local": "node scripts/db-test-local.mjs",
     "test:journey": "node --env-file=.env scripts/journey-test.mjs",
     "test:perf": "node scripts/perf-test.mjs",
-    "qa": "node scripts/qa.mjs"
+    "qa": "node tests/qa.mjs",
+    "qa:legacy": "node scripts/qa.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
@@ -95,6 +96,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.16",
+    "@electric-sql/pglite-socket": "^0.0.22",
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "^1.4.0",
     "@types/node": "^22.16.5",

@@ -80,8 +80,16 @@ export function CurrentUserProvider({ session, children }: { session: PublicSess
     const result = await switchPersona({ data: { employeeId: u.employee_id } });
     if (!result.ok) return { ok: false, error: result.error };
     // The root's beforeLoad holds the session; asking again refreshes
-    // every screen with the new persona.
-    await router.invalidate();
+    // every screen with the new persona. If the address still says
+    // ?as=somebody, asking again would switch straight back to them, so
+    // the address loses it first.
+    const search = router.state.location.search as Record<string, unknown>;
+    if (search && "as" in search && search.as !== undefined) {
+      const { as: _dropped, ...rest } = search;
+      await router.navigate({ to: router.state.location.pathname, search: rest as never, replace: true });
+    } else {
+      await router.invalidate();
+    }
     return { ok: true };
   }, [router]);
 

@@ -28,6 +28,9 @@ export function RoleSwitcher() {
   const navigate = useNavigate();
   const [people, setPeople] = useState<Persona[] | null>(null);
   const [filter, setFilter] = useState("");
+  // Pick a department, then somebody in it: with twenty-odd people the
+  // list alone is a lot to read through.
+  const [dept, setDept] = useState("");
 
   const canSwitch = session?.canSwitch === true;
 
@@ -35,15 +38,31 @@ export function RoleSwitcher() {
     if (canSwitch && people === null) void listPersonas().then(setPeople);
   }, [canSwitch, people]);
 
-  // The demonstration's cast first, in its own order; everybody else after.
-  const ordered = useMemo(() => {
-    const all = people ?? users.map((u) => ({ ...u, department: null, roles: [] as string[] }));
+  const all = useMemo(() => people ?? users.map((u) => ({ ...u, department: null, roles: [] as string[] })), [people, users]);
+  const departments = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const p of all) n.set(p.department ?? "Other", (n.get(p.department ?? "Other") ?? 0) + 1);
+    return [...n.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [all]);
+
+  // Grouped by department, each in the demonstration's own order, then by name.
+  const groups = useMemo(() => {
     const rank = new Map(users.map((u, i) => [u.employee_id, i]));
     const q = filter.trim().toLowerCase();
-    return [...all]
-      .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.designation ?? "").toLowerCase().includes(q) || p.employee_id.toLowerCase().includes(q))
-      .sort((a, b) => (rank.get(a.employee_id) ?? 999) - (rank.get(b.employee_id) ?? 999) || a.name.localeCompare(b.name));
-  }, [people, users, filter]);
+    const shown = [...all]
+      .filter((p) => !dept || (p.department ?? "Other") === dept)
+      .filter((p) => !q || p.name.toLowerCase().includes(q) || (p.designation ?? "").toLowerCase().includes(q)
+        || p.employee_id.toLowerCase().includes(q) || (p.department ?? "").toLowerCase().includes(q))
+      .sort((a, b) => (a.department ?? "Other").localeCompare(b.department ?? "Other")
+        || (rank.get(a.employee_id) ?? 999) - (rank.get(b.employee_id) ?? 999) || a.name.localeCompare(b.name));
+    const out: { department: string; people: typeof shown }[] = [];
+    for (const p of shown) {
+      const d = p.department ?? "Other";
+      if (out.at(-1)?.department !== d) out.push({ department: d, people: [] });
+      out.at(-1)!.people.push(p);
+    }
+    return out;
+  }, [all, users, filter, dept]);
 
   const face = (
     <>
@@ -84,9 +103,19 @@ export function RoleSwitcher() {
         <DropdownMenuLabel className="text-[10.5px] uppercase tracking-wider text-zinc-500 font-semibold">
           Act as
         </DropdownMenuLabel>
-        <div style={{ padding: "2px 8px 6px" }} onKeyDown={(e) => e.stopPropagation()}>
+        <div className="flex flex-col gap-1.5" style={{ padding: "2px 8px 6px" }} onKeyDown={(e) => e.stopPropagation()}>
+          <select
+            aria-label="Department"
+            value={dept}
+            onChange={(e) => setDept(e.target.value)}
+            style={{ width: "100%", padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6, background: "#fff", color: "#18181B" }}
+          >
+            <option value="">All departments ({all.length})</option>
+            {departments.map(([d, n]) => <option key={d} value={d}>{d} ({n})</option>)}
+          </select>
           <input
             placeholder="Find somebody"
+            aria-label="Find somebody"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             style={{ width: "100%", padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
@@ -94,7 +123,17 @@ export function RoleSwitcher() {
         </div>
         <DropdownMenuSeparator />
         <div style={{ maxHeight: 380, overflowY: "auto" }}>
-          {ordered.map((u) => {
+          {groups.length === 0 && (
+            <div style={{ padding: "10px 12px", fontSize: 12.5, color: "#A1A1AA" }}>Nobody matches.</div>
+          )}
+          {groups.map((g) => (
+            <div key={g.department} role="group" aria-label={g.department}>
+              {!dept && (
+                <div className="text-[10.5px] uppercase tracking-wider font-semibold text-zinc-400" style={{ padding: "8px 10px 2px" }}>
+                  {g.department}
+                </div>
+              )}
+          {g.people.map((u) => {
             const active = u.employee_id === currentUser.employee_id;
             return (
               <DropdownMenuItem
@@ -102,7 +141,8 @@ export function RoleSwitcher() {
                 onSelect={async () => {
                   const r = await setCurrentUser(u);
                   if (!r.ok) { toast.error(r.error ?? "Could not switch."); return; }
-                  void navigate({ to: "/" });
+                  // Drop any ?as= in the address, or it would switch straight back.
+                  void navigate({ to: "/", search: {} });
                 }}
                 className="flex items-center gap-3 py-2 cursor-pointer"
               >
@@ -118,6 +158,8 @@ export function RoleSwitcher() {
               </DropdownMenuItem>
             );
           })}
+            </div>
+          ))}
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void navigate({ to: "/account" })} className="flex items-center gap-2 cursor-pointer">

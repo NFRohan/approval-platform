@@ -47,3 +47,9 @@ supabase/.temp/
 .env*
 
 qa-artifacts/
+
+# QA: generated walk runs, their screenshots, the report
+tests/walks/*.run.mjs
+tests/walks/*.png
+tests/qa-report/
+tests/sweep/
