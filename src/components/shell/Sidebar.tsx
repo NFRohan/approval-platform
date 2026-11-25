@@ -57,7 +57,6 @@ type Section = { section: string; items: Item[] };
 const DASHBOARD: Item = { id: "dash", label: "Dashboard", Icon: LayoutDashboard, to: "/" };
 
 type NavCtx = {
-  activeSubmissionId: string | null;
   pendingCount: number;
   isApprover: boolean;
 };
@@ -84,15 +83,6 @@ function ownRequestItems(ctx: NavCtx): Item[] {
     { id: "available", label: "Available Forms", Icon: FileText, to: "/forms" },
     { id: "subs", label: "My Submissions", Icon: Layers, to: "/submissions" },
   ];
-  if (ctx.activeSubmissionId) {
-    items.push({
-      id: "tracker",
-      label: "Status Tracker",
-      Icon: Activity,
-      to: "/status/$submissionId",
-      toParams: { submissionId: ctx.activeSubmissionId },
-    });
-  }
   return items;
 }
 
@@ -209,15 +199,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
       { id: "available", label: "Available Forms", Icon: FileText, to: "/forms" },
       { id: "subs", label: "My Submissions", Icon: Layers, to: "/submissions" },
     ];
-    if (ctx.activeSubmissionId) {
-      items.push({
-        id: "tracker",
-        label: "Status Tracker",
-        Icon: Activity,
-        to: "/status/$submissionId",
-        toParams: { submissionId: ctx.activeSubmissionId },
-      });
-    }
     return [
       { section: "My Requests", items },
       {
@@ -342,7 +323,6 @@ export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultC
 
   const [pendingCount, setPendingCount] = useState(0);
   const [isApprover, setIsApprover] = useState(false);
-  const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
 
   // Whether somebody approves anything is a question about the data, not
   // a list of ids kept in the interface. That list named five people; the
@@ -401,31 +381,14 @@ export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultC
     };
   }, [currentUser.employee_id]);
 
-  // The most recent request of your own that has not finished. Everybody
-  // can raise one now, so this is no longer one persona's shortcut.
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      const { data } = await db
-        .from("form_submissions")
-        .select("id, status, submitted_at")
-        .eq("submitted_by", currentUser.employee_id)
-        .not("status", "in", "(completed,rejected,cancelled)")
-        .order("submitted_at", { ascending: false })
-        .limit(1);
-      if (active) setActiveSubmissionId(data?.[0]?.id ?? null);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [currentUser.employee_id]);
-
-  const nav = buildNav(currentUser, { activeSubmissionId, pendingCount, isApprover });
+  const nav = buildNav(currentUser, { pendingCount, isApprover });
 
   const isActive = (to?: string) => {
     if (!to) return false;
     if (to === "/") return pathname === "/";
     if (to === "/approvals") return pathname === "/approvals";
+    // A request's own page is one of your submissions.
+    if (to === "/submissions") return pathname.startsWith("/submissions") || pathname.startsWith("/status/");
     if (to.includes("$")) {
       const base = to.split("/$")[0];
       return pathname.startsWith(base);
