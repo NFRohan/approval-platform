@@ -137,6 +137,11 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The page on screen, not the address: the address changes the moment a
+  // link is clicked, while the old page stays until the new one has
+  // loaded. Keying the entrance on the address replayed it on the old
+  // page (a flash) and skipped it on the new one.
+  const shownPath = useRouterState({ select: (s) => s.matches[s.matches.length - 1]?.pathname });
   const { session } = Route.useRouteContext();
   const isBuilder = pathname.startsWith("/builder");
 
@@ -168,7 +173,7 @@ function RootComponent() {
     <CurrentUserProvider session={session ?? null}>
       <IdleWatcher idleSeconds={session?.idleSeconds ?? 300} />
       <AppShell hideTopBar={isBuilder} sidebarDefaultCollapsed={isBuilder} noScroll={isBuilder}>
-        <div key={pathname} className="page-enter h-full">
+        <div key={shownPath ?? pathname} className="page-enter h-full">
           <Outlet />
         </div>
       </AppShell>

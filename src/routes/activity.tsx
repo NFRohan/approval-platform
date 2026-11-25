@@ -16,7 +16,7 @@ export const Route = createFileRoute("/activity")({
 
 type LogRow = { id: string; actor_id: string | null; action: string; entity_type: string; entity_id: string; detail: string | null; created_at: string; actorName?: string };
 
-const ENTITY_TYPES = ["form_submission", "movement_order", "notice", "stationery_request", "maintenance_request", "approval_slab"];
+const ENTITY_TYPES = ["form_submission", "movement_order", "notice", "maintenance_request", "approval_slab"];
 
 function fmt(iso: string) {
   return fmtDateTime(iso);

@@ -150,14 +150,12 @@ insert into public.form_fields (form_template_id, field_type, field_name, order_
 -- first; finance follows, and which finance approvers are involved
 -- depends on the amount.
 -- =====================================================================
--- Notices, stationery and maintenance are chains too, configured once
+-- Notices and maintenance are chains too, configured once
 -- for the whole subject type rather than per template. Maintenance is
 -- the three-tier one: divisional, then moderator, then admin.
 insert into public.approval_rules (subject_type, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index) values
   ('notice',              null, 'EMP-1134', 2, true, 'line_manager', 0),
   ('notice',              null, 'EMP-0445', 3, true, 'admin',        1),
-  ('stationery_request',  null, 'EMP-1134', 2, true, 'line_manager', 0),
-  ('stationery_request',  null, 'EMP-0201', 3, true, 'hr',           1),
   ('maintenance_request', null, 'EMP-1134', 2, true, 'divisional',   0),
   ('maintenance_request', null, 'EMP-9001', 3, true, 'moderator',    1),
   ('maintenance_request', null, 'EMP-0445', 5, true, 'admin',        2);
@@ -483,10 +481,6 @@ insert into public.notice_comments (notice_id, author_id, text) values
   ('55555555-0000-4000-8000-000000000001', 'EMP-2847', 'Will the recording be shared afterwards?'),
   ('55555555-0000-4000-8000-000000000001', 'EMP-0201', 'Yes — posted here the same afternoon.');
 
-insert into public.stationery_requests (kind, requester_id, name, designation, department, division, email, contact_number, reason, status, current_approver_id, created_at) values
-  ('business_card', 'EMP-3120', 'Mei Sun',   'Procurement Specialist', 'Operations', 'Commercial', 'mei.sun@example.com',    '+1 555 0142', 'Joining the supplier roadshow', 'open',     'EMP-1134', now() - interval '2 days'),
-  ('stamp_seal',    'EMP-0445', 'Farah Haddad','Admin Officer',        'Admin',      'Corporate',  'farah.haddad@example.com','+1 555 0118', 'Replacement for a worn seal',   'approved', 'EMP-0201', now() - interval '8 days');
-
 insert into public.maintenance_items (id, name, category) values
   ('66666666-0000-4000-8000-000000000001', 'Split unit, meeting room 4', 'AC'),
   ('66666666-0000-4000-8000-000000000002', 'Water purifier, 4th floor',  'Water Purifier'),
@@ -550,20 +544,6 @@ begin
      where notice_id = '55555555-0000-4000-8000-000000000001' and status = 'pending';
     exit when v_step is null;
     perform public.act_on_approval(v_step, 'approve', 'Cleared for publication', (select approver_user_id from public.approval_requests where id = v_step));
-  end loop;
-
-  -- Stationery: a business card waiting on the line manager, a stamp
-  -- and seal that made it all the way through.
-  select id into v_id from public.stationery_requests where kind = 'business_card' and tenant_id = app.current_tenant() limit 1;
-  perform public.build_approval_chain('stationery_request', v_id);
-
-  select id into v_id from public.stationery_requests where kind = 'stamp_seal' and tenant_id = app.current_tenant() limit 1;
-  perform public.build_approval_chain('stationery_request', v_id);
-  loop
-    select id into v_step from public.approval_requests
-     where stationery_request_id = v_id and status = 'pending';
-    exit when v_step is null;
-    perform public.act_on_approval(v_step, 'approve', 'Approved', (select approver_user_id from public.approval_requests where id = v_step));
   end loop;
 
   -- Maintenance: one at the first tier, one that has cleared the first
@@ -777,7 +757,6 @@ update public.form_templates t
     ('Leave Application',              'non_budgetary', array['leave', 'holiday', 'absence', 'vacation']),
     ('Gate Pass',                      'non_budgetary', array['gate pass', 'visitor', 'access']),
     ('New Employee Onboarding',        'non_budgetary', array['onboarding', 'joiner', 'new hire']),
-    ('Stationery Request',             'budgetary',     array['stationery', 'business card', 'stamp']),
     ('Capital Expenditure Request',    'budgetary',     array['capex', 'purchase', 'asset', 'investment', 'po']),
     ('Employee Exit Clearance',        'non_budgetary', array['exit', 'clearance', 'resignation', 'leaver', 'final settlement']),
     ('Gift & Hospitality Declaration', 'regulatory',    array['gift', 'hospitality', 'abc', 'anti-bribery', 'donation']),
@@ -917,5 +896,17 @@ begin
   end loop;
   perform set_config('app.tenant_id', v_tpl, false);
 end $up$;
+
+-- Business cards and seals are printed to the organisation's own format,
+-- and the scope asks only that a leaver hands them back (Administration's
+-- exit checklist). The stationery screen is gone, and with it what the
+-- seed once raised there: the requests, their steps, and what was said
+-- about them, in every organisation.
+delete from public.notifications  where entity_type = 'stationery_request';
+delete from public.activity_log   where entity_type = 'stationery_request';
+delete from public.approval_events where subject_type = 'stationery_request';
+delete from public.approval_requests where stationery_request_id is not null or subject_type = 'stationery_request';
+delete from public.approval_rules  where subject_type = 'stationery_request';
+delete from public.stationery_requests;
 
 commit;

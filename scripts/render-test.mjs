@@ -121,7 +121,7 @@ const PATHS = [
   '/', '/login', '/staff', '/activity', '/approvals', '/approvals/delegate', '/approvals/history',
   '/builder', '/builder/approvers', '/builder/notifications',
   '/forms', '/maintenance', '/movement-orders',
-  '/notices', '/notices/new', '/stationery', '/submissions',
+  '/notices', '/notices/new', '/submissions',
   `/forms/${formId}`,
   `/status/${submissionId}`,
   `/certificate/${submissionId}`,

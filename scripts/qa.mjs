@@ -150,7 +150,6 @@ const SCREENS = [
   ['/forms', 'Forms'],
   ['/submissions', 'My Submissions'],
   ['/notices', 'Notice Board'],
-  ['/stationery', 'Stationery'],
   ['/maintenance', 'Maintenance'],
   ['/movement-orders', 'Movement Orders'],
   ['/activity', 'Activity Log'],
@@ -399,19 +398,6 @@ await check('a filled form can actually be submitted', async () => {
     throw new Error('submitted but the status screen shows no chain');
   }
   return 'submitted, status screen shows a chain';
-});
-
-// ---------------------------------------------------------------------
-// 5c. Stationery: the acknowledgement gate
-// ---------------------------------------------------------------------
-await check('stationery shows its full status vocabulary', async () => {
-  await page.goto(`${BASE}/stationery`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2500);
-  const body = await page.locator('body').innerText();
-  if (/Fulfilled/.test(body) && !/Awaiting acknowledgement/i.test(body)) {
-    throw new Error('still says "Fulfilled" where it now means awaiting acknowledgement');
-  }
-  return 'ok';
 });
 
 // ---------------------------------------------------------------------

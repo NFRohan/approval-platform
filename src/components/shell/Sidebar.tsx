@@ -15,7 +15,6 @@ import {
   UserCog,
   Truck,
   Megaphone,
-  CreditCard,
   Wrench,
   Users,
   ShieldCheck,
@@ -101,7 +100,7 @@ const has = (sections: Section[], to: string) =>
  *   - the approvals section was gated on a hardcoded list of five ids,
  *     while the chain asks eight people. The Facilities Coordinator has
  *     a maintenance step waiting on him and the HR Business Partner
- *     approves leave and stationery — neither had the screen that shows
+ *     approves leave — it had the screen that shows
  *     them, so those requests looked to everybody like they had vanished;
  *   - approvers had no way to raise anything of their own. Approving is
  *     a job, not a whole identity, and everybody takes leave.
@@ -186,7 +185,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "stationery", label: "Stationery Requests", Icon: CreditCard, to: "/stationery" },
           { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
         ],
       },
@@ -206,7 +204,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "stationery", label: "Stationery Requests", Icon: CreditCard, to: "/stationery" },
           { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
         ],
       },
@@ -246,7 +243,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "stationery", label: "Stationery Requests", Icon: CreditCard, to: "/stationery" },
           { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
           { id: "activity", label: "Activity Log", Icon: Activity, to: "/activity" },
         ],
@@ -289,7 +285,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "stationery", label: "Stationery Requests", Icon: CreditCard, to: "/stationery" },
           { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
         ],
       },
@@ -304,7 +299,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         { id: "dash", label: "Dashboard", Icon: LayoutDashboard, to: "/" },
         { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
         { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-        { id: "stationery", label: "Stationery Requests", Icon: CreditCard, to: "/stationery" },
         { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
       ],
     },

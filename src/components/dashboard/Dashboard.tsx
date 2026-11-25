@@ -373,14 +373,13 @@ type QuickTile =
       Icon: LucideIcon;
       color: QuickPalette;
       kind: "route";
-      to: "/maintenance" | "/stationery" | "/movement-orders";
+      to: "/maintenance" | "/movement-orders";
     };
 
 const QUICK: QuickTile[] = [
   { label: "Gate Pass", Icon: DoorOpen, color: "blue", kind: "form", formName: "Gate Pass" },
   { label: "Leave Application", Icon: Calendar, color: "purple", kind: "form", formName: "Leave Application" },
   { label: "Maintenance Request", Icon: Wrench, color: "orange", kind: "route", to: "/maintenance" },
-  { label: "Business Card", Icon: CreditCard, color: "green", kind: "route", to: "/stationery" },
   { label: "Movement Order", Icon: ArrowLeftRight, color: "zinc", kind: "route", to: "/movement-orders" },
   {
     label: "Travel & Expense",

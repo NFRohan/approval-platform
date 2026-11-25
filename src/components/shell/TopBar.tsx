@@ -30,7 +30,6 @@ const SECTION: Record<string, string> = {
   maintenance: "Maintenance",
   "movement-orders": "Movement Orders",
   notices: "Notice Board",
-  stationery: "Stationery Requests",
   status: "Submission Status",
   submissions: "My Submissions",
   analytics: "Analytics",
@@ -133,7 +132,6 @@ type Note = {
 const ROUTED = new Set([
   "form_submission",
   "notice",
-  "stationery_request",
   "maintenance_request",
   "movement_order",
 ]);
@@ -184,8 +182,6 @@ function NoteRow({
             {children}
           </Link>
         );
-      case "stationery_request":
-        return <Link to="/stationery" {...shared}>{children}</Link>;
       case "maintenance_request":
         return <Link to="/maintenance" {...shared}>{children}</Link>;
       case "movement_order":

@@ -7,7 +7,7 @@
 //
 // It searches what the placeholder claims: submissions — by the values
 // inside them, so a person's name finds their claim — plus forms,
-// people, notices, maintenance and stationery. Every result goes
+// people, notices and maintenance. Every result goes
 // somewhere real. A person opens the activity log filtered to them,
 // which is the honest answer to "what has this person been doing" and
 // the only page that can answer it.
@@ -76,7 +76,7 @@ export function GlobalSearch() {
     const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
     setBusy(true);
 
-    const [forms, values, people, notices, maint, stationery, refs, docs] = await Promise.all([
+    const [forms, values, people, notices, maint, refs, docs] = await Promise.all([
       // Forms by name or by their keywords — "some keywords that will
       // identify the appropriate templates". There are few enough to
       // match here rather than in the query.
@@ -85,7 +85,6 @@ export function GlobalSearch() {
       db.from("employees").select("employee_id, name, designation, department").ilike("name", like).limit(PER_GROUP),
       db.from("notices").select("id, title, category").ilike("title", like).limit(PER_GROUP),
       db.from("maintenance_requests").select("id, ref_number, location, status").ilike("ref_number", like).limit(PER_GROUP),
-      db.from("stationery_requests").select("id, name, kind, status").ilike("name", like).limit(PER_GROUP),
       // A request by its reference — how audit and compliance ask for one.
       db.from("form_submissions").select("id").ilike("ref_number", like).limit(PER_GROUP),
       // Documents by tag, description or name.
@@ -171,14 +170,6 @@ export function GlobalSearch() {
       go: () => navigate({ to: "/maintenance" }),
     }));
 
-    (stationery.data ?? []).forEach((r) => out.push({
-      key: `st:${r.id}`,
-      group: "Stationery",
-      label: r.name ?? "Stationery request",
-      sub: [r.kind === "business_card" ? "Business card" : "Stamp and seal", r.status]
-        .filter(Boolean).join(" · "),
-      go: () => navigate({ to: "/stationery" }),
-    }));
 
     setHits(out);
     setCursor(0);

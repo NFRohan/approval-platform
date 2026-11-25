@@ -475,7 +475,7 @@ function ApprovalsInbox() {
     ((aMoves.data ?? []) as { id: string; ref_number: string | null; item_name: string | null }[]).forEach((m) => {
       subjectLabels[m.id] = `Movement order · ${[m.ref_number, m.item_name].filter(Boolean).join(" — ") || "order"}`;
     });
-    const PAGE: Record<string, string> = { stationery_request: "/stationery", maintenance_request: "/maintenance", movement_order: "/movement-orders" };
+    const PAGE: Record<string, string> = { maintenance_request: "/maintenance", movement_order: "/movement-orders" };
     setUpcoming((ahead ?? []).map((a) => ({
       id: a.id as string,
       submissionId: a.submission_id as string | null,

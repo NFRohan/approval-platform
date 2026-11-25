@@ -19,7 +19,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
 import { Route as StaffRouteImport } from './routes/staff'
-import { Route as StationeryRouteImport } from './routes/stationery'
 import { Route as SubmissionsRouteImport } from './routes/submissions'
 import { Route as TrackersRouteImport } from './routes/trackers'
 import { Route as AdminAuditRouteImport } from './routes/admin.audit'
@@ -109,11 +108,6 @@ const MovementOrdersRoute = MovementOrdersRouteImport.update({
 const StaffRoute = StaffRouteImport.update({
   id: '/staff',
   path: '/staff',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StationeryRoute = StationeryRouteImport.update({
-  id: '/stationery',
-  path: '/stationery',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SubmissionsRoute = SubmissionsRouteImport.update({
@@ -329,7 +323,6 @@ export interface FileRoutesByFullPath {
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/staff': typeof StaffRoute
-  '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/trackers': typeof TrackersRoute
   '/admin/audit': typeof AdminAuditRoute
@@ -382,7 +375,6 @@ export interface FileRoutesByTo {
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/staff': typeof StaffRoute
-  '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/trackers': typeof TrackersRoute
   '/admin/audit': typeof AdminAuditRoute
@@ -436,7 +428,6 @@ export interface FileRoutesById {
   '/maintenance': typeof MaintenanceRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/staff': typeof StaffRoute
-  '/stationery': typeof StationeryRoute
   '/submissions': typeof SubmissionsRoute
   '/trackers': typeof TrackersRoute
   '/admin/audit': typeof AdminAuditRoute
@@ -491,7 +482,6 @@ export interface FileRouteTypes {
     | '/maintenance'
     | '/movement-orders'
     | '/staff'
-    | '/stationery'
     | '/submissions'
     | '/trackers'
     | '/admin/audit'
@@ -544,7 +534,6 @@ export interface FileRouteTypes {
     | '/maintenance'
     | '/movement-orders'
     | '/staff'
-    | '/stationery'
     | '/submissions'
     | '/trackers'
     | '/admin/audit'
@@ -597,7 +586,6 @@ export interface FileRouteTypes {
     | '/maintenance'
     | '/movement-orders'
     | '/staff'
-    | '/stationery'
     | '/submissions'
     | '/trackers'
     | '/admin/audit'
@@ -651,7 +639,6 @@ export interface RootRouteChildren {
   MaintenanceRoute: typeof MaintenanceRoute
   MovementOrdersRoute: typeof MovementOrdersRoute
   StaffRoute: typeof StaffRoute
-  StationeryRoute: typeof StationeryRoute
   SubmissionsRoute: typeof SubmissionsRoute
   TrackersRoute: typeof TrackersRoute
   AdminAuditRoute: typeof AdminAuditRoute
@@ -762,13 +749,6 @@ declare module '@tanstack/react-router' {
       path: '/staff'
       fullPath: '/staff'
       preLoaderRoute: typeof StaffRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/stationery': {
-      id: '/stationery'
-      path: '/stationery'
-      fullPath: '/stationery'
-      preLoaderRoute: typeof StationeryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/submissions': {
@@ -1079,7 +1059,6 @@ const rootRouteChildren: RootRouteChildren = {
   MaintenanceRoute: MaintenanceRoute,
   MovementOrdersRoute: MovementOrdersRoute,
   StaffRoute: StaffRoute,
-  StationeryRoute: StationeryRoute,
   SubmissionsRoute: SubmissionsRoute,
   TrackersRoute: TrackersRoute,
   AdminAuditRoute: AdminAuditRoute,
