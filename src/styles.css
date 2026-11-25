@@ -172,6 +172,23 @@
     border-color: var(--color-border);
   }
 
+  /* Tailwind v4 gives buttons the arrow cursor; anything that can be
+     clicked shows the hand, and anything switched off says so. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  select,
+  summary,
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
