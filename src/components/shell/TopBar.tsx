@@ -27,7 +27,6 @@ const SECTION: Record<string, string> = {
   builder: "Form Builder",
   certificate: "Certificate",
   forms: "Available Forms",
-  maintenance: "Maintenance",
   "movement-orders": "Movement Orders",
   notices: "Notice Board",
   status: "Submission Status",
@@ -132,7 +131,6 @@ type Note = {
 const ROUTED = new Set([
   "form_submission",
   "notice",
-  "maintenance_request",
   "movement_order",
 ]);
 function hasTarget(n: Note): boolean {
@@ -182,8 +180,6 @@ function NoteRow({
             {children}
           </Link>
         );
-      case "maintenance_request":
-        return <Link to="/maintenance" {...shared}>{children}</Link>;
       case "movement_order":
         return <Link to="/movement-orders" {...shared}>{children}</Link>;
     }

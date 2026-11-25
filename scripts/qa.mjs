@@ -150,7 +150,6 @@ const SCREENS = [
   ['/forms', 'Forms'],
   ['/submissions', 'My Submissions'],
   ['/notices', 'Notice Board'],
-  ['/maintenance', 'Maintenance'],
   ['/movement-orders', 'Movement Orders'],
   ['/activity', 'Activity Log'],
   ['/builder', 'Form Builder'],

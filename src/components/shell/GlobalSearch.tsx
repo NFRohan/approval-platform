@@ -7,7 +7,7 @@
 //
 // It searches what the placeholder claims: submissions — by the values
 // inside them, so a person's name finds their claim — plus forms,
-// people, notices and maintenance. Every result goes
+// people and notices. Every result goes
 // somewhere real. A person opens the activity log filtered to them,
 // which is the honest answer to "what has this person been doing" and
 // the only page that can answer it.
@@ -76,7 +76,7 @@ export function GlobalSearch() {
     const like = `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
     setBusy(true);
 
-    const [forms, values, people, notices, maint, refs, docs] = await Promise.all([
+    const [forms, values, people, notices, refs, docs] = await Promise.all([
       // Forms by name or by their keywords — "some keywords that will
       // identify the appropriate templates". There are few enough to
       // match here rather than in the query.
@@ -84,7 +84,6 @@ export function GlobalSearch() {
       db.from("submission_values").select("submission_id, field_name, value").ilike("value", like).limit(8),
       db.from("employees").select("employee_id, name, designation, department").ilike("name", like).limit(PER_GROUP),
       db.from("notices").select("id, title, category").ilike("title", like).limit(PER_GROUP),
-      db.from("maintenance_requests").select("id, ref_number, location, status").ilike("ref_number", like).limit(PER_GROUP),
       // A request by its reference — how audit and compliance ask for one.
       db.from("form_submissions").select("id").ilike("ref_number", like).limit(PER_GROUP),
       // Documents by tag, description or name.
@@ -162,13 +161,6 @@ export function GlobalSearch() {
       go: () => navigate({ to: "/notices/$noticeId", params: { noticeId: n.id } }),
     }));
 
-    (maint.data ?? []).forEach((m) => out.push({
-      key: `mr:${m.id}`,
-      group: "Maintenance",
-      label: m.ref_number,
-      sub: [m.location, m.status].filter(Boolean).join(" · "),
-      go: () => navigate({ to: "/maintenance" }),
-    }));
 
 
     setHits(out);

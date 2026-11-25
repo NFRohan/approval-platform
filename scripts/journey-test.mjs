@@ -222,7 +222,7 @@ try {
       where ft.tenant_id = $1 and exists (
         select 1 from public.approval_rules r
          where r.form_template_id = ft.id and r.label = 'slab_finance')
-      limit 1`,
+      order by ft.name limit 1`,
     [tenant],
   );
   if (!money) {
@@ -238,14 +238,20 @@ try {
     const steps = await chainOf(big);
     const chainIds = steps.map((s) => s.approver_user_id);
 
+    // Cumulative: every band the amount reaches, and none it does not.
+    // Which form is picked depends on the seed, and a form may have a
+    // band above 620,000 — that one must not be asked.
+    const reached = bands.filter((b) => Number(b.min_amount) <= 620000);
     for (const b of bands) {
+      const asks = Number(b.min_amount) <= 620000;
       ok(
-        `620,000 is asked of the ${Number(b.min_amount).toLocaleString('en-US')} band (${b.approver_user_id})`,
-        chainIds.includes(b.approver_user_id),
+        `620,000 is ${asks ? '' : 'not '}asked of the ${Number(b.min_amount).toLocaleString('en-US')} band (${b.approver_user_id})`,
+        asks ? chainIds.includes(b.approver_user_id)
+             : !chainIds.includes(b.approver_user_id) || reached.some((r) => r.approver_user_id === b.approver_user_id),
       );
     }
     // Cumulative means in ascending order of threshold, not the top alone.
-    const positions = bands.map((b) => chainIds.indexOf(b.approver_user_id));
+    const positions = reached.map((b) => chainIds.indexOf(b.approver_user_id));
     ok(
       'the bands are asked lowest threshold first',
       positions.every((p, i) => i === 0 || (p > positions[i - 1] && p >= 0)),

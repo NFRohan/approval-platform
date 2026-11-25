@@ -12,7 +12,6 @@ import {
   FileText,
   Layers,
   TrendingUp,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -373,13 +372,12 @@ type QuickTile =
       Icon: LucideIcon;
       color: QuickPalette;
       kind: "route";
-      to: "/maintenance" | "/movement-orders";
+      to: "/movement-orders";
     };
 
 const QUICK: QuickTile[] = [
   { label: "Gate Pass", Icon: DoorOpen, color: "blue", kind: "form", formName: "Gate Pass" },
   { label: "Leave Application", Icon: Calendar, color: "purple", kind: "form", formName: "Leave Application" },
-  { label: "Maintenance Request", Icon: Wrench, color: "orange", kind: "route", to: "/maintenance" },
   { label: "Movement Order", Icon: ArrowLeftRight, color: "zinc", kind: "route", to: "/movement-orders" },
   {
     label: "Travel & Expense",

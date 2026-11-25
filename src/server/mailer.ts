@@ -73,7 +73,6 @@ type OutboxRow = {
 const PATHS: Record<string, (id: string) => string> = {
   form_submission: (id) => `/status/${id}`,
   notice: (id) => `/notices/${id}`,
-  maintenance_request: () => '/maintenance',
   movement_order: () => '/movement-orders',
   campaign: (id) => `/campaigns/${id}`,
 };

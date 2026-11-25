@@ -150,15 +150,11 @@ insert into public.form_fields (form_template_id, field_type, field_name, order_
 -- first; finance follows, and which finance approvers are involved
 -- depends on the amount.
 -- =====================================================================
--- Notices and maintenance are chains too, configured once
--- for the whole subject type rather than per template. Maintenance is
--- the three-tier one: divisional, then moderator, then admin.
+-- Notices are chains too, configured once for the whole subject type
+-- rather than per template.
 insert into public.approval_rules (subject_type, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index) values
   ('notice',              null, 'EMP-1134', 2, true, 'line_manager', 0),
-  ('notice',              null, 'EMP-0445', 3, true, 'admin',        1),
-  ('maintenance_request', null, 'EMP-1134', 2, true, 'divisional',   0),
-  ('maintenance_request', null, 'EMP-9001', 3, true, 'moderator',    1),
-  ('maintenance_request', null, 'EMP-0445', 5, true, 'admin',        2);
+  ('notice',              null, 'EMP-0445', 3, true, 'admin',        1);
 
 insert into public.approval_rules (form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index) values
   ('11111111-0000-4000-8000-000000000001', 'EMP-1134', 3, true,  'line_manager',  0),
@@ -481,21 +477,6 @@ insert into public.notice_comments (notice_id, author_id, text) values
   ('55555555-0000-4000-8000-000000000001', 'EMP-2847', 'Will the recording be shared afterwards?'),
   ('55555555-0000-4000-8000-000000000001', 'EMP-0201', 'Yes — posted here the same afternoon.');
 
-insert into public.maintenance_items (id, name, category) values
-  ('66666666-0000-4000-8000-000000000001', 'Split unit, meeting room 4', 'AC'),
-  ('66666666-0000-4000-8000-000000000002', 'Water purifier, 4th floor',  'Water Purifier'),
-  ('66666666-0000-4000-8000-000000000003', 'Standby generator',          'Generator');
-
-insert into public.maintenance_requests (id, ref_number, requester_id, location, status, assigned_to, admin_comment, created_at) values
-  ('77777777-0000-4000-8000-000000000001', 'MR-2201', 'EMP-2847', 'North Wing, 4th Floor', 'in_progress', 'Coolair Services', 'Engineer booked for Thursday', now() - interval '4 days'),
-  ('77777777-0000-4000-8000-000000000002', 'MR-2202', 'EMP-0445', 'South Wing, 2nd Floor', 'raised',      null,               null,                          now() - interval '1 day'),
-  ('77777777-0000-4000-8000-000000000003', 'MR-2198', 'EMP-9001', 'Basement',              'completed',   'Powerline Ltd',    'Annual service completed',    now() - interval '20 days');
-
-insert into public.maintenance_request_items (request_id, item_id, description, quantity) values
-  ('77777777-0000-4000-8000-000000000001', '66666666-0000-4000-8000-000000000001', 'Not cooling, intermittent noise', 1),
-  ('77777777-0000-4000-8000-000000000002', '66666666-0000-4000-8000-000000000002', 'Filter replacement due',          2),
-  ('77777777-0000-4000-8000-000000000003', '66666666-0000-4000-8000-000000000003', 'Annual service',                  1);
-
 -- =====================================================================
 -- 6. Activity and notifications
 -- =====================================================================
@@ -546,14 +527,6 @@ begin
     perform public.act_on_approval(v_step, 'approve', 'Cleared for publication', (select approver_user_id from public.approval_requests where id = v_step));
   end loop;
 
-  -- Maintenance: one at the first tier, one that has cleared the first
-  -- and sits with the moderator.
-  perform public.build_approval_chain('maintenance_request', '77777777-0000-4000-8000-000000000002');
-
-  perform public.build_approval_chain('maintenance_request', '77777777-0000-4000-8000-000000000001');
-  select id into v_step from public.approval_requests
-   where maintenance_request_id = '77777777-0000-4000-8000-000000000001' and status = 'pending';
-  perform public.act_on_approval(v_step, 'approve', 'Confirmed the unit is out of service', (select approver_user_id from public.approval_requests where id = v_step));
   -- An exit clearance under way: Tom's own division has started, and two
   -- of the four departments have already cleared him.
   insert into public.form_submissions (id, form_template_id, submitted_by, status, submitted_at) values
@@ -908,5 +881,17 @@ delete from public.approval_events where subject_type = 'stationery_request';
 delete from public.approval_requests where stationery_request_id is not null or subject_type = 'stationery_request';
 delete from public.approval_rules  where subject_type = 'stationery_request';
 delete from public.stationery_requests;
+
+-- Facility maintenance is not in the scope either (its only maintenance
+-- is the vendor's support of the software), and it had no way to add
+-- the items it was raised against. Gone the same way.
+delete from public.notifications  where entity_type = 'maintenance_request';
+delete from public.activity_log   where entity_type = 'maintenance_request';
+delete from public.approval_events where subject_type = 'maintenance_request';
+delete from public.approval_requests where maintenance_request_id is not null or subject_type = 'maintenance_request';
+delete from public.approval_rules  where subject_type = 'maintenance_request';
+delete from public.maintenance_request_items;
+delete from public.maintenance_requests;
+delete from public.maintenance_items;
 
 commit;

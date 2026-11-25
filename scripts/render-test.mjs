@@ -120,7 +120,7 @@ if (missing.length) {
 const PATHS = [
   '/', '/login', '/staff', '/activity', '/approvals', '/approvals/delegate', '/approvals/history',
   '/builder', '/builder/approvers', '/builder/notifications',
-  '/forms', '/maintenance', '/movement-orders',
+  '/forms', '/movement-orders',
   '/notices', '/notices/new', '/submissions',
   `/forms/${formId}`,
   `/status/${submissionId}`,

@@ -15,7 +15,6 @@ import {
   UserCog,
   Truck,
   Megaphone,
-  Wrench,
   Users,
   ShieldCheck,
   Network,
@@ -185,7 +184,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
         ],
       },
     ];
@@ -204,7 +202,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
         ],
       },
     ];
@@ -243,7 +240,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
           { id: "activity", label: "Activity Log", Icon: Activity, to: "/activity" },
         ],
       },
@@ -285,7 +281,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         items: [
           { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
           { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-          { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
         ],
       },
     ];
@@ -299,7 +294,6 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         { id: "dash", label: "Dashboard", Icon: LayoutDashboard, to: "/" },
         { id: "movement", label: "Movement Orders", Icon: Truck, to: "/movement-orders" },
         { id: "notices", label: "Notice Board", Icon: Megaphone, to: "/notices" },
-        { id: "maintenance", label: "Maintenance", Icon: Wrench, to: "/maintenance" },
       ],
     },
   ];
