@@ -120,7 +120,12 @@ function HrImport({ onDone }: { onDone: () => Promise<void> }) {
         A CSV with a header row. Needs an employee id and a name; reads department, designation, line manager id
         and work email when present. Managers may come after the people who report to them.
       </p>
-      <input type="file" accept=".csv,text/csv" name="hr-file" onChange={(e) => void choose(e.target.files?.[0])} />
+      {/* A button, not the browser's own picker; the input inside does the choosing. */}
+      <label className="inline-flex items-center gap-2 rounded-md font-medium" style={{ padding: "7px 12px", fontSize: 13, border: "1px solid #E4E4E7", background: "#fff", color: "#3F3F46", cursor: "pointer" }}>
+        <FileUp size={13} /> {file ? file : "Choose a CSV"}
+        <input type="file" accept=".csv,text/csv" name="hr-file" style={{ display: "none" }}
+               onChange={(e) => { void choose(e.target.files?.[0]); e.target.value = ""; }} />
+      </label>
       {parsed && (
         <div className="flex flex-col gap-3" style={{ marginTop: 14 }}>
           {parsed.missing.length ? (

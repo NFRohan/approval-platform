@@ -938,7 +938,8 @@ set search_path = public, app, pg_temp
 as $$
 begin
   if app.current_employee() is null then raise exception 'sign in to set a reminder'; end if;
-  if not exists (select 1 from public.form_submissions where id = p_submission and tenant_id = app.current_tenant()) then
+  -- One you can see (db/009_visibility.sql).
+  if not app.can_see_submission(p_submission) then
     raise exception 'no such request';
   end if;
   delete from public.tracker_reminders

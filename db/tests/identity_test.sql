@@ -325,17 +325,17 @@ end $$;
 -- 8. A new row names whoever the session says, not the browser
 -- =====================================================================
 do $$
-declare v_by text;
+declare v_by text; v_sub uuid;
 begin
   set local role app_api;
   perform pg_temp.as_emp('NOB');
   insert into public.form_submissions (tenant_id, form_template_id, submitted_by, status)
   values (app.current_tenant(), 'e0000000-0000-4000-8000-000000000001', 'APR', 'submitted')
-  returning submitted_by into v_by;
+  returning submitted_by, id into v_by, v_sub;
   if v_by <> 'NOB' then raise exception 'FAIL: a request was raised in somebody else''s name (%)', v_by; end if;
 
   insert into public.activity_log (action, entity_type, entity_id, actor_id, detail)
-  values ('approved', 'form_submission', gen_random_uuid(), 'APR', 'forged')
+  values ('approved', 'form_submission', v_sub, 'APR', 'forged')
   returning actor_id into v_by;
   if v_by <> 'NOB' then raise exception 'FAIL: an audit entry was written in somebody else''s name'; end if;
 

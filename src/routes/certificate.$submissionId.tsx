@@ -58,6 +58,7 @@ function CertificatePage() {
   const [org, setOrg] = useState("");
   // Only a clearance — departments ticking checklists — has a certificate.
   const [isClearance, setIsClearance] = useState(true);
+  const [missing, setMissing] = useState(false);
 
   const [refNumber, setRefNumber] = useState<string | null>(null);
   const refCode = refNumber ?? `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
@@ -69,6 +70,8 @@ function CertificatePage() {
       .select("submitted_by, submitted_at, form_template_id, ref_number")
       .eq("id", submissionId)
       .maybeSingle();
+    // Not there, or not one this person may see — the same answer either way.
+    if (!sub) { setMissing(true); setLoading(false); return; }
     setRefNumber((sub as { ref_number?: string | null } | null)?.ref_number ?? null);
 
     if (sub?.form_template_id) {
@@ -132,6 +135,20 @@ function CertificatePage() {
     return (
       <div className="flex items-center justify-center min-h-screen text-sm" style={{ color: "#71717A" }}>
         Loading certificate…
+      </div>
+    );
+  }
+
+  if (missing) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ padding: 24 }}>
+        <div className="text-center" style={{ maxWidth: 420 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#18181B" }}>Certificate not found</div>
+          <p style={{ fontSize: 13.5, color: "#71717A", lineHeight: 1.55 }}>
+            There is no request with that reference that you can open.
+          </p>
+          <Link to="/submissions" className="rounded-md text-sm font-medium inline-block mt-3" style={{ padding: "8px 14px", border: "1px solid #E4E4E7", color: "#3F3F46" }}>My submissions</Link>
+        </div>
       </div>
     );
   }

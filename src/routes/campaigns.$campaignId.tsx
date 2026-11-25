@@ -396,6 +396,7 @@ function StatusForm({ campaign, onDone }: { campaign: Campaign; onDone: () => Pr
 
 function CouponImport({ campaign, onDone }: { campaign: Campaign; onDone: () => Promise<void> }) {
   const [rows, setRows] = useState<Record<string, string>[] | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
     <Card title={<span className="inline-flex items-center gap-2"><FileSpreadsheet size={15} /> Import coupon records</span>}>
@@ -403,13 +404,18 @@ function CouponImport({ campaign, onDone }: { campaign: Campaign; onDone: () => 
         A CSV from the redemption services, with columns <code>code</code>, <code>wallet</code>, <code>amount</code>, <code>issued_on</code>,
         <code> redeemed_on</code> and <code>redeemed_via</code> (App, USSD, Agent or Merchant). A code already recorded is updated.
       </p>
-      <input type="file" accept=".csv" aria-label="Coupon file" onChange={async (e) => {
+      <label className="inline-flex items-center gap-2 rounded-md font-medium" style={{ padding: "7px 12px", fontSize: 13, border: "1px solid #E4E4E7", background: "#fff", color: "#3F3F46", cursor: "pointer" }}>
+      <FileSpreadsheet size={13} /> {fileName ?? "Choose a CSV"}
+      <input type="file" accept=".csv" aria-label="Coupon file" style={{ display: "none" }} onChange={async (e) => {
         const f = e.target.files?.[0];
+        e.target.value = "";
         if (!f) return;
+        setFileName(f.name);
         const [head, ...body] = parseCsv(await f.text());
         const keys = (head ?? []).map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
         setRows(body.map((r) => Object.fromEntries(keys.map((k, i) => [k, r[i] ?? ""]))));
       }} />
+      </label>
       {rows && (
         <div className="flex items-center gap-3" style={{ marginTop: 10 }}>
           <span style={{ fontSize: 13 }}>{rows.length} coupons in the file.</span>
