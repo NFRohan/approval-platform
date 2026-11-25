@@ -2,6 +2,7 @@ import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { NoFormChosen } from "@/components/builder/NoFormChosen";
 import { db } from "@/lib/db";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
 import { PeopleStep, type AutoEntry } from "@/components/builder/PeopleStep";
@@ -13,15 +14,21 @@ import { Trash2, Plus } from "lucide-react";
 import { ruleRole } from "@/lib/routing";
 import { useBuilderAccess } from "@/components/builder/access";
 
-const search = z.object({ templateId: z.string() });
+// Optional: opened with no form (a bookmark, a reload), it says so rather than failing.
+const search = z.object({ templateId: z.string().optional() });
 
 export const Route = createFileRoute("/builder/approvers")({
   validateSearch: search,
   head: () => ({
     meta: [{ title: "Approvers · Form Builder" }],
   }),
-  component: ApproversStep,
+  component: Page,
 });
+
+function Page() {
+  const { templateId } = Route.useSearch();
+  return templateId ? <ApproversStep templateId={templateId} /> : <NoFormChosen step="approvers" />;
+}
 
 // The approvers a form gets from its own fields.
 //
@@ -78,8 +85,7 @@ const ROLE_LABELS = new Set(["line_manager", "skip_level", "department_head", "h
 type SlabRow = { id?: string; min_amount: string; max_amount: string; approver_user_id: string };
 type EmployeeOption = { employee_id: string; name: string; designation: string | null };
 
-function ApproversStep() {
-  const { templateId } = Route.useSearch();
+function ApproversStep({ templateId }: { templateId: string }) {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
   const [formName, setFormName] = useState("Employee Departure Due Diligence Form");

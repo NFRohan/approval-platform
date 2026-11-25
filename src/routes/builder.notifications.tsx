@@ -2,6 +2,7 @@ import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { NoFormChosen } from "@/components/builder/NoFormChosen";
 import { db } from "@/lib/db";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
 import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/builder/PeopleStep";
@@ -21,15 +22,21 @@ const EVENTS: { key: string; label: string }[] = [
 ];
 const DEFAULT_WHEN: When = { events: ["raised"], condition: null };
 
-const search = z.object({ templateId: z.string() });
+// Optional: opened with no form (a bookmark, a reload), it says so rather than failing.
+const search = z.object({ templateId: z.string().optional() });
 
 export const Route = createFileRoute("/builder/notifications")({
   validateSearch: search,
   head: () => ({
     meta: [{ title: "Notifications · Form Builder" }],
   }),
-  component: NotificationsStep,
+  component: Page,
 });
+
+function Page() {
+  const { templateId } = Route.useSearch();
+  return templateId ? <NotificationsStep templateId={templateId} /> : <NoFormChosen step="notifications" />;
+}
 
 type AutoEntryWithRequires = AutoEntry & { _requires?: string; label?: string };
 
@@ -84,8 +91,7 @@ function formatSlabRange(min: number): string {
   return min === 0 ? "Band: any amount" : `Band: ${fmt(min)} and above`;
 }
 
-function NotificationsStep() {
-  const { templateId } = Route.useSearch();
+function NotificationsStep({ templateId }: { templateId: string }) {
   const navigate = useNavigate();
   const access = useBuilderAccess();
   const [formName, setFormName] = useState("Employee Departure Due Diligence Form");
