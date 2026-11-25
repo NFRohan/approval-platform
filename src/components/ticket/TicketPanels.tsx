@@ -232,7 +232,7 @@ export function LinksPanel({
               </Link>
             ) : (
               <Link to="/status/$submissionId" params={{ submissionId: l.id }} style={{ color: "#4338CA" }}>
-                {l.ref_number ?? l.id.slice(0, 8)} · {l.name ?? "request"} · {l.status}
+                {l.ref_number ?? l.id.slice(0, 8)} · {l.name ?? "request"} · {String(l.status ?? "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}
               </Link>
             )}
             {l.note && l.kind === "Linked" && <span style={{ color: "#A1A1AA" }}>— {l.note}</span>}
@@ -244,7 +244,7 @@ export function LinksPanel({
       </div>
       {canWrite && (
         <div className="flex gap-2 mt-3 flex-wrap">
-          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Reference, e.g. AMS-2026-00004" aria-label="Link to reference" style={{ ...input, width: 220 }} />
+          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Reference, e.g. AMS-2026-00004" aria-label="Link to reference" style={{ ...input, width: 250 }} />
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why (optional)" aria-label="Link note" className="flex-1" style={input} />
           <button onClick={add} disabled={!ref.trim()} style={{ ...button, border: "1px solid #E4E4E7", background: "#fff", opacity: ref.trim() ? 1 : 0.6 }}>Link</button>
         </div>

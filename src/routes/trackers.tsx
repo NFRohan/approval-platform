@@ -153,11 +153,11 @@ function TrackersPage() {
 
   return (
     <Page
-      wide
+      full
       title="Trackers"
       intro="The main tracker follows every request; your trackers are filtered views kept for you, your department or everyone. Set a reminder on any request and you are told on the day."
     >
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-[minmax(200px,240px)_minmax(0,1fr)]">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-[minmax(180px,200px)_minmax(0,1fr)]">
         <div className="flex flex-col gap-1.5" data-testid="tracker-list">
           {[{ id: MAIN, name: "Main tracker", shared_with: "everyone" as const }, ...trackers].map((t) => (
             <button
@@ -253,7 +253,7 @@ function TrackersPage() {
             <table className="w-full" style={{ fontSize: 12.5, borderCollapse: "collapse", minWidth: 860 }} data-testid="tracker-rows">
               <thead>
                 <tr style={{ color: "#71717A", fontSize: 11.5, textAlign: "left", background: "#FAFAFA" }}>
-                  {["Reference", "Form", "Raised by", "Status", "With", "Waiting since", "Due", "", "Reminder"].map((h, i) => (
+                  {["Reference", "Form", "Raised by", "Status", "With", "Waiting since", "Due", "", "Remind"].map((h, i) => (
                     <th key={i} style={{ padding: "8px 10px", fontWeight: 500 }}>{h}</th>
                   ))}
                 </tr>
@@ -294,10 +294,11 @@ function TrackersPage() {
                           type="button"
                           onClick={() => setReminding({ id: r.id, on: r.remind_on ?? todayInOrg(), note: r.reminder_note ?? "" })}
                           title={r.reminder_note ?? "Remind me about this on a day I choose"}
+                          aria-label={r.remind_on ? `Remind me — set for ${fmtDate(r.remind_on)}` : "Remind me"}
                           className="inline-flex items-center gap-1"
                           style={{ border: "none", background: "none", cursor: "pointer", color: r.remind_on ? "#B45309" : "#71717A", fontSize: 12.5 }}
                         >
-                          <AlarmClock size={13} /> {r.remind_on ? fmtDate(r.remind_on) : "Remind me"}
+                          <AlarmClock size={14} />{r.remind_on ? ` ${fmtDate(r.remind_on)}` : null}
                         </button>
                       )}
                     </td>

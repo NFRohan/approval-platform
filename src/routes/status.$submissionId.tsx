@@ -537,7 +537,8 @@ function StatusPage() {
         style={{ border: "1px solid #E4E4E7", padding: 24, marginBottom: 28 }}
       >
         <div className="flex items-start justify-between gap-6 flex-wrap">
-          <div style={{ minWidth: 0, flex: 1 }}>
+          {/* At least 300px before the actions sit beside it: on a phone they wrap below instead of squeezing the title. */}
+          <div style={{ minWidth: 0, flex: "1 1 300px" }}>
             <div className="flex items-center gap-2.5 mb-2.5">
               <span
                 className="font-mono"
@@ -548,6 +549,7 @@ function StatusPage() {
                   background: "#F4F4F5",
                   borderRadius: 4,
                   letterSpacing: "0.02em",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {refCode}

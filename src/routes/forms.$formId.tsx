@@ -195,11 +195,11 @@ function FillFormPage() {
     );
     const result: WizardStep[] = [];
     if (employeeFields.length > 0)
-      result.push({ title: "Employee Details", subtitle: "Identify the departing employee", fields: employeeFields });
+      result.push({ title: "Employee Details", subtitle: "Who this request is for", fields: employeeFields });
     if (linkedFields.length > 0)
       result.push({ title: "Linked Forms", subtitle: "Confirm auto-linked workflows", fields: linkedFields });
     if (mainFields.length > 0)
-      result.push({ title: "Form Details", subtitle: "Complete the remaining fields", fields: mainFields });
+      result.push({ title: "Form Details", subtitle: "The details of the request", fields: mainFields });
     result.push({ title: "Review & Submit", subtitle: "Confirm your answers before submitting", fields: [] });
     return result;
   }, [fields]);
@@ -684,7 +684,8 @@ function FillFormPage() {
             </>
           ) : (
             <div className="flex flex-col gap-3.5">
-              {stepIndex === 0 && (
+              {/* Importing a vetted Word NFA is for the campaign and NFA forms that come as one. */}
+              {stepIndex === 0 && /NFA|Campaign/i.test(formName) && (
                 <WordImport
                   templateId={formId}
                   formId={formId}

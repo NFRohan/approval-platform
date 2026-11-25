@@ -4,7 +4,7 @@ import {
   CheckCircle2,
   Clock,
   FileEdit,
-  Loader2,
+  ArrowRightCircle,
   MinusCircle,
   PauseCircle,
   XCircle,
@@ -58,8 +58,8 @@ const STATUS: Record<StatusKey, StatusConfig> = {
     text: "#4338CA",
     border: "#C7D2FE",
     dot: "#4338CA",
-    Icon: Loader2,
-    spin: true,
+    // A still arrow, not a spinner: a spinning icon reads as "loading".
+    Icon: ArrowRightCircle,
   },
   on_hold: {
     label: "On Hold",

@@ -17,9 +17,9 @@ export const inputStyle: CSSProperties = {
   fontFamily: "inherit",
 };
 
-export function Page({ title, intro, children, wide }: { title: string; intro?: ReactNode; children: ReactNode; wide?: boolean }) {
+export function Page({ title, intro, children, wide, full }: { title: string; intro?: ReactNode; children: ReactNode; wide?: boolean; full?: boolean }) {
   return (
-    <div className={wide ? "max-w-5xl mx-auto" : "max-w-3xl mx-auto"} style={{ padding: "32px 28px 56px" }}>
+    <div className={full ? "max-w-7xl mx-auto" : wide ? "max-w-5xl mx-auto" : "max-w-3xl mx-auto"} style={{ padding: "32px 28px 56px" }}>
       <div className="mb-6">
         <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: 0 }}>{title}</h1>
         {intro && <p style={{ marginTop: 6, fontSize: 14, color: "#71717A", lineHeight: 1.55 }}>{intro}</p>}
