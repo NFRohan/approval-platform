@@ -44,11 +44,10 @@ export type AccountRow = {
 };
 
 // The password and its history are kept apart from the account, in
-// vault.credentials (db/009_sow_gaps.sql); the account's own copy is the
-// fallback while a release that moves them rolls out.
+// vault.credentials (db/009_sow_gaps.sql); the account row holds no copy.
 const ACCOUNT_COLUMNS = `
-  u.id, u.username, coalesce(c.password_hash, u.password_hash) as password_hash, u.role, u.is_staff, u.status, u.approval_state,
-  u.must_change_pw, u.password_changed_at, coalesce(c.password_history, u.password_history, '{}') as password_history,
+  u.id, u.username, c.password_hash, u.role, u.is_staff, u.status, u.approval_state,
+  u.must_change_pw, u.password_changed_at, coalesce(c.password_history, '{}') as password_history,
   u.failed_attempts, u.locked_at,
   u.mfa_enabled, u.mfa_secret, u.mfa_last_step, u.auth_source, u.employee_id, u.tenant_id,
   t.slug, t.expires_at, t.persona_switching, t.require_admin_mfa, t.default_persona,

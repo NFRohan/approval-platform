@@ -26,15 +26,28 @@ pg.types.setTypeParser(pg.types.builtins.DATE, (v: string) => v);
 
 let pool: pg.Pool | undefined;
 
+// TLS to the database, verified: the server's certificate must chain to a
+// trusted authority (Neon's does). DATABASE_CA (PEM) trusts an on-prem
+// database's own authority; DATABASE_SSL_INSECURE=1 is the explicit,
+// logged way out, never the default.
+export function dbSsl(connectionString: string): false | { rejectUnauthorized: boolean; ca?: string } {
+  if (/localhost|127\.0\.0\.1/.test(connectionString)) return false;
+  if (process.env.DATABASE_SSL_INSECURE === '1') {
+    console.warn('[db] DATABASE_SSL_INSECURE=1: the database certificate is not verified');
+    return { rejectUnauthorized: false };
+  }
+  // An env var often carries the PEM's line breaks as the two characters \n.
+  const ca = process.env.DATABASE_CA?.replace(/\\n/g, '\n');
+  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+
 export function getPool(): pg.Pool {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) throw new Error('DATABASE_URL is not set');
     pool = new Pool({
       connectionString,
-      ssl: /localhost|127\.0\.0\.1/.test(connectionString)
-        ? false
-        : { rejectUnauthorized: false },
+      ssl: dbSsl(connectionString),
       max: Number(process.env.PGPOOL_MAX || 3),
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 8_000,

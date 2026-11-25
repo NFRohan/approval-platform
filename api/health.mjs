@@ -19,7 +19,10 @@ function getPool() {
   if (!pool) {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      // Verified, as the app does (src/server/db.ts dbSsl).
+      ssl: process.env.DATABASE_SSL_INSECURE === '1' ? { rejectUnauthorized: false }
+        : process.env.DATABASE_CA ? { rejectUnauthorized: true, ca: process.env.DATABASE_CA.replace(/\\n/g, '\n') }
+        : { rejectUnauthorized: true },
       max: 1,
       connectionTimeoutMillis: 8_000,
     });

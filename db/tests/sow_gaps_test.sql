@@ -541,6 +541,34 @@ begin
 end $$;
 do $$ begin raise notice 'pass: every request''s step sums, kept as its steps change, agree with the steps'; end $$;
 
+-- =====================================================================
+-- 13. Passwords live in the vault only
+-- =====================================================================
+do $$
+declare v uuid;
+begin
+  if exists (select 1 from public.app_users where password_hash is not null or cardinality(password_history) > 0) then
+    raise exception 'FAIL: an account row still holds a password hash';
+  end if;
+  -- A throwaway account in this test's own organisation.
+  insert into public.app_users (tenant_id, username, password_hash, full_name, role)
+  values (current_setting('t.tpl')::uuid, 'vault.test.' || substr(md5(random()::text), 1, 8), 'scrypt$00$11', 'Vault Test', 'admin')
+  returning id into v;
+  if (select password_hash from public.app_users where id = v) is not null then
+    raise exception 'FAIL: a new account kept its password on the account row';
+  end if;
+  update public.app_users set password_hash = 'scrypt$22$33', password_history = array['scrypt$00$11'] where id = v;
+  if (select password_hash from public.app_users where id = v) is not null then
+    raise exception 'FAIL: a changed password stayed on the account row';
+  end if;
+  if (select password_hash from vault.credentials where user_id = v) is distinct from 'scrypt$22$33'
+     or not (select password_history from vault.credentials where user_id = v) @> array['scrypt$00$11'] then
+    raise exception 'FAIL: a new password and its history did not reach the vault';
+  end if;
+  delete from public.app_users where id = v;
+end $$;
+do $$ begin raise notice 'pass: a password is kept in the vault only; the account row holds no copy'; end $$;
+
 -- Tidy: the evaluation goes, and everything it held with it.
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
 

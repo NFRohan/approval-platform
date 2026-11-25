@@ -21,7 +21,7 @@ if (!url) {
 const files = readdirSync('db').filter((f) => /^\d+_.*\.sql$/.test(f)).sort();
 const client = new pg.Client({
   connectionString: url,
-  ssl: /localhost|127\.0\.0\.1/.test(url) ? false : { rejectUnauthorized: false },
+  ssl: /localhost|127\.0\.0\.1/.test(url) ? false : { rejectUnauthorized: process.env.DATABASE_SSL_INSECURE !== '1', ...(process.env.DATABASE_CA ? { ca: process.env.DATABASE_CA } : {}) },
 });
 await client.connect();
 

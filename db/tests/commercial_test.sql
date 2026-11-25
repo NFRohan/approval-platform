@@ -212,8 +212,23 @@ begin
   if not pg_temp.refused($q$select public.merge_departments('Business Finance', 'Finance')$q$) then
     raise exception 'FAIL: somebody without org.manage merged divisions';
   end if;
+  -- A role given to each of the two divisions (the same role, so the merge
+  -- must keep one), and a tracker kept for, and filtered by, Commercial.
+  insert into public.role_groups (tenant_id, role_id, department, assigned_by)
+  select current_setting('t.tpl')::uuid, r.id, d, 'EMP-0445'
+    from public.roles r, unnest(array['Business Finance', 'Finance']) d
+   where r.tenant_id = current_setting('t.tpl')::uuid and r.name = 'Workflow settings';
+  insert into public.trackers (tenant_id, name, owner_id, shared_with, department, filters)
+  values (current_setting('t.tpl')::uuid, 'Commercial follow-up', 'EMP-0650', 'department', 'Commercial',
+          '{"departments": ["Commercial"]}');
   perform pg_temp.as_emp('EMP-0650');
   v := public.merge_departments('Business Finance', 'Finance');
+  if (select count(*) from public.role_groups g join public.roles r on r.id = g.role_id
+       where g.tenant_id = current_setting('t.tpl')::uuid and r.name = 'Workflow settings'
+         and g.department in ('Business Finance', 'Finance')) <> 1
+     or exists (select 1 from public.role_groups where tenant_id = current_setting('t.tpl')::uuid and department = 'Business Finance') then
+    raise exception 'FAIL: a role given to the merged division was not carried to the one it joined, once';
+  end if;
   if (v ->> 'people')::int <> 3 then raise exception 'FAIL: the merge moved % people', v ->> 'people'; end if;
   if exists (select 1 from public.departments where tenant_id = current_setting('t.tpl')::uuid and name = 'Business Finance') then
     raise exception 'FAIL: the merged division is still there';
@@ -225,6 +240,11 @@ begin
   v := public.rename_department('Commercial', 'Commercial & Partnerships');
   if (select count(*) from public.employees where tenant_id = current_setting('t.tpl')::uuid and department = 'Commercial & Partnerships') <> 2 then
     raise exception 'FAIL: renaming a division left its people behind';
+  end if;
+  if not exists (select 1 from public.trackers where tenant_id = current_setting('t.tpl')::uuid and name = 'Commercial follow-up'
+                    and department = 'Commercial & Partnerships' and filters -> 'departments' ? 'Commercial & Partnerships'
+                    and not filters -> 'departments' ? 'Commercial') then
+    raise exception 'FAIL: renaming a division left its tracker, or the tracker''s filter, behind';
   end if;
   if not pg_temp.refused($q$select public.rename_department('Finance', 'HR')$q$) then
     raise exception 'FAIL: a division was renamed onto another';

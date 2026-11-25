@@ -1,6 +1,11 @@
-function escapeCsvCell(value: unknown): string {
-  const s = value === null || value === undefined ? "" : String(value);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+// A cell starting with = + - @ (or a tab or carriage return) is a formula to
+// a spreadsheet — whoever typed it into a request could run it on whoever
+// opens the export. It is prefixed with a quote so it stays text, as the
+// server's exports do (src/server/export.ts). Numbers are left alone.
+export function escapeCsvCell(value: unknown): string {
+  let s = value === null || value === undefined ? "" : String(value);
+  if (typeof value !== "number" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;

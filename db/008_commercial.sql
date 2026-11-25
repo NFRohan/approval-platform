@@ -382,7 +382,7 @@ language plpgsql
 security definer
 set search_path = public, app, pg_temp
 as $$
-declare v_people int; v_forms int; v_reports int;
+declare v_people int; v_forms int; v_reports int; v_roles int; v_trackers int;
 begin
   update public.employees set department = p_into
    where tenant_id = app.current_tenant() and department = p_from;
@@ -397,7 +397,27 @@ begin
               from jsonb_array_elements_text(filters -> 'department') d))
    where tenant_id = app.current_tenant() and filters -> 'department' ? p_from;
   get diagnostics v_reports = row_count;
-  return jsonb_build_object('people', v_people, 'forms', v_forms, 'reports', v_reports);
+  -- Roles given to the division (db/009_sow_gaps.sql). Left behind, its
+  -- people would silently lose them. On a merge the other division may
+  -- already hold the role: keep one.
+  delete from public.role_groups g
+   where g.tenant_id = app.current_tenant() and g.department = p_from
+     and exists (select 1 from public.role_groups h
+                  where h.tenant_id = g.tenant_id and h.role_id = g.role_id and h.department = p_into);
+  update public.role_groups set department = p_into
+   where tenant_id = app.current_tenant() and department = p_from;
+  get diagnostics v_roles = row_count;
+  -- Trackers kept for the division, and trackers filtered by it.
+  update public.trackers set department = p_into
+   where tenant_id = app.current_tenant() and department = p_from;
+  get diagnostics v_trackers = row_count;
+  update public.trackers
+     set filters = jsonb_set(filters, '{departments}',
+           (select to_jsonb(array_agg(distinct case when d = p_from then p_into else d end))
+              from jsonb_array_elements_text(filters -> 'departments') d))
+   where tenant_id = app.current_tenant() and filters -> 'departments' ? p_from;
+  return jsonb_build_object('people', v_people, 'forms', v_forms, 'reports', v_reports,
+                            'roles', v_roles, 'trackers', v_trackers);
 end $$;
 
 create or replace function public.rename_department(p_from text, p_into text)

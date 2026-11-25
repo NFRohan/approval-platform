@@ -512,9 +512,9 @@ end $$;
 -- and their history are kept in vault.credentials, a schema the
 -- application's role has no access to. Whatever writes a password to an
 -- account (registration, a reset, a change) has it moved there by this
--- trigger. In this first step app_users keeps its copy too, so a server
--- still reading it signs people in while a release rolls out; the next
--- release clears it.
+-- trigger, which then clears the account's own copy: app_users never
+-- keeps a hash (second step, after the first kept both while a release
+-- rolled out). Sign-in reads the vault only (src/server/identity.ts).
 -- ---------------------------------------------------------------------
 revoke all on schema vault from public;
 revoke all on all tables in schema vault from public;
@@ -540,6 +540,9 @@ begin
            password_history = case when cardinality(excluded.password_history) > 0
                                    then excluded.password_history else c.password_history end,
            updated_at = now();
+    -- Kept apart: the account row holds no copy.
+    new.password_hash := null;
+    new.password_history := '{}';
   end if;
   return new;
 end $$;
@@ -553,6 +556,11 @@ create trigger app_users_keep_credentials
 insert into vault.credentials (user_id, password_hash, password_history)
 select id, password_hash, coalesce(password_history, '{}') from public.app_users where password_hash is not null
 on conflict (user_id) do nothing;
+-- ...and the accounts' own copies cleared, once every one is in the vault.
+update public.app_users u
+   set password_hash = null, password_history = '{}'
+ where (u.password_hash is not null or cardinality(u.password_history) > 0)
+   and exists (select 1 from vault.credentials c where c.user_id = u.id);
 
 -- ---------------------------------------------------------------------
 -- The SOW's own exit clearance checklists (§2.2 "Division-Specific
