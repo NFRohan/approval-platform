@@ -41,7 +41,7 @@ export function GlobalSearch() {
   const inputRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // ⌘K / Ctrl-K, which the badge has been promising all along.
+  // ⌘K / Ctrl-K still jumps to the search box; the badge is gone.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -236,12 +236,6 @@ export function GlobalSearch() {
           placeholder="Search submissions, forms, people…"
           className="flex-1 bg-transparent outline-none text-[13px] text-zinc-900 font-sans"
         />
-        <kbd
-          className="font-mono text-zinc-500 bg-white border rounded"
-          style={{ fontSize: 10, padding: "2px 6px", borderColor: "var(--color-zinc-200)" }}
-        >
-          ⌘K
-        </kbd>
       </div>
 
       {open && query.trim().length >= MIN_CHARS && (
