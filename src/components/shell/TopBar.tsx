@@ -253,10 +253,10 @@ function NotificationsDropdown({
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 bg-white rounded-xl border z-50"
+      // Hung from the bell on a desk; on a phone the bell is not at the edge,
+      // so a 380px panel ran off the left — there it spans the screen instead.
+      className="absolute right-0 top-[44px] w-[380px] bg-white rounded-xl border z-50 max-sm:fixed max-sm:left-2 max-sm:right-2 max-sm:top-[60px] max-sm:w-auto"
       style={{
-        top: 44,
-        width: 380,
         borderColor: "var(--color-zinc-200)",
         boxShadow: "0 12px 32px -8px rgba(0,0,0,0.18), 0 4px 8px -2px rgba(0,0,0,0.06)",
       }}
