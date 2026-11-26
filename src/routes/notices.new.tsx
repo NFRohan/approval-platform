@@ -68,9 +68,9 @@ function NewNoticePage() {
   if (mayPost === false) {
     return (
       <div className="max-w-xl mx-auto text-center" style={{ padding: "64px 24px" }}>
-        <div style={{ fontSize: 16, fontWeight: 600, color: "#18181B" }}>Notices are posted by leadership</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#18181B" }}>Notices are posted by HR and leadership</div>
         <p style={{ fontSize: 13.5, color: "#71717A", lineHeight: 1.55, margin: "6px 0 16px" }}>
-          Department heads, CXOs, HR business partners and administrators post notices; each is approved before it is published.
+          HR, department heads, CXOs and administrators post notices; each is approved before it is published.
         </p>
         <Link to="/notices" className="rounded-md text-sm font-medium inline-block" style={{ padding: "8px 14px", border: "1px solid #E4E4E7", color: "#3F3F46" }}>Back to the notice board</Link>
       </div>

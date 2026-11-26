@@ -16,7 +16,7 @@ ok('notices: ...and is not offered "New Notice"', (await page.getByRole('link', 
 // offers no form; the database refuses a post anyway.
 await go('/notices/new', TOM);
 ok('notices: the page tells somebody who may not post who does, and offers no form',
-  /Notices are posted by leadership/.test(await text()) && (await page.getByPlaceholder('e.g. Office closed for public holiday').count()) === 0);
+  /Notices are posted by HR and leadership/.test(await text()) && (await page.getByPlaceholder('e.g. Office closed for public holiday').count()) === 0);
 await quiet();
 const rogue = await one(`select id, status, created_by from public.notices where tenant_id = $1 and title = 'QA unauthorised notice'`, [tenant]);
 ok('notices: someone not allowed to post notices cannot create one by opening /notices/new', !rogue,

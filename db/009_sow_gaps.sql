@@ -1148,7 +1148,7 @@ end $$;
 
 -- ---------------------------------------------------------------------
 -- Who may post a notice: leadership — a department's head, CXO or HR
--- business partner — and
+-- business partner — HR itself, and
 -- whoever runs the organisation (org.manage, notifications.manage). It
 -- still goes for approval before it is published. Enforced here, so a
 -- screen cannot be talked round. (Decided 26 Nov.)
@@ -1164,7 +1164,14 @@ as $$
     app.has_permission('org.manage') or app.has_permission('notifications.manage')
     or exists (select 1 from public.departments d
                 where d.tenant_id = app.current_tenant()
-                  and app.current_employee() in (d.head_employee_id, d.cxo_employee_id, d.hrbp_employee_id)))
+                  and app.current_employee() in (d.head_employee_id, d.cxo_employee_id, d.hrbp_employee_id))
+    -- and HR, whose job it is: the department the HR business partners
+    -- belong to (found that way, so a renamed HR keeps it).
+    or exists (select 1 from public.employees me
+                where me.tenant_id = app.current_tenant() and me.employee_id = app.current_employee() and me.active
+                  and me.department in (select hr.department from public.departments d
+                                          join public.employees hr on hr.tenant_id = d.tenant_id and hr.employee_id = d.hrbp_employee_id
+                                         where d.tenant_id = app.current_tenant())))
 $$;
 grant execute on function public.may_post_notice() to app_api;
 
@@ -1175,7 +1182,7 @@ as $$
 begin
   -- The seed and provisioning act as nobody; people act as themselves.
   if app.current_employee() is not null and not public.may_post_notice() then
-    raise exception 'Notices are posted by department heads, CXOs, HR business partners and administrators';
+    raise exception 'Notices are posted by HR, department heads, CXOs and administrators';
   end if;
   return new;
 end $$;

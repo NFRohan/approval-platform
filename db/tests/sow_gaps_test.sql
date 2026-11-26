@@ -589,10 +589,12 @@ begin
   if not public.may_post_notice() then raise exception 'FAIL: a department head may not post notices'; end if;
   insert into public.notices (title, content, category, status, created_by)
   values ('Head notice', 'x', 'General', 'pending', 'EMP-1134') returning id into v;
+  perform pg_temp.as_emp('EMP-0661');   -- HR, not a head: posting notices is HR's job
+  if not public.may_post_notice() then raise exception 'FAIL: somebody in HR may not post notices'; end if;
   perform pg_temp.as_emp('EMP-0445');   -- system administrator
   if not public.may_post_notice() then raise exception 'FAIL: an administrator may not post notices'; end if;
 end $$;
-do $$ begin raise notice 'pass: notices are posted by department heads, CXOs and administrators, not by everybody'; end $$;
+do $$ begin raise notice 'pass: notices are posted by HR, department heads, CXOs and administrators, not by everybody'; end $$;
 
 -- Tidy: the evaluation goes, and everything it held with it.
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
