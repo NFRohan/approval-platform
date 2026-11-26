@@ -172,9 +172,10 @@ export function PeopleStep({
             <div
               style={{ padding: "8px 16px 12px", fontSize: 11, color: "#A1A1AA", lineHeight: 1.5 }}
             >
-              A target is a date, not a rule. Requests past theirs are marked overdue and
-              sorted to the top of the approver's queue; nothing is escalated, reassigned
-              or approved automatically.
+              Targets count working days. The approver is warned a day before; past the
+              target the request is marked overdue, goes to the top of their queue, and two
+              working days later goes to their line manager. Nothing is reassigned or
+              approved automatically.
             </div>
           )}
         </section>

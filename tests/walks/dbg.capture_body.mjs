@@ -50,7 +50,7 @@ const plan = [];
 const add = (who, path, opts = {}) => plan.push({ who, path, ...opts });
 for (const p of ['/', '/forms', '/submissions', '/trackers', '/notices', '/notices/new', '/movement-orders',
   '/approvals', '/approvals/history', '/approvals/delegate', '/activity', '/account',
-  `/builder?form=${ids.capexForm}`, `/builder/approvers?form=${ids.capexForm}`, `/builder/notifications?form=${ids.capexForm}`,
+  `/builder?templateId=${ids.capexForm}`, `/builder/approvers?templateId=${ids.capexForm}`, `/builder/notifications?templateId=${ids.capexForm}`,
   '/admin/users', '/admin/roles', '/admin/people', '/admin/email', '/admin/integrations', '/admin/audit',
   '/admin/calendar', '/admin/checklists', '/analytics', '/reports', '/reports/new', `/reports/${ids.report}`,
   '/campaigns', `/campaigns/${ids.campaign}`, `/notices/${ids.notice}`, '/developers']) add(ADMIN, p, { tabs: true });
@@ -224,12 +224,37 @@ function handle(e, inPhone) {
     return go((hit || base || {}).k);
   }
   const btn = e.target.closest('button, [role=button], [role=menuitem]');
-  const label = btn ? (btn.innerText || '').trim().split('\\n')[0].trim() : '';
+  // Expanding or collapsing the sidebar: the other sidebar, as saved on
+  // another screen of the same person.
+  const toggle = btn && btn.title;
+  if (toggle === 'Expand sidebar' || toggle === 'Collapse sidebar') {
+    e.preventDefault();
+    const want = toggle === 'Expand sidebar' ? 'Collapse sidebar' : 'Expand sidebar';
+    const from = INDEX.filter((p) => !p.phone && document.getElementById(p.k).content.querySelector('aside button[title="' + want + '"]'))
+      .sort((a, b) => (b.who === current?.who) - (a.who === current?.who))[0];
+    const here = btn.closest('aside');
+    if (from && here) here.replaceWith(document.getElementById(from.k).content.querySelector('aside').cloneNode(true));
+    return true;
+  }
+  const label = btn ? ((btn.innerText || '').trim().split('\\n')[0].trim() || btn.title || btn.getAttribute('aria-label') || '') : '';
   // The person switcher: the list of every screen, by person.
   if (btn && current && (btn.innerText || '').includes(current.person)) { e.preventDefault(); list.classList.add('open'); return true; }
   if (btn && label) {
     const key = NAV_KEYS.find((k) => label === k || label.startsWith(k));
     if (key && go(find(NAV[key], inPhone))) { e.preventDefault(); return true; }
+  }
+  // The form builder's three steps, and its Next and Back.
+  if (current && current.path.startsWith('/builder')) {
+    const STEPS = ['/builder', '/builder/approvers', '/builder/notifications'];
+    let s = e.target;
+    for (let i = 0; s && i < 4; i++, s = s.parentElement) {
+      const t = (s.innerText || '').replace(/\\s+/g, ' ').trim();
+      const m = t.match(/^(?:\\d )?(Fields|Approvers|Notifications)$/);
+      if (m) return go(find(STEPS[['Fields', 'Approvers', 'Notifications'].indexOf(m[1])]));
+    }
+    const at = STEPS.indexOf(current.path);
+    if (/^Next/.test(label) && at >= 0 && at < 2) return go(find(STEPS[at + 1]));
+    if (/^(Back|Previous)/.test(label) && at > 0) return go(find(STEPS[at - 1]));
   }
   // A row or card naming a request, or a form.
   let el = e.target;
