@@ -93,10 +93,60 @@ function evaluate(
 
   if (!/^[\d\s+\-*/().,Matha-z]+$/.test(expr)) return null;
   try {
-    // eslint-disable-next-line no-new-func
-    const result = Function(`"use strict"; return (${expr})`)() as number;
+    const result = arithmetic(expr);
     return typeof result === "number" && isFinite(result) ? result : null;
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------
+// The arithmetic itself, parsed rather than handed to Function(): the
+// content security policy (vercel.json) forbids eval, which made every
+// calculated field read "Invalid formula". Numbers, + - * /, brackets,
+// unary minus and the Math functions the formula language maps to.
+// ---------------------------------------------------------------------
+const FUNCS: Record<string, (...a: number[]) => number> = {
+  "Math.floor": Math.floor, "Math.ceil": Math.ceil, "Math.round": Math.round,
+  "Math.max": Math.max, "Math.min": Math.min, "Math.abs": Math.abs,
+};
+
+function arithmetic(src: string): number {
+  let i = 0;
+  const s = src.replace(/\s+/g, "");
+  const peek = () => s[i];
+  const expect = (c: string) => { if (s[i] !== c) throw new Error(`expected ${c}`); i++; };
+
+  function expression(): number {
+    let v = term();
+    while (peek() === "+" || peek() === "-") { const op = s[i++]; const r = term(); v = op === "+" ? v + r : v - r; }
+    return v;
+  }
+  function term(): number {
+    let v = factor();
+    while (peek() === "*" || peek() === "/") { const op = s[i++]; const r = factor(); v = op === "*" ? v * r : v / r; }
+    return v;
+  }
+  function factor(): number {
+    if (peek() === "-") { i++; return -factor(); }
+    if (peek() === "+") { i++; return factor(); }
+    if (peek() === "(") { i++; const v = expression(); expect(")"); return v; }
+    const fn = Object.keys(FUNCS).find((name) => s.startsWith(name, i));
+    if (fn) {
+      i += fn.length;
+      expect("(");
+      const args = [expression()];
+      while (peek() === ",") { i++; args.push(expression()); }
+      expect(")");
+      return FUNCS[fn](...args);
+    }
+    const m = /^\d*\.?\d+(e[+-]?\d+)?/i.exec(s.slice(i));
+    if (!m) throw new Error(`unexpected ${s[i] ?? "end"}`);
+    i += m[0].length;
+    return parseFloat(m[0]);
+  }
+
+  const v = expression();
+  if (i !== s.length) throw new Error(`unexpected ${s[i]}`);
+  return v;
 }

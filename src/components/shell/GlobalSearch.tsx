@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, CornerDownLeft } from "lucide-react";
+import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { useNavigate } from "@tanstack/react-router";
 import { db } from "@/lib/db";
 import { searchDocuments, type TaggedDocument } from "@/lib/attachment-fn";
@@ -33,6 +34,7 @@ const PER_GROUP = 4;
 
 export function GlobalSearch() {
   const navigate = useNavigate();
+  const { currentUser, can } = useCurrentUser();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -80,10 +82,11 @@ export function GlobalSearch() {
       // Forms by name or by their keywords — "some keywords that will
       // identify the appropriate templates". There are few enough to
       // match here rather than in the query.
-      db.from("form_templates").select("id, name, category, keywords").eq("status", "published").limit(200),
+      db.from("form_templates").select("id, name, category, keywords, audience_departments").eq("status", "published").limit(200),
       db.from("submission_values").select("submission_id, field_name, value").ilike("value", like).limit(8),
       db.from("employees").select("employee_id, name, designation, department").ilike("name", like).limit(PER_GROUP),
-      db.from("notices").select("id, title, category").ilike("title", like).limit(PER_GROUP),
+      // Published notices only: a rejected or waiting one is not there to read.
+      db.from("notices").select("id, title, category").eq("status", "published").ilike("title", like).limit(PER_GROUP),
       // A request by its reference — how audit and compliance ask for one.
       db.from("form_submissions").select("id").ilike("ref_number", like).limit(PER_GROUP),
       // Documents by tag, description or name.
@@ -93,7 +96,11 @@ export function GlobalSearch() {
     const out: Hit[] = [];
 
     const term = q.trim().toLowerCase();
-    const formHits = ((forms.data ?? []) as { id: string; name: string; category: string | null; keywords: string[] | null }[])
+    // Only forms this person may raise, as Available Forms offers them.
+    const offered = (f: { audience_departments: string[] | null }) =>
+      can("forms.build") || !f.audience_departments?.length || f.audience_departments.includes(currentUser.department ?? "");
+    const formHits = ((forms.data ?? []) as { id: string; name: string; category: string | null; keywords: string[] | null; audience_departments: string[] | null }[])
+      .filter(offered)
       .map((f) => ({ f, kw: (f.keywords ?? []).find((k) => k.toLowerCase().includes(term) || term.includes(k.toLowerCase())) }))
       .filter(({ f, kw }) => f.name.toLowerCase().includes(term) || kw)
       .slice(0, PER_GROUP);

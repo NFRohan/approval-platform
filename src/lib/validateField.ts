@@ -33,6 +33,8 @@ const TEXTUAL = new Set(["text", "textarea", "email", "phone"]);
 /** Is this answer absent? Kept separate because "empty" is not "invalid". */
 export function isEmpty(field: ValidatableField, value: unknown): boolean {
   if (value === undefined || value === null || value === "") return true;
+  // A required checkbox is a confirmation: unticked is not an answer.
+  if (field.kind === "checkbox" && (value === false || value === "false")) return true;
   if (Array.isArray(value)) return value.length === 0;
   // A chosen file is an answer. It has no own properties, so the
   // compound-field test below would read it as blank.

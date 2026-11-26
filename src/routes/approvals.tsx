@@ -90,6 +90,10 @@ function formatValue(raw: string | null): ReactNode {
   try {
     const parsed = JSON.parse(raw);
 
+    // "6000" parses as a number, so it never reached the catch below
+    // that adds thousand separators.
+    if (typeof parsed === "number") return parsed.toLocaleString("en-US", { maximumFractionDigits: 4 });
+
     // Array → pill badges
     if (Array.isArray(parsed)) {
       if (parsed.length === 0) return <span style={{ color: "#A1A1AA" }}>—</span>;

@@ -64,7 +64,7 @@ const PALETTES: Record<Palette, { bg: string; fg: string; bd: string }> = {
 
 type LiveStats = { pending: number; active: number; completedMonth: number; availableForms: number; overdue: number; onHold: number };
 
-function useLiveStats(employeeId: string) {
+function useLiveStats(employeeId: string, department: string | null, seesAllForms: boolean) {
   const [stats, setStats] = useState<LiveStats | null>(null);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ function useLiveStats(employeeId: string) {
         { count: overdue },
         { data: activeRows },
         { count: completedMonth },
-        { count: availableForms },
+        { data: publishedForms },
       ] = await Promise.all([
         db.from("approval_requests").select("*", { count: "exact", head: true })
           .eq("approver_user_id", employeeId).eq("status", "pending"),
@@ -89,7 +89,7 @@ function useLiveStats(employeeId: string) {
           .eq("submitted_by", employeeId).in("status", ["submitted", "in_progress", "on_hold"]),
         db.from("form_submissions").select("*", { count: "exact", head: true })
           .eq("submitted_by", employeeId).eq("status", "completed").gte("submitted_at", monthStart),
-        db.from("form_templates").select("*", { count: "exact", head: true }).eq("status", "published"),
+        db.from("form_templates").select("audience_departments").eq("status", "published"),
       ]);
 
       if (cancel) return;
@@ -98,13 +98,15 @@ function useLiveStats(employeeId: string) {
         pending: pending ?? 0,
         active: (activeRows ?? []).length,
         completedMonth: completedMonth ?? 0,
-        availableForms: availableForms ?? 0,
+        // The forms this person may raise, as Available Forms offers them.
+        availableForms: ((publishedForms ?? []) as { audience_departments: string[] | null }[])
+          .filter((f) => seesAllForms || !f.audience_departments?.length || f.audience_departments.includes(department ?? "")).length,
         overdue: overdue ?? 0,
         onHold,
       });
     })();
     return () => { cancel = true; };
-  }, [employeeId]);
+  }, [employeeId, department, seesAllForms]);
 
   return stats;
 }
@@ -646,9 +648,9 @@ function PendingApprovals({
 }
 
 export function Dashboard() {
-  const { currentUser } = useCurrentUser();
+  const { currentUser, can } = useCurrentUser();
   const firstName = currentUser.name.split(" ")[0];
-  const liveStats = useLiveStats(currentUser.employee_id);
+  const liveStats = useLiveStats(currentUser.employee_id, currentUser.department ?? null, can("forms.build"));
   const recents = useRecentSubmissions(currentUser.employee_id);
   const { rows: pendingForMe, reload: reloadPending } = usePendingForMe(currentUser.employee_id);
   const loading = liveStats === null;

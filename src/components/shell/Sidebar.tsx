@@ -57,6 +57,8 @@ const DASHBOARD: Item = { id: "dash", label: "Dashboard", Icon: LayoutDashboard,
 type NavCtx = {
   pendingCount: number;
   isApprover: boolean;
+  /** Departments the campaign forms are offered to (they follow a rename). */
+  campaignDepartments?: string[];
 };
 
 /** The approvals section, for anybody the chain actually asks. */
@@ -145,7 +147,10 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
     insights.push({ id: "analytics", label: "Analytics", Icon: BarChart3, to: "/analytics" });
     insights.push({ id: "reports", label: "Reports", Icon: FileSpreadsheet, to: "/reports" });
   }
-  if (can("reports.view") || can("reports.manage") || ["Commercial", "Business Finance"].includes(user.department ?? "")) {
+  // Campaigns, for oversight and for the departments the campaign forms are
+  // offered to — read from the forms, not by name, so a renamed or merged
+  // division keeps it.
+  if (can("reports.view") || can("reports.manage") || (ctx.campaignDepartments ?? []).includes(user.department ?? "")) {
     insights.push({ id: "campaigns", label: "Campaigns", Icon: CampaignIcon, to: "/campaigns" });
   }
   // Trackers are for everybody: the main one, and the ones kept for them.
@@ -311,6 +316,18 @@ export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultC
 
   const [pendingCount, setPendingCount] = useState(0);
   const [isApprover, setIsApprover] = useState(false);
+  const [campaignDepartments, setCampaignDepartments] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void db.from("form_templates").select("audience_departments").ilike("name", "%Campaign%")
+      .then(({ data }) => {
+        if (!alive) return;
+        const set = new Set<string>();
+        for (const r of (data ?? []) as { audience_departments: string[] | null }[]) for (const d of r.audience_departments ?? []) set.add(d);
+        setCampaignDepartments([...set]);
+      });
+    return () => { alive = false; };
+  }, [currentUser.employee_id]);
 
   // Whether somebody approves anything is a question about the data, not
   // a list of ids kept in the interface. That list named five people; the
@@ -369,7 +386,7 @@ export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultC
     };
   }, [currentUser.employee_id]);
 
-  const nav = buildNav(currentUser, { pendingCount, isApprover });
+  const nav = buildNav(currentUser, { pendingCount, isApprover, campaignDepartments });
 
   const isActive = (to?: string) => {
     if (!to) return false;

@@ -214,30 +214,36 @@ function ago(iso: string): string {
 
 export function useNotifications(employeeId: string) {
   const [notes, setNotes] = useState<Note[] | null>(null);
+  // Counted on its own: the panel shows the latest ten, and counting those
+  // stopped the badge at 10 and left older ones unread after Mark all read.
+  const [unread, setUnread] = useState(0);
 
   const load = useCallback(async () => {
     if (!employeeId) return;
-    const { data } = await db
-      .from("notifications")
-      .select("id, kind, title, body, entity_type, entity_id, read_at, created_at")
-      .eq("recipient_id", employeeId)
-      .order("created_at", { ascending: false })
-      .limit(10);
+    const [{ data }, { count }] = await Promise.all([
+      db.from("notifications")
+        .select("id, kind, title, body, entity_type, entity_id, read_at, created_at")
+        .eq("recipient_id", employeeId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      db.from("notifications").select("id", { count: "exact", head: true })
+        .eq("recipient_id", employeeId).is("read_at", null),
+    ]);
     setNotes((data ?? []) as Note[]);
+    setUnread(count ?? 0);
   }, [employeeId]);
 
   useEffect(() => { void load(); }, [load]);
 
   const markAllRead = useCallback(async () => {
-    const unread = (notes ?? []).filter((n) => !n.read_at);
-    if (!unread.length) return;
+    if (!employeeId) return;
     await db.from("notifications")
       .update({ read_at: new Date().toISOString() })
-      .in("id", unread.map((n) => n.id));
+      .eq("recipient_id", employeeId)
+      .is("read_at", null);
     await load();
-  }, [notes, load]);
+  }, [employeeId, load]);
 
-  const unread = (notes ?? []).filter((n) => !n.read_at).length;
   return { notes, unread, markAllRead };
 }
 
@@ -326,7 +332,7 @@ function NotificationsDropdown({
         style={{ padding: "10px 16px", borderColor: "var(--color-zinc-200)" }}
       >
         <span className="text-[11.5px]" style={{ color: "var(--color-zinc-400)" }}>
-          Shown here only — nothing is emailed or texted
+          Each of these is also sent to you by email
         </span>
       </div>
     </div>
@@ -465,15 +471,16 @@ export function TopBar() {
           {unread > 0 && <span
             className="absolute inline-flex items-center justify-center rounded-full text-white font-semibold border-2 border-white"
             style={{
-              top: 4,
-              right: 4,
-              width: 16,
+              top: 3,
+              right: unread > 9 ? 0 : 4,
+              minWidth: 16,
               height: 16,
+              padding: unread > 9 ? "0 3px" : 0,
               background: "var(--color-brand-500)",
               fontSize: 9.5,
             }}
           >
-            {unread}
+            {unread > 99 ? "99+" : unread}
           </span>}
         </button>
         <button

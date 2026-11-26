@@ -156,6 +156,7 @@ function FillFormPage() {
           options: cfg.options,
           placeholder: cfg.placeholder,
           formula: cfg.formula,
+          subject: (cfg as { subject?: boolean }).subject === true,
           team: cfg.team,
           ccTeam: cfg.ccTeam,
           allowOther: cfg.allowOther,
@@ -221,8 +222,7 @@ function FillFormPage() {
         .select("employee_id, name, designation, department, gate_pass_card_number")
         .eq("employee_id", currentUser.employee_id)
         .maybeSingle();
-      // A picker on the form still wins: it is asking about somebody
-      // else, which is the whole point of having one.
+      // A picker marked as the request's subject still wins (see setValue).
       if (!cancelled && data) setEmployeeData((prev) => prev ?? (data as EmployeeRow));
     })();
     return () => { cancelled = true; };
@@ -298,7 +298,11 @@ function FillFormPage() {
   function setValue(id: string, v: unknown) {
     setValues((prev) => ({ ...prev, [id]: v }));
     const field = fields.find((f) => f.id === id);
-    if (field?.kind === "employee" && v && typeof v === "object") {
+    // The auto-filled fields describe the requester. A person picker drives
+    // them only when the form says the request is about that person
+    // (field_config.subject); otherwise it is just another answer — SIM
+    // Transfer's "Transfer to" was overwriting the requester's name.
+    if (field?.kind === "employee" && (field as { subject?: boolean }).subject && v && typeof v === "object") {
       setEmployeeData(v as EmployeeRow);
     }
   }
@@ -356,7 +360,12 @@ function FillFormPage() {
         for (const f of fields) {
           const saved = byLabel[f.label];
           if (saved === undefined) continue;
-          next[f.id] = f.kind === "checkbox" ? saved === "Yes" : saved;
+          // A compound answer (a date range, a list) was saved as JSON; it
+          // comes back as what the field holds, not as its text.
+          let restored: unknown = saved;
+          if (f.kind === "checkbox") restored = saved === "Yes";
+          else if (/^\s*[[{]/.test(saved)) { try { restored = JSON.parse(saved); } catch { /* text after all */ } }
+          next[f.id] = restored;
         }
         return next;
       });
@@ -840,6 +849,11 @@ function SummaryStep({ fields, values, genValue, plan, notifRules, employeeData,
 
   function displayValue(f: PlacedField): string {
     if (f.kind.startsWith("gen_")) return genValue(f.kind) || "—";
+    // A calculated field has no answer of its own; the review shows its result.
+    if (f.kind === "calculation" && f.formula) {
+      const r = evaluateFormula(f.formula, fields, values, f.id);
+      return r === null ? "—" : r.toLocaleString("en-US", { maximumFractionDigits: 4 });
+    }
     const v = values[f.id];
     if (v === undefined || v === null || v === "") return "—";
     if (typeof v === "boolean") return v ? "Yes" : "No";

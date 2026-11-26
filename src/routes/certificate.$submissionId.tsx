@@ -59,6 +59,7 @@ function CertificatePage() {
   // Only a clearance — departments ticking checklists — has a certificate.
   const [isClearance, setIsClearance] = useState(true);
   const [missing, setMissing] = useState(false);
+  const [unfinished, setUnfinished] = useState(false);
 
   const [refNumber, setRefNumber] = useState<string | null>(null);
   const refCode = refNumber ?? `AMS-${submissionId.slice(0, 8).toUpperCase()}`;
@@ -67,11 +68,13 @@ function CertificatePage() {
   const load = useCallback(async () => {
     const { data: sub } = await db
       .from("form_submissions")
-      .select("submitted_by, submitted_at, form_template_id, ref_number")
+      .select("submitted_by, submitted_at, form_template_id, ref_number, status")
       .eq("id", submissionId)
       .maybeSingle();
     // Not there, or not one this person may see — the same answer either way.
     if (!sub) { setMissing(true); setLoading(false); return; }
+    // Issued only once every department has cleared it.
+    setUnfinished((sub as { status?: string }).status !== "completed");
     setRefNumber((sub as { ref_number?: string | null } | null)?.ref_number ?? null);
 
     if (sub?.form_template_id) {
@@ -148,6 +151,20 @@ function CertificatePage() {
             There is no request with that reference that you can open.
           </p>
           <Link to="/submissions" className="rounded-md text-sm font-medium inline-block mt-3" style={{ padding: "8px 14px", border: "1px solid #E4E4E7", color: "#3F3F46" }}>My submissions</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (isClearance && unfinished) {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ padding: 24 }}>
+        <div className="text-center" style={{ maxWidth: 420 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#18181B" }}>Not cleared yet</div>
+          <p style={{ fontSize: 13.5, color: "#71717A", lineHeight: 1.55 }}>
+            The certificate is issued once every department has cleared this request.
+          </p>
+          <Link to="/status/$submissionId" params={{ submissionId }} className="rounded-md text-sm font-medium inline-block mt-3" style={{ padding: "8px 14px", border: "1px solid #E4E4E7", color: "#3F3F46" }}>See where it is</Link>
         </div>
       </div>
     );
