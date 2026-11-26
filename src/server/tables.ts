@@ -59,7 +59,7 @@ export const TABLES: Record<string, TableDef> = {
       'lane', 'lane_step', 'lane_label', 'quorum', 'stage_label',
       'require_signature', 'signature', 'signed_at',
       // Remind at this interval until decided (db/009_sow_gaps.sql).
-      'remind_hours'],
+      'remind_hours', 'warn_hours', 'escalate_days', 'escalate_levels'],
     [],
     [],
   ),
@@ -67,11 +67,11 @@ export const TABLES: Record<string, TableDef> = {
     ['id', 'subject_type', 'form_template_id', 'approver_user_id',
       'deadline_days', 'is_auto_added', 'label', 'step_index',
       'quorum', 'condition', 'stage_label', 'lane', 'position',
-      'require_signature', 'flag', 'remind_hours'],
+      'require_signature', 'flag', 'remind_hours', 'warn_hours', 'escalate_days', 'escalate_levels'],
     ['subject_type', 'form_template_id', 'approver_user_id',
       'deadline_days', 'is_auto_added', 'label', 'step_index',
       'quorum', 'condition', 'stage_label', 'lane', 'position',
-      'require_signature', 'flag', 'remind_hours'],
+      'require_signature', 'flag', 'remind_hours', 'warn_hours', 'escalate_days', 'escalate_levels'],
     ['condition'],
   ),
   // Read only: the engine writes the trail, and nothing else may.
@@ -369,7 +369,7 @@ export const RPCS: Record<string, readonly string[]> = {
   hand_over:            ['p_leaver', 'p_successor', 'p_actor'],
   // Stage 3: a workflow's task settings — deadlines and signatures — for
   // somebody with forms.settings, who may not otherwise touch the design.
-  update_rule_settings: ['p_rule', 'p_deadline_days', 'p_require_signature'],
+  update_rule_settings: ['p_rule', 'p_deadline_days', 'p_require_signature', 'p_timing'],
   // Stage 5: campaigns and divisions. Each checks who may, in the database.
   record_campaign_actuals:    ['p_campaign', 'p_on_date', 'p_cost', 'p_beneficiaries', 'p_transactions', 'p_volume', 'p_note'],
   set_campaign_status:        ['p_campaign', 'p_status', 'p_note'],

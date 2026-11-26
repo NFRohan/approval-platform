@@ -47,7 +47,17 @@ export type StageApprover = {
   flag?: string | null;
   /** Remind whoever holds the step every this many hours until it is decided; null for no such reminder. */
   remindHours?: number | null;
+  /** SLA timing (SOW 2.1 "after breach SLA or before SLA, it can be configured"); null for the usual. */
+  /** A due-soon notice this many hours before the deadline; 0 for none, null for 24. */
+  warnHours?: number | null;
+  /** Escalate this many working days after the deadline; 0 on the deadline, null for 2. */
+  escalateDays?: number | null;
+  /** How many managers up the approver's line it climbs; 0 never, null for 1. */
+  escalateLevels?: number | null;
 };
+
+/** The usual SLA timing when a step does not set its own (db/007_reports.sql). */
+export const SLA_DEFAULTS = { warnHours: 24, escalateDays: 2, escalateLevels: 1 } as const;
 
 export type Stage = {
   id: string;

@@ -14,8 +14,9 @@
 // app.rule_role / app.resolve_role in db/005_chain.sql are the roles.
 // =====================================================================
 
-import { Plus, Trash2, GitBranch, Filter } from "lucide-react";
-import { CONDITION_OPS, ROLE_OPTIONS, newApprover, newId, trackCount, type Stage, type StageApprover } from "./stages";
+import { useState } from "react";
+import { Plus, Trash2, GitBranch, Filter, AlarmClock } from "lucide-react";
+import { CONDITION_OPS, ROLE_OPTIONS, SLA_DEFAULTS, newApprover, newId, trackCount, type Stage, type StageApprover } from "./stages";
 
 type EmployeeOption = { employee_id: string; name: string; designation: string | null };
 
@@ -49,6 +50,11 @@ export function StageEditor({
           : s,
       ),
     );
+  // The SLA row of each approver: open when asked for, or when the step
+  // already has timing of its own.
+  const [slaOpen, setSlaOpen] = useState<Record<string, boolean>>({});
+  const hasSla = (a: StageApprover) => a.warnHours != null || a.escalateDays != null || a.escalateLevels != null;
+  const num = (v: string, lo: number, hi: number) => (v === "" ? null : Math.min(hi, Math.max(lo, Math.round(Number(v) || 0))));
 
   return (
     <section className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", overflow: "hidden" }}>
@@ -173,6 +179,22 @@ export function StageEditor({
                     >
                       <Filter size={11} /> {a.condition ? "Only when…" : "Always"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlaOpen((o) => ({ ...o, [a.id]: !(o[a.id] ?? hasSla(a)) }))}
+                      title="When to warn before the deadline and whom to escalate to after it"
+                      aria-label="SLA timing"
+                      aria-expanded={slaOpen[a.id] ?? hasSla(a)}
+                      className="inline-flex items-center gap-1 rounded-md"
+                      style={{
+                        padding: "5px 8px", fontSize: 11.5, cursor: "pointer",
+                        border: `1px solid ${hasSla(a) ? "#C7D2FE" : "#E4E4E7"}`,
+                        background: hasSla(a) ? "#EEF2FF" : "#fff",
+                        color: hasSla(a) ? "#4338CA" : "#71717A",
+                      }}
+                    >
+                      <AlarmClock size={11} /> SLA
+                    </button>
                     <label className="inline-flex items-center gap-1" style={{ fontSize: 11.5, color: "#52525B" }}>
                       <input
                         type="checkbox"
@@ -198,6 +220,43 @@ export function StageEditor({
                       <Trash2 size={13} />
                     </button>
                   </div>
+                  {(slaOpen[a.id] ?? hasSla(a)) && (
+                    <div className="flex items-center gap-2 flex-wrap mt-2" style={{ fontSize: 12, color: "#52525B" }} data-sla="">
+                      <span>Before the deadline: warn</span>
+                      <input
+                        type="number" min={0} max={168}
+                        value={a.warnHours ?? ""}
+                        placeholder={String(SLA_DEFAULTS.warnHours)}
+                        onChange={(e) => setApprover(stage.id, a.id, { warnHours: num(e.target.value, 0, 168) })}
+                        aria-label="Warn this many hours before the deadline"
+                        style={{ ...input, width: 56 }}
+                      />
+                      <span>hours ahead (0 for no warning).</span>
+                      <span>After it: escalate</span>
+                      <input
+                        type="number" min={0} max={30}
+                        value={a.escalateDays ?? ""}
+                        placeholder={String(SLA_DEFAULTS.escalateDays)}
+                        onChange={(e) => setApprover(stage.id, a.id, { escalateDays: num(e.target.value, 0, 30) })}
+                        aria-label="Escalate this many working days after the deadline"
+                        style={{ ...input, width: 52 }}
+                      />
+                      <span>working days late, up</span>
+                      <select
+                        value={a.escalateLevels ?? ""}
+                        onChange={(e) => setApprover(stage.id, a.id, { escalateLevels: e.target.value === "" ? null : Number(e.target.value) })}
+                        aria-label="Escalation levels"
+                        style={input}
+                      >
+                        <option value="">1 level (the usual)</option>
+                        <option value="0">no levels: never escalate</option>
+                        <option value="1">1 level: their manager</option>
+                        <option value="2">2 levels: and the manager above</option>
+                        <option value="3">3 levels</option>
+                      </select>
+                      <span>of the approver's reporting line.</span>
+                    </div>
+                  )}
                   {a.condition && (
                     <div className="flex items-center gap-2 flex-wrap mt-2" style={{ fontSize: 12, color: "#52525B" }}>
                       <span>Only when</span>

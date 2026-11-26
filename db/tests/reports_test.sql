@@ -255,6 +255,94 @@ begin
   raise notice 'pass: a step two working days overdue is escalated to the approver''s manager, once';
 end $$;
 
+-- The SLA timing a step sets for itself (SOW 2.1 "after breach SLA or
+-- before SLA. It can be configured").
+do $$
+declare v_step uuid; v_appr text; v_m1 text; v_m2 text; v jsonb; v_sub uuid;
+begin
+  perform pg_temp.as_emp(null);
+  -- A pending step whose approver has a manager who has a manager.
+  select ar.id, ar.approver_user_id, e.line_manager_id, m.line_manager_id, ar.subject_id
+    into v_step, v_appr, v_m1, v_m2, v_sub
+    from public.approval_requests ar
+    join public.employees e on e.tenant_id = ar.tenant_id and e.employee_id = ar.approver_user_id
+    join public.employees m on m.tenant_id = ar.tenant_id and m.employee_id = e.line_manager_id
+   where ar.tenant_id = current_setting('t.tpl')::uuid and ar.status = 'pending'
+     and m.line_manager_id is not null and m.line_manager_id <> ar.approver_user_id
+     and not exists (select 1 from public.notifications n
+                      where n.tenant_id = ar.tenant_id and n.entity_id = ar.subject_id
+                        and n.kind in ('approval.escalated', 'approval.due_soon'))
+   limit 1;
+  if v_step is null then raise exception 'FAIL: no step with two managers above its approver to test with'; end if;
+
+  -- Before: warnings off, so a step due in three hours says nothing.
+  update public.approval_requests
+     set deadline_at = now() + interval '3 hours', warn_hours = 0 where id = v_step;
+  perform app.daily_reminders();
+  if exists (select 1 from public.notifications where entity_id = v_sub and kind = 'approval.due_soon') then
+    raise exception 'FAIL: a step with warnings off still warned';
+  end if;
+  -- A 48-hour warning: due in a day and a half, it warns.
+  update public.approval_requests
+     set deadline_at = now() + interval '36 hours', warn_hours = 48 where id = v_step;
+  perform app.daily_reminders();
+  if not exists (select 1 from public.notifications where entity_id = v_sub and kind = 'approval.due_soon'
+                   and recipient_id = v_appr) then
+    raise exception 'FAIL: a 48-hour warning did not come 36 hours ahead';
+  end if;
+  raise notice 'pass: the due-soon warning before the deadline follows the step (off, or 48 hours)';
+
+  -- After: escalate on the deadline, two levels. Just past it, level one.
+  update public.approval_requests
+     set deadline_at = now() - interval '1 hour', escalate_days = 0, escalate_levels = 2 where id = v_step;
+  perform app.daily_reminders();
+  if not exists (select 1 from public.notifications where entity_id = v_sub and kind = 'approval.escalated' and recipient_id = v_m1) then
+    raise exception 'FAIL: escalating on the deadline did not reach the manager';
+  end if;
+  if exists (select 1 from public.notifications where entity_id = v_sub and kind = 'approval.escalated' and recipient_id = v_m2) then
+    raise exception 'FAIL: level two came before its day';
+  end if;
+  -- Four days late: level two, the manager's manager, once.
+  update public.approval_requests set deadline_at = now() - interval '4 days' where id = v_step;
+  perform app.daily_reminders();
+  v := app.daily_reminders();
+  if (select count(*) from public.notifications where entity_id = v_sub and kind = 'approval.escalated' and recipient_id = v_m2) <> 1 then
+    raise exception 'FAIL: level two did not reach the manager''s manager exactly once';
+  end if;
+  if (select count(*) from public.notifications where entity_id = v_sub and kind = 'approval.escalated' and recipient_id = v_m1) <> 1 then
+    raise exception 'FAIL: the manager was told twice';
+  end if;
+
+  -- Never: no levels, no escalation however late.
+  delete from public.notifications where entity_id = v_sub and kind = 'approval.escalated';
+  update public.approval_requests set escalate_levels = 0 where id = v_step;
+  perform app.daily_reminders();
+  if exists (select 1 from public.notifications where entity_id = v_sub and kind = 'approval.escalated') then
+    raise exception 'FAIL: a step set never to escalate escalated';
+  end if;
+  raise notice 'pass: escalation after the breach follows the step: on the deadline, up two levels of the reporting line, or never';
+end $$;
+
+-- A form's step carries its timing into every request built from it.
+do $$
+declare v_rule uuid; v_form uuid; v_sub uuid; v record;
+begin
+  perform pg_temp.as_emp(null);
+  select r.id, r.form_template_id into v_rule, v_form from public.approval_rules r
+   where r.tenant_id = current_setting('t.tpl')::uuid and r.subject_type = 'form_submission'
+     and r.step_index = 0 and r.condition is null and r.label is distinct from 'slab_finance'
+   order by r.position limit 1;
+  update public.approval_rules set warn_hours = 6, escalate_days = 1, escalate_levels = 3 where id = v_rule;
+  select warn_hours, escalate_days, escalate_levels into v
+    from app.plan_chain('form_submission', v_form, 'EMP-NOBODY', '{}'::jsonb)
+   where warn_hours is not null limit 1;
+  if v.warn_hours is distinct from 6 or v.escalate_days is distinct from 1 or v.escalate_levels is distinct from 3 then
+    raise exception 'FAIL: the planned chain dropped the step''s SLA timing: %', v;
+  end if;
+  update public.approval_rules set warn_hours = null, escalate_days = null, escalate_levels = null where id = v_rule;
+  raise notice 'pass: a step''s SLA timing goes from the form''s rule into the chain';
+end $$;
+
 -- A step that becomes somebody's turn records when.
 do $$
 declare v_step uuid;

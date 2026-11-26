@@ -39,7 +39,8 @@ function Page() {
 //
 // `label` is what is saved on the rule and what the engine reads;
 // app.rule_role in db/005_chain.sql is the list of roles it knows.
-type AutoApprover = AutoEntry & { label: string; _requires?: string; ruleId?: string; requireSignature?: boolean; remindHours?: number | null };
+type Sla = { warnHours?: number | null; escalateDays?: number | null; escalateLevels?: number | null };
+type AutoApprover = AutoEntry & Sla & { label: string; _requires?: string; ruleId?: string; requireSignature?: boolean; remindHours?: number | null };
 
 const ALL_AUTO_APPROVERS: AutoApprover[] = [
   {
@@ -77,7 +78,7 @@ const ALL_AUTO_APPROVERS: AutoApprover[] = [
   },
 ];
 
-type SavedRule = { label: string; user_id: string | null; deadlineDays: number; ruleId: string; requireSignature: boolean; remindHours: number | null };
+type SavedRule = Sla & { label: string; user_id: string | null; deadlineDays: number; ruleId: string; requireSignature: boolean; remindHours: number | null };
 
 // The organisational roles a rule can name; see app.resolve_role.
 const ROLE_LABELS = new Set(["line_manager", "skip_level", "department_head", "hrbp", "cxo"]);
@@ -126,7 +127,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
         db.from("approval_rules")
-          .select("id, approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag, remind_hours")
+          .select("id, approver_user_id, deadline_days, is_auto_added, label, step_index, quorum, condition, stage_label, lane, position, require_signature, flag, remind_hours, warn_hours, escalate_days, escalate_levels")
           .eq("form_template_id", templateId)
           .order("step_index")
           .order("position"),
@@ -164,6 +165,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
         step_index: number | null; quorum: number | null; stage_label: string | null; lane: string | null;
         condition: { field?: string; op?: string; value?: string } | null;
         require_signature: boolean | null; flag: string | null; remind_hours: number | null;
+        warn_hours?: number | null; escalate_days?: number | null; escalate_levels?: number | null;
       };
       const byStage = new Map<number, SavedManual[]>();
       for (const r of (rules ?? []) as (SavedManual & { is_auto_added: boolean | null })[]) {
@@ -196,6 +198,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
                 requireSignature: !!r.require_signature,
                 flag: r.flag,
                 remindHours: r.remind_hours ?? null,
+                warnHours: r.warn_hours ?? null, escalateDays: r.escalate_days ?? null, escalateLevels: r.escalate_levels ?? null,
                 deadlineDays: r.deadline_days ?? 7,
                 track: r.lane ?? "",
                 condition: r.condition?.field
@@ -213,6 +216,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
                 label: r.label ?? "", user_id: r.approver_user_id, deadlineDays: r.deadline_days ?? 7,
                 ruleId: r.id as string, requireSignature: !!r.require_signature,
                 remindHours: (r as { remind_hours?: number | null }).remind_hours ?? null,
+                warnHours: r.warn_hours ?? null, escalateDays: r.escalate_days ?? null, escalateLevels: r.escalate_levels ?? null,
               }))
           : null,
       );
@@ -270,11 +274,12 @@ function ApproversStep({ templateId }: { templateId: string }) {
       const def = ALL_AUTO_APPROVERS.find((a) => a.label === role && (role === "line_manager" || role === "slab_finance"));
       // The person on a line-manager rule is the fallback for somebody
       // with no manager on record, so it is kept.
-      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays, ruleId: r.ruleId, requireSignature: r.requireSignature, remindHours: r.remindHours };
+      if (def) return { ...def, user_id: role === "line_manager" ? r.user_id : def.user_id, deadlineDays: r.deadlineDays, ruleId: r.ruleId, requireSignature: r.requireSignature, remindHours: r.remindHours, warnHours: r.warnHours, escalateDays: r.escalateDays, escalateLevels: r.escalateLevels };
       return named({
         ruleId: r.ruleId,
         requireSignature: r.requireSignature,
         remindHours: r.remindHours,
+        warnHours: r.warnHours, escalateDays: r.escalateDays, escalateLevels: r.escalateLevels,
         id: `saved-auto-${i}`,
         user_id: r.user_id,
         label: r.label,
@@ -293,12 +298,16 @@ function ApproversStep({ templateId }: { templateId: string }) {
   // Task settings only: each saved step's deadline and signature, through
   // the one function that may change them, and nothing else.
   async function saveSettings() {
+    const timing = (a: Sla & { remindHours?: number | null }) => ({
+      remind_hours: a.remindHours ?? null, warn_hours: a.warnHours ?? null,
+      escalate_days: a.escalateDays ?? null, escalate_levels: a.escalateLevels ?? null,
+    });
     const changes = [
-      ...autoApprovers.filter((a) => a.ruleId).map((a) => ({ id: a.ruleId!, days: a.deadlineDays ?? 7, sig: !!a.requireSignature })),
-      ...stages.flatMap((st) => st.approvers.filter((a) => a.ruleId).map((a) => ({ id: a.ruleId!, days: a.deadlineDays, sig: !!a.requireSignature }))),
+      ...autoApprovers.filter((a) => a.ruleId).map((a) => ({ id: a.ruleId!, days: a.deadlineDays ?? 7, sig: !!a.requireSignature, t: timing(a) })),
+      ...stages.flatMap((st) => st.approvers.filter((a) => a.ruleId).map((a) => ({ id: a.ruleId!, days: a.deadlineDays, sig: !!a.requireSignature, t: timing(a) }))),
     ];
     for (const c of changes) {
-      const { error } = await db.rpc("update_rule_settings", { p_rule: c.id, p_deadline_days: c.days, p_require_signature: c.sig });
+      const { error } = await db.rpc("update_rule_settings", { p_rule: c.id, p_deadline_days: c.days, p_require_signature: c.sig, p_timing: c.t });
       if (error) {
         toast.error("Could not save the task settings: " + error.message);
         return;
@@ -329,6 +338,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
         is_auto_added: true,
         label: a.label,
         remind_hours: a.remindHours ?? null,
+        warn_hours: a.warnHours ?? null, escalate_days: a.escalateDays ?? null, escalate_levels: a.escalateLevels ?? null,
       })),
     ].map((r, i) => ({ ...r, step_index: i, position: 0 }));
 
@@ -357,6 +367,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
             require_signature: !!a.requireSignature,
             flag: a.flag?.trim() || null,
             remind_hours: a.remindHours ?? null,
+            warn_hours: a.warnHours ?? null, escalate_days: a.escalateDays ?? null, escalate_levels: a.escalateLevels ?? null,
           };
         }),
       );

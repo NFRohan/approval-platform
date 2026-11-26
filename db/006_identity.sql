@@ -565,7 +565,12 @@ end $$;
 -- full edit permission and another one for opening only task settings
 -- ... He cannot update any element of diagram, eForm, or variable."
 -- ---------------------------------------------------------------------
-create or replace function public.update_rule_settings(p_rule uuid, p_deadline_days int, p_require_signature boolean)
+-- p_timing, when given, sets the step's reminder and SLA timing as well:
+-- {"remind_hours", "warn_hours", "escalate_days", "escalate_levels"},
+-- each a number, or null for the usual (the daily round, db/007_reports.sql).
+drop function if exists public.update_rule_settings(uuid, int, boolean);
+create or replace function public.update_rule_settings(p_rule uuid, p_deadline_days int, p_require_signature boolean,
+                                                       p_timing jsonb default null)
 returns void
 language plpgsql
 security definer
@@ -590,6 +595,14 @@ begin
   update public.approval_rules
      set deadline_days = p_deadline_days, require_signature = coalesce(p_require_signature, false)
    where id = p_rule;
+  if p_timing is not null then
+    update public.approval_rules
+       set remind_hours    = (p_timing ->> 'remind_hours')::int,
+           warn_hours      = (p_timing ->> 'warn_hours')::int,
+           escalate_days   = (p_timing ->> 'escalate_days')::int,
+           escalate_levels = (p_timing ->> 'escalate_levels')::int
+     where id = p_rule;
+  end if;
   perform app.audit('task_settings_changed', 'approval_rule', p_rule, coalesce(v.name, 'a workflow'));
 end $$;
 
@@ -901,7 +914,7 @@ grant execute on function
   public.propose_role_change(uuid, text, text[], text),
   public.decide_role(uuid, boolean),
   public.assign_role(text, uuid, boolean),
-  public.update_rule_settings(uuid, int, boolean),
+  public.update_rule_settings(uuid, int, boolean, jsonb),
   public.import_employees(jsonb, boolean),
   public.list_accounts(),
   public.record_directory_sync(text, jsonb, text)

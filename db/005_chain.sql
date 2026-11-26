@@ -638,7 +638,10 @@ create or replace function app.plan_chain(
   lane_label  text,
   require_signature boolean,
   flag        text,
-  remind_hours int
+  remind_hours int,
+  warn_hours  int,
+  escalate_days int,
+  escalate_levels int
 )
 language plpgsql
 stable
@@ -666,6 +669,9 @@ declare
   c_sig   boolean[] := '{}';
   c_flag  text[] := '{}';
   c_rem   int[]  := '{}';
+  c_warn  int[]  := '{}';
+  c_escd  int[]  := '{}';
+  c_escl  int[]  := '{}';
 begin
   if p_subject_type = 'form_submission' then
     v_amount := app.amount_in(p_form_template_id, p_answers);
@@ -674,7 +680,7 @@ begin
   for r in
     select ar.approver_user_id, ar.deadline_days, ar.label, ar.step_index,
            ar.quorum, ar.condition, ar.stage_label, ar.lane, ar.require_signature, ar.flag,
-           ar.remind_hours
+           ar.remind_hours, ar.warn_hours, ar.escalate_days, ar.escalate_levels
       from public.approval_rules ar
      where ar.subject_type = p_subject_type
        -- This organisation's rules. Row-level security says so for the
@@ -707,6 +713,9 @@ begin
         c_sig   := array_append(c_sig, r.require_signature);
         c_flag  := array_append(c_flag, r.flag);
         c_rem   := array_append(c_rem, r.remind_hours);
+        c_warn  := array_append(c_warn, r.warn_hours);
+        c_escd  := array_append(c_escd, r.escalate_days);
+        c_escl  := array_append(c_escl, r.escalate_levels);
       end loop;
       v_prev_idx := null;
       continue;
@@ -751,12 +760,15 @@ begin
     c_sig   := array_append(c_sig, r.require_signature);
     c_flag  := array_append(c_flag, r.flag);
     c_rem   := array_append(c_rem, r.remind_hours);
+    c_warn  := array_append(c_warn, r.warn_hours);
+    c_escd  := array_append(c_escd, r.escalate_days);
+    c_escl  := array_append(c_escl, r.escalate_levels);
   end loop;
 
   return query
   with c as (
-    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl, c_sig, c_flag, c_rem)
-             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, sig, flg, rem, ord)
+    select * from unnest(c_phase, c_lane, c_appr, c_days, c_quo, c_slbl, c_llbl, c_sig, c_flag, c_rem, c_warn, c_escd, c_escl)
+             with ordinality as t(phase, ln, appr, dd, quo, slbl, llbl, sig, flg, rem, wrn, escd, escl, ord)
   ),
   -- A rule with no approver is configuration never finished; skipping it
   -- is better than a step nobody can act on. Nobody approves their own.
@@ -814,7 +826,7 @@ begin
          (row_number() over (partition by g.phase, g.ln order by g.ord) - 1)::int,
          g.appr, g.dd,
          case when pq.quo is not null and pq.quo < pq.nl then pq.quo end,
-         pq.slbl, g.llbl, coalesce(g.sig, false), g.flg, g.rem
+         pq.slbl, g.llbl, coalesce(g.sig, false), g.flg, g.rem, g.wrn, g.escd, g.escl
     from g
     join num  on num.phase = g.phase
     join lnum on lnum.phase = g.phase and lnum.ln = g.ln
@@ -900,7 +912,8 @@ begin
   insert into public.approval_requests
     (submission_id, notice_id, stationery_request_id, maintenance_request_id,
      approver_user_id, step_index, lane, lane_step, status, deadline_at, deadline_days,
-     quorum, stage_label, lane_label, require_signature, remind_hours)
+     quorum, stage_label, lane_label, require_signature, remind_hours,
+     warn_hours, escalate_days, escalate_levels)
   select
     case when p_subject_type = 'form_submission'     then p_subject_id end,
     case when p_subject_type = 'notice'              then p_subject_id end,
@@ -913,7 +926,8 @@ begin
                                               when 'high'   then p.days - 1
                                               else p.days end)),
     greatest(1, case v_priority when 'urgent' then ceil(p.days / 2.0)::int when 'high' then p.days - 1 else p.days end),
-    p.quorum, p.stage_label, p.lane_label, p.require_signature, p.remind_hours
+    p.quorum, p.stage_label, p.lane_label, p.require_signature, p.remind_hours,
+    p.warn_hours, p.escalate_days, p.escalate_levels
   from app.plan_chain(p_subject_type, p_form_template_id, v_requester, v_answers) p;
 
   get diagnostics n = row_count;

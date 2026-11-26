@@ -122,6 +122,24 @@ const within = page.getByRole('checkbox', { name: 'Forward only within the repor
 ok('the builder shows the form forwards within the line', (await within.count()) === 1 && await within.isChecked());
 ok('...and each stage approver can remind at an interval', (await page.getByLabel('Remind every so many hours').count()) >= 1);
 await shot('s9-builder');
+// SOW 2.1: "notification will be given after breach SLA or before SLA. It can be configured."
+const fraudForm = await formId('Fraud Incident Fund Transfer');
+await page.getByRole('button', { name: 'SLA timing' }).first().click();
+await settle(400);
+await page.getByLabel('Warn this many hours before the deadline').first().fill('6');
+await page.getByLabel('Escalate this many working days after the deadline').first().fill('1');
+await page.getByLabel('Escalation levels').first().selectOption('2');
+await shot('s9-builder-sla');
+await page.getByRole('button', { name: /Next/ }).click();
+await settle(3000);
+const slaRule = await one(`select warn_hours w, escalate_days d, escalate_levels l from public.approval_rules
+  where form_template_id = $1 and warn_hours is not null`, [fraudForm]);
+ok("a step's SLA timing (warn before, escalate after, how many levels) is set in the builder and saved",
+  slaRule?.w === 6 && slaRule?.d === 1 && slaRule?.l === 2, JSON.stringify(slaRule));
+await page.goto(`${BASE}/builder/approvers?templateId=${fraudForm}&as=EMP-0201`);
+await settle(3500);
+ok('...and shows again when the form is reopened',
+  (await page.getByLabel('Warn this many hours before the deadline').first().inputValue()) === '6');
 
 // ---------------------------------------------------------------- the SOW's forms, and Excel
 await page.goto(`${BASE}/forms?as=EMP-2847`);

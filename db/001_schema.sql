@@ -1861,6 +1861,28 @@ do $$ begin
     check (remind_hours is null or remind_hours between 1 and 168);
 exception when duplicate_object then null; end $$;
 
+-- "SLA wise auto escalation including approvers supervisor. When
+-- notification will be given after breach SLA or Before SLA. It can be
+-- configured." (SOW 2.1 Notification.) Per step:
+--   warn_hours      a due-soon notice this many hours before the deadline
+--                   (0: none; null: the usual 24)
+--   escalate_days   working days after the deadline before escalating
+--                   (0: on the deadline; null: the usual 2)
+--   escalate_levels how far up the approver's reporting line it climbs,
+--                   one level each escalate_days (0: never; null: 1)
+alter table public.approval_rules    add column if not exists warn_hours integer;
+alter table public.approval_rules    add column if not exists escalate_days integer;
+alter table public.approval_rules    add column if not exists escalate_levels integer;
+alter table public.approval_requests add column if not exists warn_hours integer;
+alter table public.approval_requests add column if not exists escalate_days integer;
+alter table public.approval_requests add column if not exists escalate_levels integer;
+do $$ begin
+  alter table public.approval_rules add constraint approval_rules_sla_check
+    check ((warn_hours is null or warn_hours between 0 and 168)
+       and (escalate_days is null or escalate_days between 0 and 30)
+       and (escalate_levels is null or escalate_levels between 0 and 3));
+exception when duplicate_object then null; end $$;
+
 -- "Manually assigning different approvers only within a hierarchy": a
 -- form may keep forwarding inside the approver's own reporting line.
 alter table public.form_templates add column if not exists forward_within_line boolean not null default false;

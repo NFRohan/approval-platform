@@ -507,11 +507,22 @@ end $$;
 -- ---------------------------------------------------------------------
 -- The daily round, for the tenant in context.
 --
--- "Approval notification interval (reminders, SLA auto-escalation,
--- before or after breach)." A step due within a day reminds its
--- approver once; a step two working days past its deadline is escalated
--- to the approver's line manager, once. Overdue steps already remind
--- their approver daily (remind_overdue).
+-- "Approval notification interval: approvers will receive specific
+-- reminders regarding a request if the request is not accepted within an
+-- agreed time frame. SLA wise auto escalation including approvers
+-- supervisor. When notification will be given after breach SLA or
+-- before SLA. It can be configured." (SOW 2.1 Notification.)
+--
+-- Each step carries its own timing (db/001_schema.sql), set per step in
+-- the workflow builder:
+--   * before the breach: a due-soon notice warn_hours before the deadline
+--     (24 unless set; 0 turns it off), once;
+--   * at the breach: a reminder a day to whoever holds it;
+--   * after the breach: escalate_days working days past the deadline
+--     (2 unless set; 0 is on the deadline) it goes to the approver's line
+--     manager, and for each further level (escalate_levels, 1 unless set,
+--     up to 3) another escalate_days later to the next manager up. Each
+--     person is told once.
 -- ---------------------------------------------------------------------
 create or replace function app.daily_reminders()
 returns jsonb
@@ -519,7 +530,9 @@ language plpgsql
 security definer
 set search_path = public, app, pg_temp
 as $$
-declare r record; v_due int := 0; v_esc int := 0; v_over int := 0; v_mgr text;
+declare
+  r record; v_due int := 0; v_esc int := 0; v_over int := 0;
+  v_to text; v_days int; v_levels int; k int; v_who text;
 begin
   -- Overdue: a reminder a day to whoever holds it.
   for r in
@@ -538,10 +551,12 @@ begin
     v_over := v_over + 1;
   end loop;
 
+  -- Before the breach.
   for r in
     select ar.* from public.approval_requests ar
      where ar.tenant_id = app.current_tenant() and ar.status = 'pending'
-       and ar.deadline_at between now() and now() + interval '1 day'
+       and coalesce(ar.warn_hours, 24) > 0
+       and ar.deadline_at between now() and now() + make_interval(hours => coalesce(ar.warn_hours, 24))
        and not exists (select 1 from public.notifications n
                         where n.tenant_id = ar.tenant_id and n.kind = 'approval.due_soon'
                           and n.recipient_id = ar.approver_user_id and n.entity_id = ar.subject_id)
@@ -553,24 +568,38 @@ begin
     v_due := v_due + 1;
   end loop;
 
+  -- After the breach, up the reporting line.
   for r in
     select ar.* from public.approval_requests ar
      where ar.tenant_id = app.current_tenant() and ar.status = 'pending'
-       and app.add_working_days(ar.deadline_at, 2, ar.tenant_id) < now()
+       and ar.approver_user_id is not null and ar.deadline_at < now()
+       and coalesce(ar.escalate_levels, 1) > 0
   loop
-    select line_manager_id into v_mgr from public.employees
-     where tenant_id = r.tenant_id and employee_id = r.approver_user_id;
-    continue when v_mgr is null or exists (
-      select 1 from public.notifications n
-       where n.tenant_id = r.tenant_id and n.kind = 'approval.escalated'
-         and n.recipient_id = v_mgr and n.entity_id = r.subject_id);
-    perform app.notify(v_mgr, 'approval.escalated',
-      'Escalated: ' || app.subject_label(r.subject_type, r.subject_id),
-      coalesce((select name from public.employees where tenant_id = r.tenant_id and employee_id = r.approver_user_id), r.approver_user_id)
-        || ' has not acted on this for two working days past its deadline.',
-      r.subject_type, r.subject_id);
-    perform app.log_event(r.id, r.subject_type, r.subject_id, null, 'escalated', null, v_mgr);
-    v_esc := v_esc + 1;
+    v_days   := coalesce(r.escalate_days, 2);
+    v_levels := coalesce(r.escalate_levels, 1);
+    v_to     := r.approver_user_id;
+    v_who    := coalesce((select name from public.employees
+                           where tenant_id = r.tenant_id and employee_id = r.approver_user_id), r.approver_user_id);
+    for k in 1 .. v_levels loop
+      -- Level k falls due escalate_days after the deadline, then every
+      -- escalate_days (at least a day) after that.
+      exit when app.add_working_days(r.deadline_at, v_days + (k - 1) * greatest(v_days, 1), r.tenant_id) > now();
+      select line_manager_id into v_to from public.employees
+       where tenant_id = r.tenant_id and employee_id = v_to;
+      exit when v_to is null or v_to = r.approver_user_id;
+      continue when exists (
+        select 1 from public.notifications n
+         where n.tenant_id = r.tenant_id and n.kind = 'approval.escalated'
+           and n.recipient_id = v_to and n.entity_id = r.subject_id);
+      perform app.notify(v_to, 'approval.escalated',
+        'Escalated: ' || app.subject_label(r.subject_type, r.subject_id),
+        v_who || ' has not acted on this; it was due '
+          || to_char(r.deadline_at at time zone 'Asia/Dhaka', 'DD/MM/YYYY') || '.'
+          || case when k > 1 then ' This is escalation level ' || k || '.' else '' end,
+        r.subject_type, r.subject_id);
+      perform app.log_event(r.id, r.subject_type, r.subject_id, null, 'escalated', null, v_to);
+      v_esc := v_esc + 1;
+    end loop;
   end loop;
 
   return jsonb_build_object('overdue', v_over, 'due_soon', v_due, 'escalated', v_esc);
