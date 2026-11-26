@@ -519,16 +519,17 @@ function MovementOrdersPage() {
   const load = useCallback(async () => {
     setLoading(true);
 
-    let query = db
-      .from("movement_orders")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!isAdmin) {
-      query = query.eq("requester_id", currentUser.employee_id);
-    }
-
-    const { data, error } = await query;
+    // An administrator sees every order; anybody else the ones they raised
+    // and the ones they are assigned to move.
+    const base = () => db.from("movement_orders").select("*").order("created_at", { ascending: false });
+    const [mine, moving] = isAdmin
+      ? [await base(), { data: [], error: null }]
+      : await Promise.all([base().eq("requester_id", currentUser.employee_id), base().eq("assigned_mover_id", currentUser.employee_id)]);
+    const error = mine.error ?? moving.error;
+    const seen = new Set<string>();
+    const data = [...((mine.data ?? []) as { id: string; created_at: string | Date }[]), ...((moving.data ?? []) as { id: string; created_at: string | Date }[])]
+      .filter((o) => !seen.has(o.id) && seen.add(o.id))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     if (error) { toast.error("Failed to load orders"); setLoading(false); return; }
 
     const rows = (data ?? []) as MO[];
@@ -612,7 +613,9 @@ function MovementOrdersPage() {
 
       {/* Status filter tabs */}
       <div className="flex gap-1 flex-wrap mb-5">
-        {["all", "submitted", "approved", "in_transit", "completed", "rejected"].map((s) => {
+        {/* Every status an order can be in, so the tabs add up to All. */}
+        {["all", "submitted", "approved", "in_transit", "completed", "on_hold", "rejected",
+          ...Array.from(new Set(orders.map((o) => o.status))).filter((x) => !(x in STATUS_LABELS))].map((s) => {
           const active = s === filterStatus;
           const cfg = STATUS_LABELS[s];
           return (

@@ -38,7 +38,11 @@ function ActivityPage() {
     let active = true;
     (async () => {
       setLoading(true);
-      const { data } = await db.from("activity_log").select("*").order("created_at", { ascending: false }).limit(200);
+      // Filtered by the person in the database, not among the latest 200
+      // of everybody's — that showed a fraction of what they had done.
+      let q = db.from("activity_log").select("*").order("created_at", { ascending: false });
+      if (actor) q = q.eq("actor_id", actor);
+      const { data } = await q.limit(200);
       const list = (data ?? []) as LogRow[];
       const actorIds = Array.from(new Set(list.map((r) => r.actor_id).filter(Boolean) as string[]));
       if (actorIds.length) {
@@ -50,7 +54,7 @@ function ActivityPage() {
       if (active) { setRows(list); setLoading(false); }
     })();
     return () => { active = false; };
-  }, []);
+  }, [actor]);
 
   const byEntity = entityFilter === "all" ? rows : rows.filter((r) => r.entity_type === entityFilter);
   const visible = actor ? byEntity.filter((r) => r.actor_id === actor) : byEntity;

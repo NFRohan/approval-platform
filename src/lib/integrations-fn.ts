@@ -53,7 +53,9 @@ export type DeliveryRow = {
 export type ApiDay = { day: string; ok: number; failed: number };
 export type ApiCall = { id: string; key: string | null; method: string; path: string; status: number; ms: number | null; ip: string | null; error: string | null; created_at: string };
 
-export const loadIntegrations = createServerFn({ method: 'GET' })
+// POST, not GET: a GET answer can be served from the browser's cache, which
+// showed a revoked key as Active and a deleted webhook still listed.
+export const loadIntegrations = createServerFn({ method: 'POST' })
   .handler(async (): Promise<Result<{
     keys: ApiKeyRow[]; webhooks: WebhookRow[]; canManage: boolean; days: ApiDay[]; calls: ApiCall[];
     totals: { calls: number; failed: number; p50: number | null; p95: number | null };

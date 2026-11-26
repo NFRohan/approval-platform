@@ -72,7 +72,7 @@ function HistoryPage() {
       if (subIds.length) {
         const { data: subs } = await db
           .from("form_submissions")
-          .select("id, form_template_id, submitted_by")
+          .select("id, form_template_id, submitted_by, ref_number")
           .in("id", subIds);
         const formIds = Array.from(
           new Set((subs || []).map((s) => s.form_template_id).filter(Boolean) as string[]),
@@ -106,12 +106,37 @@ function HistoryPage() {
             subFormMap[s.id] = formNameMap[s.form_template_id];
           }
         });
+        const refMap: Record<string, string> = {};
+        (subs || []).forEach((s) => { if (s.ref_number) refMap[s.id] = s.ref_number; });
         list.forEach((r) => {
           if (r.submission_id) {
+            (r as { reference?: string }).reference = refMap[r.submission_id];
             r.formName = subFormMap[r.submission_id];
             r.submitterName = submitterNameMap[r.submission_id];
           }
         });
+      }
+
+      // Notices and movement orders are decided here too; they have no
+      // request, so they are named by what they are (not "Submission").
+      const ids = (t: string) => Array.from(new Set(list.filter((r) => (r as { subject_type?: string }).subject_type === t).map((r) => (r as { subject_id?: string }).subject_id).filter(Boolean) as string[]));
+      const noticeIds = ids("notice"), moveIds = ids("movement_order");
+      const [{ data: ns }, { data: ms }] = await Promise.all([
+        noticeIds.length ? db.from("notices").select("id, title, created_by").in("id", noticeIds) : Promise.resolve({ data: [] }),
+        moveIds.length ? db.from("movement_orders").select("id, ref_number, item_name, requester_id").in("id", moveIds) : Promise.resolve({ data: [] }),
+      ]);
+      const people = Array.from(new Set([...(ns ?? []).map((n) => n.created_by), ...(ms ?? []).map((m) => m.requester_id)].filter(Boolean) as string[]));
+      const who: Record<string, string> = {};
+      if (people.length) {
+        const { data: e } = await db.from("employees").select("employee_id, name").in("employee_id", people);
+        (e ?? []).forEach((x) => { who[x.employee_id] = x.name; });
+      }
+      for (const r of list) {
+        const sid = (r as { subject_id?: string }).subject_id;
+        const n = (ns ?? []).find((x) => x.id === sid);
+        const m = (ms ?? []).find((x) => x.id === sid);
+        if (n) { r.formName = `Notice · ${n.title}`; r.submitterName = who[n.created_by ?? ""] ?? n.created_by ?? undefined; }
+        if (m) { r.formName = `Movement order · ${m.ref_number ?? m.item_name ?? ""}`; r.submitterName = who[m.requester_id ?? ""] ?? m.requester_id ?? undefined; }
       }
 
       if (active) {
@@ -125,12 +150,15 @@ function HistoryPage() {
   }, [currentUser.employee_id]);
 
   function handleExportCsv() {
-    const csv = toCsv(rows, [
+    // Dates as the screen writes them; each decision names its request.
+    const out = rows.map((r) => ({ ...r, acted_at: r.acted_at ? fmtDateTime(r.acted_at) : "" }));
+    const csv = toCsv(out, [
       { key: "formName", label: "Form Name" },
       { key: "submitterName", label: "Submitter" },
       { key: "status", label: "Status" },
       { key: "acted_at", label: "Acted At" },
       { key: "comment", label: "Comment" },
+      { key: "reference" as keyof typeof out[number], label: "Reference" },
     ]);
     downloadCsv(`approval-history-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   }
