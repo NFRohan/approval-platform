@@ -596,6 +596,48 @@ begin
 end $$;
 do $$ begin raise notice 'pass: notices are posted by HR, department heads, CXOs and administrators, not by everybody'; end $$;
 
+-- =====================================================================
+-- 15. Configuration changes are in the audit trail
+-- =====================================================================
+do $$
+declare v_form uuid; v_before int; v_rows text;
+begin
+  select id into v_form from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Leave Application';
+  -- What the seed did is not anybody's change.
+  if exists (select 1 from public.activity_log where tenant_id = current_setting('t.tpl')::uuid and action = 'configuration_changed') then
+    raise exception 'FAIL: the seed was recorded as somebody''s configuration change';
+  end if;
+  perform pg_temp.as_emp('EMP-0445');
+  select count(*) into v_before from public.activity_log where tenant_id = current_setting('t.tpl')::uuid and action = 'configuration_changed';
+  -- Two rules added in one save: one entry, not two.
+  insert into public.approval_rules (tenant_id, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index)
+  values (current_setting('t.tpl')::uuid, v_form, 'EMP-0600', 2, false, 'QA one', 7),
+         (current_setting('t.tpl')::uuid, v_form, 'EMP-0700', 2, false, 'QA two', 8);
+  update public.approval_rules set deadline_days = 4 where form_template_id = v_form and label = 'QA one';
+  delete from public.approval_rules where form_template_id = v_form and label in ('QA one', 'QA two');
+  insert into public.form_fields (tenant_id, form_template_id, field_type, field_name, order_index, is_required)
+  values (current_setting('t.tpl')::uuid, v_form, 'text', 'QA field', 99, false);
+  insert into public.approval_slabs (tenant_id, form_template_id, min_amount, approver_user_id, order_index)
+  values (current_setting('t.tpl')::uuid, v_form, 99999999, 'EMP-0700', 99);
+  update public.form_templates set status = 'draft' where id = v_form;
+  update public.form_templates set status = 'published' where id = v_form;
+  select string_agg(detail, ' | ' order by created_at, id) into v_rows from public.activity_log
+   where tenant_id = current_setting('t.tpl')::uuid and action = 'configuration_changed' and actor_id = 'EMP-0445';
+  if (select count(*) from public.activity_log where tenant_id = current_setting('t.tpl')::uuid and action = 'configuration_changed') - v_before <> 7 then
+    raise exception 'FAIL: expected 7 configuration entries, got: %', v_rows;
+  end if;
+  if v_rows not like '%Leave Application — approval rules: 2 added%' or v_rows not like '%approval rules: deadline days%'
+     or v_rows not like '%approval rules: 2 removed%' or v_rows not like '%fields: 1 added%' or v_rows not like '%money slabs: 1 added%'
+     or v_rows not like '%form: status published → draft%' or v_rows not like '%form: status draft → published%' then
+    raise exception 'FAIL: the entries do not say what changed: %', v_rows;
+  end if;
+  if not exists (select 1 from app.audit_rows(current_setting('t.tpl')::uuid, now() - interval '1 hour', now() + interval '1 hour') a
+                  where a.detail like 'Leave Application — approval rules: 2 added%') then
+    raise exception 'FAIL: the configuration change is not in the audit centre''s trail';
+  end if;
+end $$;
+do $$ begin raise notice 'pass: changes to a form, its fields, approvers, slabs and publishing are in the audit trail, one entry per save, saying what changed'; end $$;
+
 -- Tidy: the evaluation goes, and everything it held with it.
 -- Removing an organisation is platform staff's to do (row security on tenants).
 select set_config('app.is_staff', 'true', false);

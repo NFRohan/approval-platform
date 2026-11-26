@@ -290,12 +290,12 @@ await quiet();
 const lenaTop = await rows(`select entity_type, actor_id from public.activity_log where tenant_id = $1 order by created_at desc limit 200`, [tenant]);
 await go('/activity', LENA, 3500);
 ok('activity: the auditor sees the latest 200 entries', (await actRows()) === lenaTop.length, `${await actRows()} vs ${lenaTop.length}`);
-await page.getByRole('button', { name: /^notice$/i }).click();
+await page.getByRole('button', { name: /^notices$/i }).click();
 await settle(600);
 let shown = await actRows();
 const noticeTop = lenaTop.filter((r) => r.entity_type === 'notice').length;
 ok('activity: filtered to notices, it shows only notice entries (as many as the database has)', shown === noticeTop && /notice/.test(await activityText()) && !/form submission/.test(await activityText()), `${shown} vs ${noticeTop}`);
-await page.getByRole('button', { name: /^movement order$/i }).click();
+await page.getByRole('button', { name: /^movement orders$/i }).last().click();  // the filter chip, not the sidebar
 await settle(600);
 shown = await actRows();
 ok('activity: filtered to movement orders, likewise', shown === lenaTop.filter((r) => r.entity_type === 'movement_order').length && shown >= 4, String(shown));

@@ -16,7 +16,10 @@ export const Route = createFileRoute("/activity")({
 
 type LogRow = { id: string; actor_id: string | null; action: string; entity_type: string; entity_id: string; detail: string | null; created_at: string; actorName?: string };
 
-const ENTITY_TYPES = ["form_submission", "movement_order", "notice", "approval_slab"];
+// Plain names for the filter; "Configuration" is every change to a form,
+// its fields, approvers, slabs and notification rules.
+const ENTITY_TYPES = ["form_submission", "movement_order", "notice", "form_template"];
+const ENTITY_LABELS: Record<string, string> = { form_submission: "Requests", movement_order: "Movement orders", notice: "Notices", form_template: "Configuration" };
 
 function fmt(iso: string) {
   return fmtDateTime(iso);
@@ -24,7 +27,7 @@ function fmt(iso: string) {
 
 const ACTION_COLORS: Record<string, string> = {
   approved: "#166534", rejected: "#B91C1C", clarification_requested: "#92400E",
-  on_hold: "#92400E", published: "#1D4ED8", created: "#3F3F46", slab_updated: "#7C3AED", status_changed: "#3F3F46",
+  on_hold: "#92400E", published: "#1D4ED8", created: "#3F3F46", slab_updated: "#7C3AED", configuration_changed: "#7C3AED", status_changed: "#3F3F46",
 };
 
 function ActivityPage() {
@@ -87,7 +90,7 @@ function ActivityPage() {
         <button onClick={() => setEntityFilter("all")} style={{ padding: "5px 12px", fontSize: 12, borderRadius: 9999, border: `1px solid ${entityFilter === "all" ? "#18181B" : "#E4E4E7"}`, background: entityFilter === "all" ? "#F4F4F5" : "#fff", cursor: "pointer" }}>All</button>
         {ENTITY_TYPES.map((t) => (
           <button key={t} onClick={() => setEntityFilter(t)} style={{ padding: "5px 12px", fontSize: 12, borderRadius: 9999, border: `1px solid ${entityFilter === t ? "#18181B" : "#E4E4E7"}`, background: entityFilter === t ? "#F4F4F5" : "#fff", cursor: "pointer", textTransform: "capitalize" }}>
-            {t.replace("_", " ")}
+            {ENTITY_LABELS[t] ?? t.replace(/_/g, " ")}
           </button>
         ))}
       </div>

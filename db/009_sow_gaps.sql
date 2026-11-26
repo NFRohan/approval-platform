@@ -1191,4 +1191,108 @@ drop trigger if exists notices_who_may_post on public.notices;
 create trigger notices_who_may_post before insert on public.notices
   for each row execute function app.guard_notice_post();
 
+
+-- ---------------------------------------------------------------------
+-- Configuration changes, in the audit trail ("audit log of configuration
+-- changes", UAT). Whoever changes a form, its fields, who approves it,
+-- its money slabs or who is told about it is recorded by the database —
+-- not by each screen remembering to — one entry per form per save,
+-- naming the form and what changed. The seed and provisioning act as
+-- nobody and are not recorded.
+-- ---------------------------------------------------------------------
+create or replace function app.config_noun(p_table text)
+returns text language sql immutable as $$
+  select case p_table
+    when 'form_templates' then 'form'
+    when 'form_fields' then 'fields'
+    when 'approval_rules' then 'approval rules'
+    when 'approval_slabs' then 'money slabs'
+    when 'notification_rules' then 'notification rules'
+    else p_table end
+$$;
+
+-- One entry per form a statement touched. p_rows: (form id, what) pairs.
+drop function if exists app.log_config(text, text, uuid[], text[]);
+create or replace function app.log_config(p_table text, p_verb text, p_forms uuid[], p_what text[], p_tenants uuid[])
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare i int; v_name text;
+begin
+  if app.current_employee() is null or p_forms is null then return; end if;
+  for i in 1 .. coalesce(array_length(p_forms, 1), 0) loop
+    if p_forms[i] is null then continue; end if;
+    -- The organisation itself being removed takes its forms with it: no entry.
+    if not exists (select 1 from public.tenants where id = p_tenants[i]) then continue; end if;
+    select name into v_name from public.form_templates where id = p_forms[i];
+    insert into public.activity_log (tenant_id, actor_id, action, entity_type, entity_id, detail)
+    values (p_tenants[i], app.current_employee(), 'configuration_changed', 'form_template', p_forms[i],
+            coalesce(v_name, 'A form') || ' — ' || app.config_noun(p_table) || ': ' || p_what[i]);
+  end loop;
+end $$;
+
+create or replace function app.audit_config_insert()
+returns trigger language plpgsql security definer set search_path = public, app, pg_temp as $$
+declare v_forms uuid[]; v_what text[]; v_tenants uuid[];
+begin
+  if tg_table_name = 'form_templates' then
+    select array_agg(id), array_agg('created'::text), array_agg(tenant_id) into v_forms, v_what, v_tenants from new_rows;
+  else
+    select array_agg(f), array_agg(n || ' added'), array_agg(t) into v_forms, v_what, v_tenants
+      from (select (to_jsonb(r) ->> 'form_template_id')::uuid f, r.tenant_id t, count(*) n from new_rows r group by 1, 2) x;
+  end if;
+  perform app.log_config(tg_table_name, 'insert', v_forms, v_what, v_tenants);
+  return null;
+end $$;
+
+create or replace function app.audit_config_delete()
+returns trigger language plpgsql security definer set search_path = public, app, pg_temp as $$
+declare v_forms uuid[]; v_what text[]; v_tenants uuid[];
+begin
+  if tg_table_name = 'form_templates' then
+    select array_agg(id), array_agg('deleted (' || name || ')'), array_agg(tenant_id) into v_forms, v_what, v_tenants from old_rows;
+  else
+    select array_agg(f), array_agg(n || ' removed'), array_agg(t) into v_forms, v_what, v_tenants
+      from (select (to_jsonb(r) ->> 'form_template_id')::uuid f, r.tenant_id t, count(*) n from old_rows r group by 1, 2) x;
+  end if;
+  perform app.log_config(tg_table_name, 'delete', v_forms, v_what, v_tenants);
+  return null;
+end $$;
+
+-- An update names what changed, and how a form's status moved.
+create or replace function app.audit_config_update()
+returns trigger language plpgsql security definer set search_path = public, app, pg_temp as $$
+declare v_forms uuid[]; v_what text[]; v_tenants uuid[];
+begin
+  select array_agg(f), array_agg(what), array_agg(t) into v_forms, v_what, v_tenants from (
+    select coalesce((to_jsonb(n) ->> 'form_template_id')::uuid, (to_jsonb(n) ->> 'id')::uuid) f, n.tenant_id t,
+           string_agg(distinct
+             case when k.key = 'status' then 'status ' || coalesce(to_jsonb(o) ->> 'status', '—') || ' → ' || coalesce(to_jsonb(n) ->> 'status', '—')
+                  else replace(k.key, '_', ' ') end, ', ') what
+      from new_rows n
+      join old_rows o on (to_jsonb(o) ->> 'id') = (to_jsonb(n) ->> 'id')
+      cross join lateral jsonb_each(to_jsonb(n)) k
+     where (to_jsonb(o) -> k.key) is distinct from k.value
+       and k.key not in ('updated_at', 'created_at', 'tenant_id')
+     group by 1, 2) x
+   where what is not null;
+  perform app.log_config(tg_table_name, 'update', v_forms, v_what, v_tenants);
+  return null;
+end $$;
+
+do $cfg$
+declare t text;
+begin
+  foreach t in array array['form_templates', 'form_fields', 'approval_rules', 'approval_slabs', 'notification_rules'] loop
+    execute format('drop trigger if exists %1$s_audit_insert on public.%1$I', t);
+    execute format('drop trigger if exists %1$s_audit_delete on public.%1$I', t);
+    execute format('drop trigger if exists %1$s_audit_update on public.%1$I', t);
+    execute format('create trigger %1$s_audit_insert after insert on public.%1$I referencing new table as new_rows for each statement execute function app.audit_config_insert()', t);
+    execute format('create trigger %1$s_audit_delete after delete on public.%1$I referencing old table as old_rows for each statement execute function app.audit_config_delete()', t);
+    execute format('create trigger %1$s_audit_update after update on public.%1$I referencing new table as new_rows old table as old_rows for each statement execute function app.audit_config_update()', t);
+  end loop;
+end $cfg$;
+
 commit;

@@ -404,13 +404,8 @@ function ApproversStep({ templateId }: { templateId: string }) {
           return;
         }
       }
-      await db.from("activity_log").insert({
-        actor_id: currentUser.employee_id,
-        action: "slab_updated",
-        entity_type: "approval_slab",
-        entity_id: templateId,
-        detail: `Updated finance approval slabs for ${formName}`,
-      });
+      // The change is recorded by the database (configuration audit,
+      // db/009_sow_gaps.sql), with who made it and what changed.
     }
 
     setSavedAgo("just now");
