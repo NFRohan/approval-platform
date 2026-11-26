@@ -288,3 +288,37 @@
   [data-testid="tracker-list"] { flex-direction: row; overflow-x: auto; }
   [data-testid="tracker-list"] > button { flex: 0 0 auto; }
 }
+
+/* =====================================================================
+   Printing.
+
+   A printed page is a document, not a picture of the screen: the
+   sidebar, top bar, phone tab bar and buttons stay behind, the page runs
+   as long as it needs (the screen scrolls inside a fixed-height frame,
+   which printed as one clipped sheet), cards and table rows are not cut
+   across pages, and every sheet is numbered. A page with a print header
+   of its own shows it only on paper (.print-only).
+   ===================================================================== */
+.print-only { display: none; }
+
+@page {
+  size: A4;
+  margin: 14mm 12mm 16mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9px Inter, system-ui, sans-serif; color: #71717a; }
+}
+
+@media print {
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  .print-hide, .print\:hidden, .no-print, [data-sonner-toaster] { display: none !important; }
+  .print-only { display: block !important; }
+
+  .app-shell { display: block !important; height: auto !important; overflow: visible !important; }
+  .app-shell > div:not(.print-hide) { display: block !important; }
+  .app-main { overflow: visible !important; height: auto !important; background: #fff !important; }
+
+  .print-keep, tr { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+  thead { display: table-header-group; }
+}

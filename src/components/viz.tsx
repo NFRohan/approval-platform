@@ -24,7 +24,7 @@ const td: React.CSSProperties = { padding: "8px 8px", color: "#27272A" };
 
 export function Panel({ title, note, aside, children }: { title: string; note?: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: "16px 18px" }}>
+    <section className="rounded-xl bg-white print-keep" style={{ border: "1px solid #E4E4E7", padding: "16px 18px" }}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <h2 style={{ fontSize: 14, fontWeight: 600, color: INK, margin: 0 }}>{title}</h2>
@@ -50,7 +50,7 @@ export function ChartCard({ title, note, legend, table, children }: {
             <span style={{ width: 14, height: 2, background: l.color, borderRadius: 1 }} /> {l.label}
           </span>
         ))}
-        <button type="button" onClick={() => setAsTable(!asTable)} aria-label={asTable ? `Show ${title} as a chart` : `Show ${title} as a table`}
+        <button type="button" className="print:hidden" onClick={() => setAsTable(!asTable)} aria-label={asTable ? `Show ${title} as a chart` : `Show ${title} as a table`}
           title={asTable ? "Chart" : "Table"} style={{ border: "1px solid #E4E4E7", borderRadius: 6, background: "#fff", padding: 4, cursor: "pointer", display: "inline-flex", color: MUTED }}>
           {asTable ? <BarChart3 size={14} /> : <Table2 size={14} />}
         </button>

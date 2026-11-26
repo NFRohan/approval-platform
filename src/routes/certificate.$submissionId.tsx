@@ -336,6 +336,8 @@ function CertificatePage() {
           .no-print { display: none !important; }
           body { background: white !important; }
           .certificate-page { padding: 0 !important; background: white !important; }
+          /* A certificate is one sheet: scaled to fit A4, never split. */
+          .certificate-page > * { zoom: 0.8; break-inside: avoid; box-shadow: none !important; }
         }
       `}</style>
     </>

@@ -16,13 +16,13 @@ export function AppShell({
   noScroll?: boolean;
 }) {
   return (
-    <div className="h-dvh flex overflow-hidden">
+    <div className="h-dvh flex overflow-hidden app-shell">
       {/* On a phone the sidebar gives way to the tab bar and its drawer. */}
-      <div className="hidden md:flex h-full">
+      <div className="hidden md:flex h-full print-hide">
         <Sidebar defaultCollapsed={sidebarDefaultCollapsed} />
       </div>
       <div className="flex-1 flex flex-col min-w-0">
-        {!hideTopBar && <TopBar />}
+        {!hideTopBar && <div className="print-hide"><TopBar /></div>}
         <main
           className={(noScroll ? "flex-1 overflow-hidden min-h-0" : "scroll-thin flex-1 overflow-auto") + " app-main"}
           style={{ background: "var(--color-zinc-50)", ["--tab-bar" as string]: `${TAB_BAR_HEIGHT}px` }}
@@ -30,8 +30,7 @@ export function AppShell({
           {children}
         </main>
       </div>
-      <MobileNav />
-      <AppInstall />
+      <div className="print-hide"><MobileNav /><AppInstall /></div>
     </div>
   );
 }

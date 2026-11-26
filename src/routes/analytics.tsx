@@ -7,6 +7,7 @@ import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, FileSpreadsheet, Minus, Printer, Table2, BarChart3,
 } from "lucide-react";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { organisationName } from "@/lib/org-fn";
 import { analytics, type Analytics } from "@/lib/analytics-fn";
 import { downloadSheet } from "@/lib/sheet-fn";
 import { toast } from "sonner";
@@ -40,6 +41,8 @@ function AnalyticsPage() {
   const [days, setDays] = useState<(typeof DAYS)[number]>(90);
   const [department, setDepartment] = useState("");
   const [form, setForm] = useState("");
+  const [org, setOrg] = useState("");
+  useEffect(() => { void organisationName().then(setOrg).catch(() => setOrg("")); }, []);
   const [data, setData] = useState<Analytics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,7 +104,25 @@ function AnalyticsPage() {
 
   return (
     <div className="mx-auto analytics-print" style={{ maxWidth: 1280, padding: "28px 28px 56px" }}>
-      <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
+      {/* On paper: what this is, for whom, over what, and when. */}
+      <div className="print-only" style={{ borderBottom: "2px solid #18181B", paddingBottom: 10, marginBottom: 16 }}>
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED }}>{org || "Approval Management System"}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: INK, marginTop: 2 }}>Approvals analytics report</div>
+          </div>
+          <div style={{ fontSize: 11, color: MUTED, textAlign: "right", lineHeight: 1.5 }}>
+            Generated {dmy(new Date().toISOString())} {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}<br />
+            by {currentUser.name}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "#3F3F46", marginTop: 8 }}>
+          <strong>Period:</strong> {days === 365 ? "last 12 months" : `last ${days} days`} ({dmy(new Date(Date.now() - days * 86_400_000).toISOString())} – {dmy(new Date().toISOString())}), compared with the {days === 365 ? "12 months" : `${days} days`} before
+          {" · "}<strong>Department:</strong> {department || "all"}
+          {" · "}<strong>Form:</strong> {form || "all"}
+        </div>
+      </div>
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-5 print:hidden">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: INK, margin: 0 }}>Analytics</h1>
           <p style={{ marginTop: 6, fontSize: 14, color: MUTED }}>
@@ -243,7 +264,7 @@ function AnalyticsPage() {
           </div>
 
           <Panel title="Where work is waiting" note="Approvers with steps open now, overdue first"
-            aside={<Link to="/reports" style={{ fontSize: 12.5, color: "#4F46E5", textDecoration: "none" }}>Open approvals report →</Link>}>
+            aside={<Link to="/reports" className="print:hidden" style={{ fontSize: 12.5, color: "#4F46E5", textDecoration: "none" }}>Open approvals report →</Link>}>
             <table className="w-full" style={{ fontSize: 12.5, borderCollapse: "collapse" }} data-testid="bottlenecks">
               <thead>
                 <tr style={{ color: MUTED, textAlign: "left" }}>
@@ -272,7 +293,13 @@ function AnalyticsPage() {
           </Panel>
         </div>
       )}
-      <style>{`@media print { aside, header, .print\\:hidden { display: none !important; } .analytics-print { max-width: none !important; padding: 0 !important; } }`}</style>
+      <style>{`
+        @page { size: A4 landscape; }
+        @media print {
+          .analytics-print { max-width: none !important; padding: 0 !important; }
+          .analytics-print [data-testid="kpis"] { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -305,7 +332,7 @@ function Kpi({ label, value, sub, delta: d, span, lowerIsBetter, warn }: {
   const good = d && d.dir !== "flat" ? (d.dir === "down") === !!lowerIsBetter : null;
   const Icon = !d || d.dir === "flat" ? Minus : d.dir === "up" ? ArrowUpRight : ArrowDownRight;
   return (
-    <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
+    <div className="rounded-xl bg-white print-keep" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
       <div className="flex items-center gap-1.5" style={{ fontSize: 12, color: MUTED }}>
         {warn && <AlertTriangle size={13} style={{ color: "#B45309" }} aria-label="Needs attention" />}
         {label}
