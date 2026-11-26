@@ -132,8 +132,8 @@ ok('NFA: preloaded with the campaign name and audience from the request',
   (await (await field('Campaign name')).locator('input').inputValue()) === 'Winter Wallet Cashback QA'
   && (await (await field('Audience')).locator('select').inputValue()) === 'Customer');
 await (await field('Modality')).locator('select').selectOption('Cashback');
-await (await field('Start date')).locator('input[type="date"]').fill(iso(-3));
-await (await field('End date')).locator('input[type="date"]').fill(iso(27));
+await (await field('Start date')).locator('input[data-date]').fill(iso(-3));
+await (await field('End date')).locator('input[data-date]').fill(iso(27));
 await (await field('Beneficiary count')).locator('input').fill('50000');
 await (await field('Transaction count')).locator('input').fill('120000');
 await (await field('Transaction volume')).locator('input').fill('60000000');

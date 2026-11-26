@@ -108,7 +108,7 @@ for (let i = 0; i < 4 && !(await page.locator('input[type="number"]').count()); 
   await settle(600);
 }
 await (await field('Purpose of travel')).locator('input').fill('Supplier audit, Sylhet');
-await page.locator('input[type="date"]').first().fill('2026-12-01');
+await page.locator('input[data-date]').first().fill('2026-12-01');
 await page.locator('input[type="number"]').first().fill('45000');
 await page.getByRole('button', { name: /Next|Continue/ }).first().click();
 await settle(2500);

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { DateInput } from "@/components/DateInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -305,7 +306,7 @@ function ActualsForm({ campaign, onDone }: { campaign: Campaign; onDone: () => P
   return (
     <Card title="Record actuals">
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
-        <Field label="Day"><input type="date" name="actual-date" style={inputStyle} value={on} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setOn(e.target.value)} /></Field>
+        <Field label="Day"><DateInput name="actual-date" style={inputStyle} value={on} max={new Date().toISOString().slice(0, 10)} onChange={(iso) => setOn(iso)} /></Field>
         <Field label="Cost (BDT)"><input name="actual-cost" inputMode="decimal" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
         <Field label="Beneficiaries"><input inputMode="numeric" style={inputStyle} value={ben} onChange={(e) => setBen(e.target.value)} /></Field>
         <Field label="Transactions"><input inputMode="numeric" style={inputStyle} value={tx} onChange={(e) => setTx(e.target.value)} /></Field>
@@ -341,7 +342,7 @@ function ExtendForm({ campaign, onDone }: { campaign: Campaign; onDone: () => Pr
         extension follows the regular or the exceptional approval route like the original.
       </p>
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-        <Field label={`New end date (now ${dmy(campaign.ends_on)})`}><input type="date" name="extend-end" style={inputStyle} min={campaign.ends_on} value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
+        <Field label={`New end date (now ${dmy(campaign.ends_on)})`}><DateInput name="extend-end" style={inputStyle} min={campaign.ends_on} value={end} onChange={(iso) => setEnd(iso)} /></Field>
         <Field label="Additional budget (BDT)"><input name="extend-budget" inputMode="decimal" style={inputStyle} value={budget} onChange={(e) => setBudget(e.target.value)} /></Field>
         <Field label="Approval route">
           <select style={inputStyle} value={route} onChange={(e) => setRoute(e.target.value)}><option>Regular</option><option>Exceptional</option></select>

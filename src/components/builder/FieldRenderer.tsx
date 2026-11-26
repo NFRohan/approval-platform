@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DateInput } from "@/components/DateInput";
 import { Calendar, CalendarRange, ChevronDown, FileUp, FunctionSquare, Link2, ListChecks, Mail, Pen, Phone, Sparkles, Star, User, Zap } from "lucide-react";
 import { db } from "@/lib/db";
 import type { FieldKind, PlacedField } from "./types";
@@ -323,34 +324,16 @@ function FieldInput({
   }
   if (k === "date") {
     return (
-      <div style={{ position: "relative" }}>
-        <input
-          type="date"
-          style={inputStyle}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-        <Calendar size={13} style={{ position: "absolute", right: 10, top: 11, color: "#A1A1AA", pointerEvents: "none" }} />
-      </div>
+      <DateInput aria-label={field.label} style={inputStyle} value={(value as string) ?? ""} onChange={(iso) => onChange(iso)} />
     );
   }
   if (k === "daterange") {
     const v = (value as { from?: string; to?: string }) ?? {};
     return (
       <div className="flex gap-2 items-center">
-        <input
-          type="date"
-          style={inputStyle}
-          value={v.from ?? ""}
-          onChange={(e) => onChange({ ...v, from: e.target.value })}
-        />
-        <CalendarRange size={14} style={{ color: "#A1A1AA" }} />
-        <input
-          type="date"
-          style={inputStyle}
-          value={v.to ?? ""}
-          onChange={(e) => onChange({ ...v, to: e.target.value })}
-        />
+        <DateInput aria-label={`${field.label}: from`} style={inputStyle} value={v.from ?? ""} onChange={(iso) => onChange({ ...v, from: iso })} />
+        <CalendarRange size={14} style={{ color: "#A1A1AA", flexShrink: 0 }} />
+        <DateInput aria-label={`${field.label}: to`} style={inputStyle} min={v.from || undefined} value={v.to ?? ""} onChange={(iso) => onChange({ ...v, to: iso })} />
       </div>
     );
   }

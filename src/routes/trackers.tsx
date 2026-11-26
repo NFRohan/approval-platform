@@ -10,6 +10,7 @@
 // set a reminder on it for a day they choose (db/009_sow_gaps.sql).
 // =====================================================================
 
+import { DateInput } from "@/components/DateInput";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -212,8 +213,8 @@ function TrackersPage() {
               <select aria-label="Priority" style={{ ...inputStyle, width: 130 }} value={filters.priority ?? ""} onChange={(e) => set({ priority: e.target.value || undefined })}>
                 <option value="">Any priority</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option>
               </select>
-              <input aria-label="From" type="date" style={{ ...inputStyle, width: 150 }} value={filters.from ?? ""} onChange={(e) => set({ from: e.target.value || undefined })} />
-              <input aria-label="To" type="date" style={{ ...inputStyle, width: 150 }} value={filters.to ?? ""} onChange={(e) => set({ to: e.target.value || undefined })} />
+              <DateInput aria-label="From" style={{ ...inputStyle, width: 150 }} value={filters.from ?? ""} onChange={(iso) => set({ from: iso || undefined })} />
+              <DateInput aria-label="To" style={{ ...inputStyle, width: 150 }} value={filters.to ?? ""} onChange={(iso) => set({ to: iso || undefined })} />
               <input aria-label="Search the tracker" placeholder="Reference, form or person" style={{ ...inputStyle, width: 220 }} value={filters.search ?? ""}
                 onChange={(e) => set({ search: e.target.value || undefined })} />
               <label className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, color: "#3F3F46" }}>
@@ -281,8 +282,8 @@ function TrackersPage() {
                     <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
                       {reminding?.id === r.id ? (
                         <span className="flex items-center gap-1.5">
-                          <input aria-label="Remind me on" type="date" min={todayInOrg()} style={{ ...inputStyle, width: 140, padding: "4px 6px" }}
-                            value={reminding.on} onChange={(e) => setReminding({ ...reminding, on: e.target.value })} />
+                          <DateInput aria-label="Remind me on" min={todayInOrg()} style={{ ...inputStyle, width: 140, padding: "4px 6px" }}
+                            value={reminding.on} onChange={(iso) => setReminding({ ...reminding, on: iso })} />
                           <input aria-label="Reminder note" placeholder="Note" style={{ ...inputStyle, width: 140, padding: "4px 6px" }}
                             value={reminding.note} onChange={(e) => setReminding({ ...reminding, note: e.target.value })} />
                           <Button small tone="brand" disabled={!reminding.on} onClick={() => void remind(r.id, reminding.on, reminding.note)}>Set</Button>

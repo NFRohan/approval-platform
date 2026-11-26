@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { DateInput } from "@/components/DateInput";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
@@ -221,9 +222,9 @@ function SubmissionsPage() {
             <option key={s} value={s}>{s.replace("_", " ")}</option>
           ))}
         </select>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" style={ctl} />
+        <DateInput value={from} onChange={(iso) => setFrom(iso)} aria-label="From date" style={ctl} />
         <span style={{ fontSize: 12, color: "#A1A1AA" }}>to</span>
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" style={ctl} />
+        <DateInput value={to} onChange={(iso) => setTo(iso)} aria-label="To date" style={ctl} />
       </div>
 
       {loading ? (

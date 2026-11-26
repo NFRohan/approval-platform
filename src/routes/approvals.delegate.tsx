@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { DateInput } from "@/components/DateInput";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, CalendarDays, Plus, Trash2, User } from "lucide-react";
 import { toast } from "sonner";
@@ -233,14 +234,14 @@ function DelegationPage() {
             <div className="flex gap-4">
               <label className="flex flex-col gap-1.5 flex-1">
                 <span style={{ fontSize: 12, fontWeight: 500, color: "#3F3F46" }}>Start date</span>
-                <input type="date" style={inputStyle} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <DateInput style={inputStyle} value={startDate} onChange={(iso) => setStartDate(iso)} />
               </label>
               <div style={{ display: "flex", alignItems: "flex-end", paddingBottom: 8 }}>
                 <ArrowRight size={14} style={{ color: "#A1A1AA" }} />
               </div>
               <label className="flex flex-col gap-1.5 flex-1">
                 <span style={{ fontSize: 12, fontWeight: 500, color: "#3F3F46" }}>End date</span>
-                <input type="date" style={inputStyle} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <DateInput style={inputStyle} value={endDate} onChange={(iso) => setEndDate(iso)} />
               </label>
             </div>
 

@@ -51,8 +51,9 @@ await settle(3000);
 await next();
 ok('Draft: resuming brings every answer back',
   (await (await field('Leave type')).locator('select').inputValue()) === 'Sick'
-  && (await (await field('From')).locator('input').inputValue()) === '2026-12-21'
-  && (await (await field('To')).locator('input').inputValue()) === '2026-12-22'
+  // Dates are entered and shown dd/MM/yyyy (DateInput).
+  && (await (await field('From')).locator('input').inputValue()) === '21/12/2026'
+  && (await (await field('To')).locator('input').inputValue()) === '22/12/2026'
   && (await (await field('Reason')).locator('textarea').inputValue()) === 'Dentist, then rest');
 await (await field('To')).locator('input').fill('2026-12-23');
 await next();
@@ -76,8 +77,8 @@ await settle(3000);
 await next();
 {
   const box = await field('Period');
-  await box.locator('input[type="date"]').nth(0).fill('2026-11-16');
-  await box.locator('input[type="date"]').nth(1).fill('2026-11-18');
+  await box.locator('input[data-date]').nth(0).fill('2026-11-16');
+  await box.locator('input[data-date]').nth(1).fill('2026-11-18');
 }
 await (await field('Nights worked')).locator('input').fill('3');
 await (await field('Rate per night')).locator('input').fill('1000');
@@ -95,9 +96,9 @@ await settle(3000);
 await next();
 {
   const box = await field('Period');
-  const from = await box.locator('input[type="date"]').nth(0).inputValue();
-  const to = await box.locator('input[type="date"]').nth(1).inputValue();
-  ok('Draft: a resumed date range shows both its dates', from === '2026-11-16' && to === '2026-11-18', `from "${from}" to "${to}"`);
+  const from = await box.locator('input[data-date]').nth(0).inputValue();
+  const to = await box.locator('input[data-date]').nth(1).inputValue();
+  ok('Draft: a resumed date range shows both its dates', from === '16/11/2026' && to === '18/11/2026', `from "${from}" to "${to}"`);
 }
 ok('Draft: resumed numbers and notes are back', (await (await field('Nights worked')).locator('input').inputValue()) === '3'
   && (await (await field('Note')).locator('textarea').inputValue()) === 'Month-end close');
@@ -188,7 +189,7 @@ const wv = async (label, kind = 'input') => (await field(label)).locator(kind).f
 ok('Word: applying fills the campaign name, dates, KPIs and cost',
   (await wv('Campaign name')) === 'Winter Cashback 2026'
   && (await wv('Total cost')).replace(/\D/g, '') === '3800000'
-  && /^\d{4}-\d{2}-\d{2}$/.test(await wv('Start date'))
+  && /^\d{2}\/\d{2}\/\d{4}$/.test(await wv('Start date'))
   && Number(await wv('Beneficiary count')) > 0,
   `${await wv('Campaign name')} / ${await wv('Total cost')} / ${await wv('Start date')} / ${await wv('Beneficiary count')}`);
 const filled = await page.locator('.placed-field input:not([type="checkbox"]):not([type="file"]), .placed-field textarea').evaluateAll((els) => els.filter((e) => e.value).length);

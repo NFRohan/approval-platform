@@ -663,7 +663,7 @@ function FillFormPage() {
                     <option value="urgent">Urgent — half the time at each step</option>
                   </select>
                 </label>
-                <div className="flex flex-col gap-1 flex-1" style={{ minWidth: 240 }}>
+                <div className="flex flex-col gap-1 flex-1" style={{ minWidth: 240, maxWidth: "100%" }}>
                   <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#52525B" }}>Copy people on it</span>
                   <div className="flex flex-wrap gap-1.5 items-center">
                     {cc.map((id) => (
@@ -677,7 +677,8 @@ function FillFormPage() {
                       onChange={(e) => { const v = e.target.value; if (v) setCcList((l) => (l.includes(v) ? l : [...l, v])); }}
                       aria-label="Copy somebody"
                       className="rounded-md bg-white"
-                      style={{ padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7" }}
+                      // Sized to the card, not to its longest name and title.
+                      style={{ padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", width: "100%", maxWidth: "100%", minWidth: 0 }}
                     >
                       <option value="">Add somebody…</option>
                       {people.filter((p) => p.employee_id !== currentUser.employee_id && !cc.includes(p.employee_id)).map((p) => (

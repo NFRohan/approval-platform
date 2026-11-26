@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { DateInput } from "@/components/DateInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CalendarDays, Download, Moon, Trash2 } from "lucide-react";
@@ -219,7 +220,7 @@ function DayEditor({ day, holiday, canManage, onDone }: { day: string; holiday: 
                 {Object.entries(KINDS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
             </Field>
-            <Field label={holiday ? "On (move it)" : "On"}><input type="date" aria-label="Holiday date" style={inputStyle} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+            <Field label={holiday ? "On (move it)" : "On"}><DateInput aria-label="Holiday date" style={inputStyle} value={to} onChange={(iso) => setTo(iso)} /></Field>
           </div>
           <label className="flex items-center gap-2" style={{ fontSize: 12.5, color: "#3F3F46" }}>
             <input type="checkbox" aria-label="Provisional" checked={provisional} onChange={(e) => setProvisional(e.target.checked)} /> Provisional — depends on the moon
@@ -246,7 +247,7 @@ function DeadlineCheck({ byDay }: { byDay: Map<string, Holiday> }) {
   return (
     <Card title="When is it due?" style={{ marginBottom: 0 }}>
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 90px" }}>
-        <Field label="Asked on"><input type="date" aria-label="Asked on" style={inputStyle} value={from} onChange={(e) => setFrom(e.target.value || todayInOrg())} /></Field>
+        <Field label="Asked on"><DateInput aria-label="Asked on" style={inputStyle} value={from} onChange={(iso) => setFrom(iso || todayInOrg())} /></Field>
         <Field label="Working days"><input type="number" min={0} max={60} aria-label="Working days" style={inputStyle} value={days} onChange={(e) => setDays(Number(e.target.value))} /></Field>
       </div>
       <div style={{ marginTop: 12, fontSize: 13, color: "#3F3F46" }} data-testid="deadline-result">

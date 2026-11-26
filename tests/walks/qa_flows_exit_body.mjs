@@ -93,8 +93,8 @@ ok('exit form: the leaver\'s own "Before you leave" checklist is on the form',
   ['I have handed over my work, with a signed-off handover note', 'I have returned company property', 'I have handed over official social media and portal accounts', 'I have left or handed over official chat groups']
     .every((t) => body.includes(t)));
 await (await field('Reason for leaving')).locator('select').selectOption('Resignation');
-await (await field('Resignation date')).locator('input[type="date"]').fill('2026-11-20');
-await (await field('Last working day')).locator('input[type="date"]').fill('2026-12-20');
+await (await field('Resignation date')).locator('input[data-date]').fill('2026-11-20');
+await (await field('Last working day')).locator('input[data-date]').fill('2026-12-20');
 for (const c of ['I have handed over my work, with a signed-off handover note', 'I have returned company property: phone, SIM, laptop, cards and keys',
   'I have handed over official social media and portal accounts', 'I have left or handed over official chat groups']) {
   await page.getByLabel(c).check();

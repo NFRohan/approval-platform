@@ -1,6 +1,7 @@
 // The pieces the report screens share: the filter bar, a multi-select,
 // the results table, and the column picker.
 
+import { DateInput } from "@/components/DateInput";
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -90,9 +91,9 @@ export function FilterBar({ dataset, filters, onChange, options }: {
       </select>
       {filters.period === "custom" && (
         <>
-          <input type="date" aria-label="From" style={control} value={filters.from ?? ""} onChange={(e) => set({ from: e.target.value || undefined })} />
+          <DateInput aria-label="From" style={control} value={filters.from ?? ""} onChange={(iso) => set({ from: iso || undefined })} />
           <span style={{ color: "#A1A1AA", fontSize: 12 }}>to</span>
-          <input type="date" aria-label="To" style={control} value={filters.to ?? ""} onChange={(e) => set({ to: e.target.value || undefined })} />
+          <DateInput aria-label="To" style={control} value={filters.to ?? ""} onChange={(iso) => set({ to: iso || undefined })} />
         </>
       )}
       {dataset !== "approvers" && (

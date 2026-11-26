@@ -31,7 +31,7 @@ await page.getByRole('button', { name: /^Next/ }).first().click();
 await settle(900);
 await (await field('Declaration type')).locator('select').selectOption('Gift received');
 await (await field('Counterparty')).locator('input').fill('Apex Telecom Ltd');
-await (await field('Event date')).locator('input[type="date"]').fill('2026-11-18');
+await (await field('Event date')).locator('input[data-date]').fill('2026-11-18');
 await (await field('Value')).locator('input').fill('75000');
 await (await field('Reference number')).locator('input').fill('GH-2026-114');
 await (await field('Supporting document')).locator('input[type="file"]').setInputFiles({ name: 'apex-gift-invoice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 Apex gift hamper invoice BDT 75,000') });

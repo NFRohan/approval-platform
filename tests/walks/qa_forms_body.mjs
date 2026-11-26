@@ -60,10 +60,10 @@ async function fillField(f, v) {
   const box = await field(f.field_name);
   if (t === 'textarea') await box.locator('textarea').fill(v);
   else if (t === 'number' || t === 'money') await box.locator('input[type="number"]').fill(v);
-  else if (t === 'date') await box.locator('input[type="date"]').fill(v);
+  else if (t === 'date') await box.locator('input[data-date]').fill(v);
   else if (t === 'daterange') {
-    await box.locator('input[type="date"]').nth(0).fill(v.from);
-    await box.locator('input[type="date"]').nth(1).fill(v.to);
+    await box.locator('input[data-date]').nth(0).fill(v.from);
+    await box.locator('input[data-date]').nth(1).fill(v.to);
   } else if (t === 'select') await box.locator('select').selectOption(v);
   else if (t === 'multi_select') {
     for (const o of v) await box.locator('label').filter({ hasText: o }).locator('input[type="checkbox"]').check();
