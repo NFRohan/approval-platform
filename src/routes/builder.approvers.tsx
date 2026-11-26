@@ -105,7 +105,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
   // new one is given the defaults.
   const [savedAuto, setSavedAuto] = useState<SavedRule[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const access = useBuilderAccess();
+  const access = useBuilderAccess(templateId);
   // Who may raise this form: departments, or everybody when empty.
   const [audience, setAudience] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
@@ -417,7 +417,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
   }
 
   return (
-    <BuilderChrome
+    <BuilderChrome formId={templateId}
       step={2}
       formName={formName}
       savedAgo={savedAgo}

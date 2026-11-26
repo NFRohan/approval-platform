@@ -2057,4 +2057,13 @@ create index if not exists form_submissions_status_idx on public.form_submission
 create index if not exists approval_requests_queue_idx
   on public.approval_requests(tenant_id, status, deadline_at, opened_at);
 
+-- Admins per division (SOW 2.1 Admin): a role may be limited to one
+-- division (null = the whole organisation), and a form is owned by one
+-- (null = central). A division-limited designer designs that division's
+-- forms only. The pending_ column carries a proposed change of scope
+-- through the role's maker-checker approval.
+alter table public.roles add column if not exists scope_department text;
+alter table public.roles add column if not exists pending_scope text;
+alter table public.form_templates add column if not exists owner_department text;
+
 commit;

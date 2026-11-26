@@ -786,6 +786,8 @@ select app.seed_servicedesk(d.id) from public.tenants d where d.kind = 'demo';
 -- what it lacks.
 select app.seed_sow_gaps(app.current_tenant());
 select app.seed_sow_gaps(d.id) from public.tenants d where d.kind = 'demo';
+select app.seed_division_admins(app.current_tenant());
+select app.seed_division_admins(d.id) from public.tenants d where d.kind = 'demo';
 -- Notices, stationery and maintenance had their chains built once for
 -- every organisation in the database: the seed builds them as the owner,
 -- and the rule lookup did not name the organisation (fixed in

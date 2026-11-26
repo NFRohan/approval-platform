@@ -1295,4 +1295,124 @@ begin
   end loop;
 end $cfg$;
 
+
+-- ---------------------------------------------------------------------
+-- Admins per division (SOW 2.1 Admin: "admins per division as well as a
+-- central admin"). A role limited to a division (roles.scope_department)
+-- designs only the forms that division owns (form_templates.
+-- owner_department); a role with no limit is central and designs every
+-- form. Rules with no form (notices') are central's.
+-- ---------------------------------------------------------------------
+create or replace function app.may_design(p_owner text, p_permission text default 'forms.build')
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select case
+    when app.current_employee() is null then app.has_permission(p_permission)
+    else app.has_permission(p_permission) and exists (
+      select 1 from public.roles r
+       where r.tenant_id = app.current_tenant()
+         and r.id in (select app.held_roles(app.current_employee()))
+         and p_permission = any (r.permissions)
+         and (r.scope_department is null or r.scope_department = p_owner))
+  end
+$$;
+
+-- What the builder may offer on one form: full, settings or read.
+create or replace function public.may_design_form(p_form uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select case
+    when app.may_design(f.owner_department, 'forms.build') then 'full'
+    when app.may_design(f.owner_department, 'forms.settings') then 'settings'
+    else 'read' end
+    from public.form_templates f
+   where f.id = p_form and f.tenant_id = app.current_tenant()
+$$;
+grant execute on function app.may_design(text, text), public.may_design_form(uuid) to app_api;
+
+do $div$
+declare t text;
+begin
+  execute 'drop policy if exists form_templates_builder_write on public.form_templates';
+  execute $f$
+    create policy form_templates_builder_write on public.form_templates
+      for all to app_api
+      using (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.may_design(owner_department))
+      with check (tenant_id = (select app.current_tenant()) and (select app.is_member()) and app.may_design(owner_department))
+  $f$;
+  foreach t in array array['form_fields', 'approval_rules', 'approval_slabs', 'notification_rules'] loop
+    execute format('drop policy if exists %1$s_builder_write on public.%1$I', t);
+    execute format($f$
+      create policy %1$s_builder_write on public.%1$I
+        for all to app_api
+        using (tenant_id = (select app.current_tenant()) and (select app.is_member())
+               and app.may_design((select f.owner_department from public.form_templates f where f.id = %1$I.form_template_id)))
+        with check (tenant_id = (select app.current_tenant()) and (select app.is_member())
+               and app.may_design((select f.owner_department from public.form_templates f where f.id = %1$I.form_template_id)))
+    $f$, t);
+  end loop;
+end $div$;
+
+-- Each seeded form is owned by the division its category names, where
+-- there is one; the rest stay central. A Finance workflow designer, to
+-- show it: Dana Whitfield, Head of Finance. Re-running changes nothing.
+create or replace function app.seed_division_admins(p_tenant uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_role uuid;
+begin
+  update public.form_templates f set owner_department = d.name
+    from public.departments d
+   where f.tenant_id = p_tenant and d.tenant_id = p_tenant and f.owner_department is null and d.name = f.category;
+  select id into v_role from public.roles where tenant_id = p_tenant and name = 'Finance workflow designer';
+  if v_role is null and exists (select 1 from public.departments where tenant_id = p_tenant and name = 'Finance')
+     and exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = 'EMP-0600') then
+    insert into public.roles (tenant_id, name, description, permissions, status, created_by, approved_by, scope_department)
+    values (p_tenant, 'Finance workflow designer', 'Designs Finance''s forms and their approval routes, and nothing else',
+            array['forms.build', 'forms.settings'], 'active', 'EMP-0445', 'EMP-0700', 'Finance')
+    returning id into v_role;
+    insert into public.employee_roles (tenant_id, employee_id, role_id, assigned_by)
+    values (p_tenant, 'EMP-0600', v_role, 'EMP-0445');
+  end if;
+end $$;
+
+
+-- A designer limited to one division makes that division's forms: a new
+-- form with no owner is given theirs (checked by the policy after this).
+create or replace function app.default_form_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_scopes text[];
+begin
+  if new.owner_department is null and app.current_employee() is not null then
+    select array_agg(distinct r.scope_department) into v_scopes
+      from public.roles r
+     where r.tenant_id = new.tenant_id
+       and r.id in (select app.held_roles(app.current_employee()))
+       and 'forms.build' = any (r.permissions);
+    -- Only when every designing role they hold is limited to one division.
+    if v_scopes is not null and array_position(v_scopes, null) is null and cardinality(v_scopes) = 1 then
+      new.owner_department := v_scopes[1];
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists form_templates_default_owner on public.form_templates;
+create trigger form_templates_default_owner before insert on public.form_templates
+  for each row execute function app.default_form_owner();
+
 commit;

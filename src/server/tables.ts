@@ -162,7 +162,7 @@ export const TABLES: Record<string, TableDef> = {
   roles: T(
     ['id', 'name', 'description', 'permissions', 'status', 'pending_name',
       'pending_permissions', 'created_by', 'changed_by', 'approved_by',
-      'created_at', 'updated_at'],
+      'created_at', 'updated_at', 'scope_department', 'pending_scope'],
     [],
     [],
   ),
@@ -214,9 +214,9 @@ export const TABLES: Record<string, TableDef> = {
   form_templates: T(
     ['id', 'name', 'category', 'created_by', 'status', 'created_at',
       'followup_template_id', 'audience_departments', 'classification', 'keywords', 'on_approval',
-      'forward_within_line', 'audience_roles'],
+      'forward_within_line', 'audience_roles', 'owner_department'],
     ['name', 'category', 'created_by', 'status', 'followup_template_id',
-      'audience_departments', 'classification', 'keywords', 'forward_within_line', 'audience_roles'],
+      'audience_departments', 'classification', 'keywords', 'forward_within_line', 'audience_roles', 'owner_department'],
     [],
   ),
   item_stock: T(
@@ -388,6 +388,7 @@ export const RPCS: Record<string, readonly string[]> = {
   tick_checklist:             ['p_submission', 'p_item', 'p_done', 'p_note'],
   checklist_for:              ['p_submission'],
   may_post_notice:            [],
+  may_design_form:            ['p_form'],
   checklist_config:           ['p_form'],
   save_checklist:             ['p_form', 'p_track', 'p_items'],
   forward_candidates:         ['p_request'],

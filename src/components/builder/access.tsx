@@ -13,13 +13,29 @@
 // =====================================================================
 
 import { Eye, SlidersHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
+import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 
 export type BuilderAccess = "full" | "settings" | "read";
 
-export function useBuilderAccess(): BuilderAccess {
+export function useBuilderAccess(formId?: string | null): BuilderAccess {
   const { can } = useCurrentUser();
-  return can("forms.build") ? "full" : can("forms.settings") ? "settings" : "read";
+  const base: BuilderAccess = can("forms.build") ? "full" : can("forms.settings") ? "settings" : "read";
+  // On a particular form, what the person may do with that form: a
+  // designer limited to one division designs that division's forms and
+  // only looks at the rest (db/009_sow_gaps.sql may_design_form).
+  const [perForm, setPerForm] = useState<BuilderAccess | null>(null);
+  useEffect(() => {
+    setPerForm(null);
+    if (!formId || base === "read") return;
+    let alive = true;
+    void db.rpc("may_design_form", { p_form: formId }).then(({ data }) => {
+      if (alive && (data === "full" || data === "settings" || data === "read")) setPerForm(data);
+    });
+    return () => { alive = false; };
+  }, [formId, base]);
+  return formId && perForm ? perForm : base;
 }
 
 export function AccessBanner({ access }: { access: BuilderAccess }) {

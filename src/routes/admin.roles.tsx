@@ -17,6 +17,7 @@ export const Route = createFileRoute("/admin/roles")({
 type Role = {
   id: string; name: string; description: string | null; permissions: string[]; status: string;
   pending_name: string | null; pending_permissions: string[] | null;
+  scope_department: string | null; pending_scope: string | null;
   created_by: string | null; changed_by: string | null; approved_by: string | null;
 };
 type Employee = { employee_id: string; name: string; designation: string | null; active: boolean };
@@ -40,7 +41,7 @@ function RolesPage() {
 
   const load = useCallback(async () => {
     const [r, e, h, g, d] = await Promise.all([
-      db.from("roles").select("id, name, description, permissions, status, pending_name, pending_permissions, created_by, changed_by, approved_by").order("name"),
+      db.from("roles").select("id, name, description, permissions, status, pending_name, pending_permissions, scope_department, pending_scope, created_by, changed_by, approved_by").order("name"),
       db.from("employees").select("employee_id, name, designation, active").order("name"),
       db.from("employee_roles").select("employee_id, role_id"),
       db.from("role_groups").select("role_id, department"),
@@ -113,9 +114,10 @@ function RolesPage() {
       {manage && (creating ? (
         <RoleEditor
           title="New role"
+          departments={departments}
           onCancel={() => setCreating(false)}
-          onSave={async (name, description, permissions) => {
-            if (await act("Role created — it waits for approval", () => createRole({ data: { name, description, permissions } }))) setCreating(false);
+          onSave={async (name, description, permissions, scope) => {
+            if (await act("Role created — it waits for approval", () => createRole({ data: { name, description, permissions, scope } }))) setCreating(false);
           }}
         />
       ) : (
@@ -144,12 +146,15 @@ function RolesPage() {
   );
 }
 
-function RoleEditor({ title, initial, onSave, onCancel }: {
+function RoleEditor({ title, initial, departments, onSave, onCancel }: {
   title: string;
-  initial?: { name: string; description: string | null; permissions: string[] };
-  onSave: (name: string, description: string, permissions: string[]) => Promise<void>;
+  initial?: { name: string; description: string | null; permissions: string[]; scope_department?: string | null };
+  departments: string[];
+  onSave: (name: string, description: string, permissions: string[], scope: string | null) => Promise<void>;
   onCancel: () => void;
 }) {
+  // Limited to one division, or the whole organisation (a central admin).
+  const [scope, setScope] = useState(initial?.scope_department ?? "");
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [permissions, setPermissions] = useState<string[]>(initial?.permissions ?? []);
@@ -160,6 +165,12 @@ function RoleEditor({ title, initial, onSave, onCancel }: {
       <div className="flex flex-col gap-3.5" style={{ maxWidth: 560 }}>
         <Field label="Name"><input name="role-name" style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} /></Field>
         {!initial && <Field label="What it is for"><input style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} /></Field>}
+        <Field label="Limited to division">
+          <select aria-label="Limited to division" style={inputStyle} value={scope} onChange={(e) => setScope(e.target.value)}>
+            <option value="">The whole organisation (central)</option>
+            {departments.map((d) => <option key={d} value={d}>{d} only</option>)}
+          </select>
+        </Field>
         <div className="grid grid-cols-2 gap-1.5">
           {ALL.map((p) => (
             <label key={p} className="flex items-center gap-2" style={{ fontSize: 13 }}>
@@ -176,7 +187,7 @@ function RoleEditor({ title, initial, onSave, onCancel }: {
         <div className="flex gap-2">
           <Button tone="brand" busy={busy} disabled={!name.trim()} onClick={async () => {
             setBusy(true);
-            await onSave(name, description, permissions);
+            await onSave(name, description, permissions, scope || null);
             setBusy(false);
           }}>{initial ? "Propose change" : "Create"}</Button>
           <Button onClick={onCancel}>Cancel</Button>
@@ -201,10 +212,11 @@ function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act
       <RoleEditor
         title={`Change ${r.name}`}
         initial={r}
+        departments={departments}
         onCancel={() => setEditing(false)}
-        onSave={async (name, _d, permissions) => {
+        onSave={async (name, _d, permissions, scope) => {
           if (await act("Change proposed — it waits for approval", () =>
-            proposeRoleChange({ data: { roleId: r.id, name: name !== r.name ? name : null, permissions } }))) setEditing(false);
+            proposeRoleChange({ data: { roleId: r.id, name: name !== r.name ? name : null, permissions, scope } }))) setEditing(false);
         }}
       />
     );
@@ -217,6 +229,7 @@ function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act
     >
       {r.description && <p style={{ fontSize: 13, color: "#52525B", margin: "0 0 10px" }}>{r.description}</p>}
       <div className="flex gap-1 flex-wrap" style={{ marginBottom: 12 }}>
+        <Pill tone={r.scope_department ? "amber" : "zinc"}>{r.scope_department ? `${r.scope_department} only` : "Whole organisation"}</Pill>
         {r.permissions.map((p) => <Pill key={p} tone="brand">{PERMISSION_LABELS[p] ?? p}</Pill>)}
         {r.permissions.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>No permissions</span>}
       </div>

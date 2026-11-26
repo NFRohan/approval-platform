@@ -163,8 +163,8 @@ begin
   -- can name.
   -- Roles and who holds them: what each persona may do.
   insert into _m select id, gen_random_uuid() from public.roles where tenant_id = v_tpl;
-  insert into public.roles (id, tenant_id, name, description, permissions, status, created_by, approved_by, created_at, updated_at)
-  select m.new, v_new, r.name, r.description, r.permissions, r.status, r.created_by, r.approved_by, r.created_at, r.updated_at
+  insert into public.roles (id, tenant_id, name, description, permissions, status, created_by, approved_by, created_at, updated_at, scope_department)
+  select m.new, v_new, r.name, r.description, r.permissions, r.status, r.created_by, r.approved_by, r.created_at, r.updated_at, r.scope_department
     from public.roles r join _m m on m.old = r.id
    where r.tenant_id = v_tpl;
   insert into public.role_groups (tenant_id, role_id, department, assigned_by, created_at)
@@ -195,11 +195,12 @@ begin
   insert into _m select id, gen_random_uuid() from public.form_templates where tenant_id = v_tpl;
   insert into public.form_templates (id, tenant_id, name, category, created_by, status, created_at,
                                      audience_departments, classification, keywords, on_approval, forward_within_line,
-                                     audience_roles)
+                                     audience_roles, owner_department)
   select m.new, v_new, t.name, t.category, t.created_by, t.status, t.created_at,
          t.audience_departments, t.classification, t.keywords, t.on_approval, t.forward_within_line,
          -- the roles are this evaluation's own copies, cloned above
-         (select array_agg(mr.new) from unnest(t.audience_roles) ar join _m mr on mr.old = ar)
+         (select array_agg(mr.new) from unnest(t.audience_roles) ar join _m mr on mr.old = ar),
+         t.owner_department
     from public.form_templates t join _m m on m.old = t.id
    where t.tenant_id = v_tpl;
 

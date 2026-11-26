@@ -176,11 +176,11 @@ export const resetAccountPassword = createServerFn({ method: 'POST' })
 // Roles
 // ---------------------------------------------------------------------
 export const createRole = createServerFn({ method: 'POST' })
-  .inputValidator((input: { name: string; description: string; permissions: string[] }) => input)
+  .inputValidator((input: { name: string; description: string; permissions: string[]; scope?: string | null }) => input)
   .handler(async ({ data }): Promise<Result> => {
     try {
-      await run((c) => c.query('select public.create_role($1, $2, $3)',
-        [String(data.name ?? '').trim(), String(data.description ?? '').trim() || null, data.permissions ?? []]));
+      await run((c) => c.query('select public.create_role($1, $2, $3, $4)',
+        [String(data.name ?? '').trim(), String(data.description ?? '').trim() || null, data.permissions ?? [], data.scope?.trim() || null]));
       return { ok: true };
     } catch (err) {
       return refusal(err);
@@ -188,11 +188,11 @@ export const createRole = createServerFn({ method: 'POST' })
   });
 
 export const proposeRoleChange = createServerFn({ method: 'POST' })
-  .inputValidator((input: { roleId: string; name: string | null; permissions: string[] | null }) => input)
+  .inputValidator((input: { roleId: string; name: string | null; permissions: string[] | null; scope?: string | null }) => input)
   .handler(async ({ data }): Promise<Result> => {
     try {
-      await run((c) => c.query('select public.propose_role_change($1, $2, $3)',
-        [data.roleId, data.name?.trim() || null, data.permissions ?? null]));
+      await run((c) => c.query('select public.propose_role_change($1, $2, $3, $4)',
+        [data.roleId, data.name?.trim() || null, data.permissions ?? null, data.scope?.trim() || null]));
       return { ok: true };
     } catch (err) {
       return refusal(err);

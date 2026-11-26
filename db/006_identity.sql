@@ -439,7 +439,9 @@ begin
   end loop;
 end $$;
 
-create or replace function public.create_role(p_name text, p_description text, p_permissions text[])
+drop function if exists public.create_role(text, text, text[]);
+-- p_scope: the division the role is limited to; null = the whole organisation.
+create or replace function public.create_role(p_name text, p_description text, p_permissions text[], p_scope text default null)
 returns uuid
 language plpgsql
 security definer
@@ -450,16 +452,22 @@ begin
   perform app.require_permission('roles.manage');
   perform app.check_permissions(p_permissions);
   if coalesce(trim(p_name), '') = '' then raise exception 'a role needs a name'; end if;
-  insert into public.roles (tenant_id, name, description, permissions, status, created_by)
+  if nullif(trim(p_scope), '') is not null
+     and not exists (select 1 from public.departments where tenant_id = app.current_tenant() and name = trim(p_scope)) then
+    raise exception 'no division called %', p_scope;
+  end if;
+  insert into public.roles (tenant_id, name, description, permissions, status, created_by, scope_department)
   values (app.current_tenant(), trim(p_name), nullif(trim(p_description), ''),
-          coalesce(p_permissions, '{}'), 'pending', app.current_employee())
+          coalesce(p_permissions, '{}'), 'pending', app.current_employee(), nullif(trim(p_scope), ''))
   returning id into v_id;
   perform app.audit('role_requested', 'role', v_id, trim(p_name));
   return v_id;
 end $$;
 
 -- A change to an active role waits; the role works as it was meanwhile.
-create or replace function public.propose_role_change(p_role uuid, p_name text, p_permissions text[])
+drop function if exists public.propose_role_change(uuid, text, text[]);
+-- p_scope: the division the changed role is limited to (null = organisation-wide).
+create or replace function public.propose_role_change(p_role uuid, p_name text, p_permissions text[], p_scope text default null)
 returns void
 language plpgsql
 security definer
@@ -474,6 +482,7 @@ begin
   if v.status <> 'active' then raise exception 'only an active role can be changed'; end if;
   update public.roles
      set pending_name = nullif(trim(p_name), ''), pending_permissions = coalesce(p_permissions, '{}'),
+         pending_scope = nullif(trim(p_scope), ''),
          changed_by = app.current_employee(), updated_at = now()
    where id = p_role;
   perform app.audit('role_change_proposed', 'role', p_role, v.name);
@@ -506,7 +515,8 @@ begin
     update public.roles
        set name = case when p_approve then coalesce(v.pending_name, name) else name end,
            permissions = case when p_approve then v.pending_permissions else permissions end,
-           pending_name = null, pending_permissions = null,
+           scope_department = case when p_approve then v.pending_scope else scope_department end,
+           pending_name = null, pending_permissions = null, pending_scope = null,
            approved_by = app.current_employee(), updated_at = now()
      where id = p_role;
   else
@@ -566,10 +576,14 @@ begin
   if not (app.has_permission('forms.settings') or app.has_permission('forms.build')) then
     raise exception 'you need the forms.settings permission for that';
   end if;
-  select r.id, ft.name into v from public.approval_rules r
+  select r.id, ft.name, ft.owner_department into v from public.approval_rules r
     left join public.form_templates ft on ft.id = r.form_template_id
    where r.id = p_rule and r.tenant_id = app.current_tenant();
   if not found then raise exception 'no such approval step'; end if;
+  -- A division's designer sets the steps of that division's forms only.
+  if not (app.may_design(v.owner_department, 'forms.settings') or app.may_design(v.owner_department, 'forms.build')) then
+    raise exception 'that form belongs to another division';
+  end if;
   if p_deadline_days is null or p_deadline_days < 1 or p_deadline_days > 60 then
     raise exception 'a step needs between 1 and 60 working days';
   end if;
@@ -883,8 +897,8 @@ grant execute on function
   public.set_account_status(uuid, text),
   public.unlock_account(uuid),
   public.set_account_password(uuid, text),
-  public.create_role(text, text, text[]),
-  public.propose_role_change(uuid, text, text[]),
+  public.create_role(text, text, text[], text),
+  public.propose_role_change(uuid, text, text[], text),
   public.decide_role(uuid, boolean),
   public.assign_role(text, uuid, boolean),
   public.update_rule_settings(uuid, int, boolean),

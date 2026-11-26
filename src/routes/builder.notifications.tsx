@@ -93,7 +93,7 @@ function formatSlabRange(min: number): string {
 
 function NotificationsStep({ templateId }: { templateId: string }) {
   const navigate = useNavigate();
-  const access = useBuilderAccess();
+  const access = useBuilderAccess(templateId);
   const [formName, setFormName] = useState("Employee Departure Due Diligence Form");
   const [manual, setManual] = useState<ManualEntry[]>([]);
   const [savedAgo, setSavedAgo] = useState("just now");
@@ -263,7 +263,7 @@ function NotificationsStep({ templateId }: { templateId: string }) {
   }
 
   return (
-    <BuilderChrome
+    <BuilderChrome formId={templateId}
       step={3}
       formName={formName}
       savedAgo={savedAgo}

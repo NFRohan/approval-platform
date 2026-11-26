@@ -410,6 +410,11 @@ begin
   -- Trackers kept for the division, and trackers filtered by it.
   update public.trackers set department = p_into
    where tenant_id = app.current_tenant() and department = p_from;
+  -- Roles limited to the division, and the forms it owns.
+  update public.roles set scope_department = p_into
+   where tenant_id = app.current_tenant() and scope_department = p_from;
+  update public.form_templates set owner_department = p_into
+   where tenant_id = app.current_tenant() and owner_department = p_from;
   get diagnostics v_trackers = row_count;
   update public.trackers
      set filters = jsonb_set(filters, '{departments}',

@@ -4,6 +4,8 @@ import { StepProgress, type Step } from "./StepProgress";
 import { AccessBanner, useBuilderAccess } from "./access";
 
 type Props = {
+  /** The form on screen, so the banner says what this person may do with it. */
+  formId?: string | null;
   step: Step;
   formName: string;
   onFormNameChange?: (v: string) => void;
@@ -23,8 +25,9 @@ export function BuilderChrome({
   leftActions,
   rightActions,
   children,
+  formId,
 }: Props) {
-  const access = useBuilderAccess();
+  const access = useBuilderAccess(formId);
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
       <AccessBanner access={access} />

@@ -638,6 +638,37 @@ begin
 end $$;
 do $$ begin raise notice 'pass: changes to a form, its fields, approvers, slabs and publishing are in the audit trail, one entry per save, saying what changed'; end $$;
 
+-- =====================================================================
+-- 16. Admins per division
+-- =====================================================================
+do $$
+declare v_fin uuid; v_hr uuid; v_n int; v_new uuid; v_owner text;
+begin
+  select id into v_fin from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Travel & Expense Reimbursement';
+  select id into v_hr  from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Leave Application';
+  if (select owner_department from public.form_templates where id = v_fin) is distinct from 'Finance' then
+    raise exception 'FAIL: a Finance form is not owned by Finance';
+  end if;
+  set local role app_api;
+  perform pg_temp.as_emp('EMP-0600');   -- Dana: Finance workflow designer, limited to Finance
+  if public.may_design_form(v_fin) <> 'full' then raise exception 'FAIL: the Finance designer cannot design a Finance form'; end if;
+  if public.may_design_form(v_hr) <> 'read' then raise exception 'FAIL: the Finance designer may design an HR form (%)', public.may_design_form(v_hr); end if;
+  update public.form_fields set is_required = is_required where form_template_id = v_fin;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then raise exception 'FAIL: the Finance designer could not change a Finance form''s fields'; end if;
+  update public.form_fields set is_required = is_required where form_template_id = v_hr;
+  get diagnostics v_n = row_count;
+  if v_n <> 0 then raise exception 'FAIL: the Finance designer changed an HR form''s fields'; end if;
+  insert into public.form_templates (name, category, created_by, status) values ('QA Finance form', 'Finance', 'EMP-0600', 'draft')
+  returning id, owner_department into v_new, v_owner;
+  if v_owner is distinct from 'Finance' then raise exception 'FAIL: a form the Finance designer made is owned by % not Finance', v_owner; end if;
+  perform pg_temp.as_emp('EMP-0445');   -- Farah: central
+  if public.may_design_form(v_hr) <> 'full' or public.may_design_form(v_fin) <> 'full' then
+    raise exception 'FAIL: the central designer cannot design every form';
+  end if;
+end $$;
+do $$ begin raise notice 'pass: a designer limited to Finance designs Finance''s forms only, and the forms they make are Finance''s; central designs all'; end $$;
+
 -- Tidy: the evaluation goes, and everything it held with it.
 -- Removing an organisation is platform staff's to do (row security on tenants).
 select set_config('app.is_staff', 'true', false);

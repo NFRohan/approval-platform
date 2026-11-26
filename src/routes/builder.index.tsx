@@ -116,7 +116,7 @@ function BuilderEditor() {
   const { currentUser } = useCurrentUser();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const access = useBuilderAccess();
+  const access = useBuilderAccess(search.templateId ?? null);
   // Without forms.build nothing here is saved; the database would refuse
   // it, and an edit that silently goes nowhere is worse than none.
   const readOnly = access !== "full";
@@ -474,7 +474,7 @@ function BuilderEditor() {
   }
 
   return (
-    <BuilderChrome
+    <BuilderChrome formId={templateId}
       step={1}
       formName={formName}
       onFormNameChange={setFormName}
