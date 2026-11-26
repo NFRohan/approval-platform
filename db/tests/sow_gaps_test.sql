@@ -469,6 +469,43 @@ begin
 
   delete from public.notification_rules where form_template_id = v_form and label = 'approver_manager';
 end $$;
+-- Steps that tell somebody when approved: Business Finance tells the
+-- requester; Payroll tells the leaver's HRBP (SOW 2.2 step 7).
+do $$
+declare v_sub uuid; v_step uuid; v_exit uuid; v_pay uuid; v_hrbp text;
+begin
+  perform pg_temp.as_emp('EMP-0416');
+  v_sub := pg_temp.raise_request('Campaign Request', 'EMP-0416',
+    '{"Campaign name": "Notice test", "Audience": "Customer", "Approval route": "Regular", "Budget": "100000",
+      "Business case": "Test", "Business finance reviewer": "EMP-0411"}');
+  select id into v_step from public.approval_requests
+   where submission_id = v_sub and stage_label = 'Business finance review' and status = 'pending';
+  if v_step is null then raise exception 'FAIL: the campaign request has no Business Finance step open'; end if;
+  perform pg_temp.as_emp('EMP-0411');
+  perform public.act_on_approval(v_step, 'approve', 'Budget is within plan', null, null);
+  perform pg_temp.as_emp(null);
+  if not exists (select 1 from public.notifications where entity_id = v_sub and recipient_id = 'EMP-0416'
+                   and kind = 'step.business_finance' and body like '%Budget is within plan%') then
+    raise exception 'FAIL: the requester was not told Business Finance approved, with its note';
+  end if;
+
+  perform pg_temp.as_emp('EMP-2847');
+  v_exit := pg_temp.raise_request('Employee Exit Clearance', 'EMP-2847', '{}');
+  perform pg_temp.as_emp(null);
+  select id into v_pay from public.approval_requests where submission_id = v_exit and stage_label = 'Payroll settlement';
+  if v_pay is null then raise exception 'FAIL: the exit clearance has no Payroll settlement step'; end if;
+  select d.hrbp_employee_id into v_hrbp from public.departments d join public.employees e
+      on e.tenant_id = d.tenant_id and e.department = d.name
+   where e.tenant_id = current_setting('t.tpl')::uuid and e.employee_id = 'EMP-2847';
+  insert into public.approval_events (tenant_id, request_id, subject_type, subject_id, actor_id, action)
+  values (current_setting('t.tpl')::uuid, v_pay, 'form_submission', v_exit, 'EMP-0661', 'approved');
+  if not exists (select 1 from public.notifications where entity_id = v_exit and recipient_id = v_hrbp
+                   and kind = 'settlement.completed') then
+    raise exception 'FAIL: the leaver''s HRBP (%) was not told the final settlement is complete', v_hrbp;
+  end if;
+end $$;
+do $$ begin raise notice 'pass: Business Finance''s approval tells the requester; Payroll''s tells the leaver''s HRBP'; end $$;
+
 -- A finance band's watcher hears only of amounts that reach their band.
 do $$
 declare v_form uuid; v_small uuid; v_big uuid; v_top text;

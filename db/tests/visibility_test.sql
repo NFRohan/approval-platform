@@ -194,6 +194,50 @@ end $$;
 do $$ begin raise notice 'pass: oversight (reports.view, audit.view) sees every request'; end $$;
 
 -- =====================================================================
+-- 5b. A role overseeing a form sees every request of it, and no others
+-- =====================================================================
+-- Somebody new in Compliance: on no declaration's route, copied on
+-- nothing, told of nothing. Only the role, held through the department.
+do $$
+begin
+  perform pg_temp.as_emp(null);   -- the organisation's administrator
+  insert into public.employees (tenant_id, employee_id, name, designation, department, line_manager_id)
+  values (current_setting('t.tpl')::uuid, 'EMP-0899', 'Noor Islam', 'Compliance Analyst', 'Compliance', 'EMP-0700');
+end $$;
+do $$
+declare v_form uuid; v_all int; v_seen int; v_other int;
+begin
+  select id into v_form from public.form_templates
+   where tenant_id = current_setting('t.tpl')::uuid and name = 'Gift & Hospitality Declaration';
+  if not exists (select 1 from public.form_overseers where form_template_id = v_form) then
+    raise exception 'FAIL: the evaluation was not given the Compliance oversight of ABC declarations';
+  end if;
+  select count(*) into v_all from public.form_submissions where form_template_id = v_form and status <> 'draft';
+  set local role app_api;
+  perform pg_temp.as_emp('EMP-0899');
+  if app.sees_every_request() then raise exception 'FAIL: Noor has the organisation-wide view; the test proves nothing'; end if;
+  select count(*) into v_seen from public.form_submissions where form_template_id = v_form and status <> 'draft';
+  select count(*) into v_other from public.form_submissions where form_template_id <> v_form and status <> 'draft';
+  reset role;
+  if v_all = 0 then raise exception 'FAIL: no declarations to test with'; end if;
+  if v_seen <> v_all then
+    raise exception 'FAIL: Noor, in Compliance, sees % of % ABC declarations', v_seen, v_all;
+  end if;
+  if v_other <> 0 then
+    raise exception 'FAIL: the oversight of declarations showed Noor % requests of other forms', v_other;
+  end if;
+  -- Without the role, nothing.
+  delete from public.role_groups where tenant_id = current_setting('t.tpl')::uuid and department = 'Compliance'
+     and role_id = (select role_id from public.form_overseers where form_template_id = v_form limit 1);
+  set local role app_api;
+  perform pg_temp.as_emp('EMP-0899');
+  select count(*) into v_seen from public.form_submissions where form_template_id = v_form and status <> 'draft';
+  reset role;
+  if v_seen <> 0 then raise exception 'FAIL: Noor still sees % declarations with the role taken from Compliance', v_seen; end if;
+end $$;
+do $$ begin raise notice 'pass: Compliance sees every ABC declaration through its role, and no other request; without the role, none'; end $$;
+
+-- =====================================================================
 -- 6. A department's head sees the department's requests
 -- =====================================================================
 do $$

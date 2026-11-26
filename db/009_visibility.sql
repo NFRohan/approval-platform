@@ -142,6 +142,102 @@ as $$
      and d.head_employee_id = app.current_employee()
 $$;
 
+-- 6. The forms a role oversees.
+--
+-- The ABC portal's accessor group: Compliance sees every declaration,
+-- though nobody gave them the organisation-wide view (reports.view,
+-- audit.view) that would show them every other request as well. A role
+-- may be granted the requests of chosen forms; whoever holds the role,
+-- personally or through their department, sees every request of those
+-- forms and nothing more.
+create table if not exists public.form_overseers (
+  tenant_id        uuid not null default app.current_tenant()
+                     references public.tenants(id) on delete cascade,
+  role_id          uuid not null,
+  form_template_id uuid not null,
+  assigned_by      text,
+  created_at       timestamptz not null default now(),
+  primary key (tenant_id, role_id, form_template_id),
+  foreign key (role_id, tenant_id) references public.roles(id, tenant_id) on delete cascade,
+  foreign key (form_template_id, tenant_id) references public.form_templates(id, tenant_id) on delete cascade
+);
+alter table public.form_overseers enable row level security;
+alter table public.form_overseers force row level security;
+drop policy if exists form_overseers_member_read on public.form_overseers;
+create policy form_overseers_member_read on public.form_overseers for select to app_api
+  using (tenant_id = (select app.current_tenant()) and (select app.is_member()));
+grant select on public.form_overseers to app_api;
+
+create or replace function app.my_overseen_forms()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select o.form_template_id
+    from public.form_overseers o
+   where o.tenant_id = app.current_tenant()
+     and o.role_id in (select app.held_roles(app.current_employee()))
+$$;
+
+-- Grant or take back a role's view of a form's requests. Whoever
+-- manages roles; and, like the roles themselves, in the audit trail.
+create or replace function public.set_form_oversight(p_role uuid, p_form uuid, p_on boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_role text; v_form text;
+begin
+  perform app.require_permission('roles.manage');
+  select name into v_role from public.roles where id = p_role and tenant_id = app.current_tenant();
+  select name into v_form from public.form_templates where id = p_form and tenant_id = app.current_tenant();
+  if v_role is null or v_form is null then raise exception 'no such role or form'; end if;
+  if p_on then
+    insert into public.form_overseers (tenant_id, role_id, form_template_id, assigned_by)
+    values (app.current_tenant(), p_role, p_form, app.current_employee())
+    on conflict do nothing;
+  else
+    delete from public.form_overseers
+     where tenant_id = app.current_tenant() and role_id = p_role and form_template_id = p_form;
+  end if;
+  perform app.audit(case when p_on then 'role_oversight_granted' else 'role_oversight_removed' end, 'role', p_role,
+                    v_role || case when p_on then ' now sees every request of ' else ' no longer sees every request of ' end || v_form);
+end $$;
+
+-- The seeded grant: a Compliance role over the Gift & Hospitality
+-- Declaration, held by everyone in Compliance.
+create or replace function app.seed_form_overseers(p_tenant uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_role uuid; v_form uuid;
+begin
+  select id into v_form from public.form_templates where tenant_id = p_tenant and name = 'Gift & Hospitality Declaration';
+  if v_form is null or not exists (select 1 from public.departments where tenant_id = p_tenant and name = 'Compliance') then
+    return;
+  end if;
+  select id into v_role from public.roles where tenant_id = p_tenant and name = 'ABC declarations oversight';
+  if v_role is null then
+    insert into public.roles (tenant_id, name, description, permissions, status, created_by, approved_by)
+    values (p_tenant, 'ABC declarations oversight',
+            'Sees every gift, hospitality and donation declaration, and no other requests',
+            '{}', 'active', 'EMP-0445', 'EMP-0700')
+    returning id into v_role;
+  end if;
+  insert into public.role_groups (tenant_id, role_id, department, assigned_by)
+  values (p_tenant, v_role, 'Compliance', 'EMP-0445') on conflict do nothing;
+  insert into public.form_overseers (tenant_id, role_id, form_template_id, assigned_by)
+  values (p_tenant, v_role, v_form, 'EMP-0445') on conflict do nothing;
+end $$;
+
+grant execute on function app.my_overseen_forms() to app_api;
+grant execute on function public.set_form_oversight(uuid, uuid, boolean) to app_api;
+
 -- The same rule for one request, for functions that run with the
 -- owner's rights and are handed an id.
 create or replace function app.can_see_submission(p_id uuid)
@@ -158,7 +254,8 @@ as $$
             or s.submitted_by = app.current_employee()
             or s.id in (select app.my_request_ids())
             or s.parent_submission_id in (select app.my_request_ids())
-            or s.submitted_by in (select app.my_department_members())))
+            or s.submitted_by in (select app.my_department_members())
+            or s.form_template_id in (select app.my_overseen_forms())))
 $$;
 
 grant execute on function app.sees_every_request(), app.my_request_ids(),
@@ -190,7 +287,9 @@ begin
          -- by listing children: the engine reads a new follow-up back in
          -- the statement that made it, before any list could hold it.
          || ' or parent_submission_id in (select app.my_request_ids())'
-         || ' or submitted_by in (select app.my_department_members()))'),
+         || ' or submitted_by in (select app.my_department_members())'
+         -- 6. Every request of a form one of their roles oversees.
+         || ' or form_template_id in (select app.my_overseen_forms()))'),
       ('submission_values', 'submission_values_member_read', 'submission_values_member_write', format(v_sub, 'submission_values.submission_id')),
       ('attachments',       'attachments_member_read',       'attachments_member_write',       format(v_sub, 'attachments.submission_id')),
       ('submission_cc',     'submission_cc_member_read',     'submission_cc_member_write',     format(v_sub, 'submission_cc.submission_id')),

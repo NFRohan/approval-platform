@@ -834,6 +834,62 @@ drop trigger if exists approval_events_watchers on public.approval_events;
 create trigger approval_events_watchers after insert on public.approval_events
   for each row execute function app.watchers_on_event();
 
+-- ---------------------------------------------------------------------
+-- Steps that tell somebody when they are approved.
+--
+-- Business Finance (Commercial): the BF review is T+2 working days, and
+-- the requester waits on it to take the campaign further, so they hear
+-- the moment Business Finance has approved — with the reviewer's note.
+--
+-- Payroll settlement (SOW 2.2, step 7): "After completing Final
+-- Settlement, the concerned employee will be notified through email by
+-- Payroll team and Payroll team also will inform Divisional HRBP." The
+-- employee hears from the engine when the request completes; the HRBP of
+-- the leaver's division is told here.
+-- ---------------------------------------------------------------------
+create or replace function app.step_approved_notices()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v_stage text; v_requester text; v_name text; v_dept text; v_hrbp text; v_actor text;
+begin
+  if new.subject_type <> 'form_submission' or new.action <> 'approved' or new.request_id is null then
+    return new;
+  end if;
+  select stage_label into v_stage from public.approval_requests where id = new.request_id;
+  if v_stage is null then return new; end if;
+  select s.submitted_by, e.name, e.department into v_requester, v_name, v_dept
+    from public.form_submissions s
+    left join public.employees e on e.tenant_id = s.tenant_id and e.employee_id = s.submitted_by
+   where s.id = new.subject_id;
+  v_actor := coalesce((select name from public.employees where tenant_id = new.tenant_id and employee_id = new.actor_id), new.actor_id, 'Business Finance');
+
+  if v_stage ilike 'business finance%' and v_requester is not null and v_requester is distinct from new.actor_id then
+    perform app.notify(v_requester, 'step.business_finance',
+      'Business Finance has approved your request',
+      app.subject_label('form_submission', new.subject_id) || ' was approved by ' || v_actor || ' in Business Finance'
+        || coalesce(': "' || nullif(trim(new.comment), '') || '"', '') || '.',
+      'form_submission', new.subject_id);
+  elsif v_stage ilike 'payroll%' then
+    select hrbp_employee_id into v_hrbp from public.departments
+     where tenant_id = new.tenant_id and name = v_dept;
+    if v_hrbp is not null and v_hrbp is distinct from new.actor_id then
+      perform app.notify(v_hrbp, 'settlement.completed',
+        'Final settlement completed: ' || coalesce(v_name, v_requester, 'a leaver'),
+        'Payroll (' || v_actor || ') has completed the final settlement for ' || coalesce(v_name, v_requester)
+          || coalesce(' of ' || v_dept, '') || ' — ' || app.subject_label('form_submission', new.subject_id) || '.',
+        'form_submission', new.subject_id);
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists approval_events_step_notices on public.approval_events;
+create trigger approval_events_step_notices after insert on public.approval_events
+  for each row execute function app.step_approved_notices();
+
 -- =====================================================================
 -- Trackers
 -- =====================================================================

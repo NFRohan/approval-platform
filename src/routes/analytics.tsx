@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { analytics, type Analytics } from "@/lib/analytics-fn";
+import { downloadSheet } from "@/lib/sheet-fn";
+import { toast } from "sonner";
 import { reportFilterOptions, type FilterOptions } from "@/lib/report-fn";
 import { NoPermission, Notice, Page } from "@/components/admin/kit";
 import { control } from "@/components/reports/ReportParts";
@@ -61,6 +63,42 @@ function AnalyticsPage() {
   const k = data?.kpis;
   const span = `previous ${days} days`;
 
+  // "Exportable executive dashboards" (SOW 2.1 KPI and Analytics): what
+  // the page shows, as one Excel sheet — the headline figures, then
+  // approval time by department, by form and by approver, the weekly SLA
+  // trend, and where work is waiting.
+  async function exportExcel() {
+    if (!data) return;
+    type Row = Record<string, string | number | null>;
+    const out: Row[] = [];
+    const row = (section: string, item: string, r: Partial<Row>) => out.push({ section, item, ...r });
+    const K = data.kpis;
+    row("Headline", "Requests raised", { count: K.raised, previous: K.raisedPrev });
+    row("Headline", "Completed", { count: K.completed, previous: K.completedPrev });
+    row("Headline", "Rejected", { count: K.rejected });
+    row("Headline", "Average cycle time (days)", { avg_days: K.avgCycle, previous: K.avgCyclePrev, detail: K.medianCycle == null ? null : `median ${K.medianCycle} days` });
+    row("Headline", "Approvals on time (%)", { on_time: K.onTimePct, previous: K.onTimePctPrev });
+    row("Headline", "Open requests", { count: K.open, detail: `${K.pendingNow} steps waiting now` });
+    row("Headline", "Overdue now", { count: K.overdueNow, detail: "approval steps past their deadline" });
+    for (const d of data.byDepartment) row("Approval time by department", d.department, { count: d.raised, avg_days: d.avgCycle, detail: "raised; average days from raising to decision" });
+    for (const f of data.byForm) row("Approval time by form", f.form, { count: f.raised, completed: f.completed, avg_days: f.avgCycle });
+    for (const a of data.approvers) row("Approval time by approver", a.approver, { completed: a.completed, avg_days: a.avgResponse, on_time: a.onTimePct, detail: "average days from a step opening to its decision" });
+    for (const w of data.sla) row("SLA by week", `Week of ${dmy(w.week)}`, { count: w.decided, on_time: w.onTimePct, detail: `${w.late} decided late` });
+    for (const w of data.weekly) row("Volume by week", `Week of ${dmy(w.week)}`, { count: w.raised, completed: w.completed, detail: `${w.rejected} rejected` });
+    for (const b of data.bottlenecks) row("Where work is waiting", b.approver, { count: b.pending, detail: `${b.overdue} overdue; oldest ${b.oldestDays ?? "—"} days` });
+    const scope = [department || "all departments", form || "all forms", days === 365 ? "12 months" : `${days} days`].join(", ");
+    try {
+      await downloadSheet(`analytics-${new Date().toISOString().slice(0, 10)}.xlsx`, `Analytics — ${scope}`, [
+        { key: "section", label: "Section" }, { key: "item", label: "Item" },
+        { key: "count", label: "Count", type: "number" }, { key: "completed", label: "Completed", type: "number" },
+        { key: "avg_days", label: "Average days", type: "number" }, { key: "on_time", label: "On time %", type: "number" },
+        { key: "previous", label: "Previous period", type: "number" }, { key: "detail", label: "Detail" },
+      ], out);
+    } catch (e) {
+      toast.error("Could not export: " + (e as Error).message);
+    }
+  }
+
   return (
     <div className="mx-auto analytics-print" style={{ maxWidth: 1280, padding: "28px 28px 56px" }}>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-5">
@@ -91,6 +129,9 @@ function AnalyticsPage() {
           <Link to="/reports" style={{ ...control, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5, color: "#3F3F46" }}>
             <FileSpreadsheet size={13} /> Reports
           </Link>
+          <button type="button" onClick={() => void exportExcel()} disabled={!data} style={{ ...control, display: "inline-flex", alignItems: "center", gap: 5, cursor: data ? "pointer" : "default" }}>
+            <FileSpreadsheet size={13} /> Excel
+          </button>
           <button type="button" onClick={() => window.print()} style={{ ...control, display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
             <Printer size={13} /> Print / PDF
           </button>

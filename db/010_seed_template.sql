@@ -690,7 +690,11 @@ insert into public.report_templates (name, description, dataset, columns, filter
    '{"period": "last_90"}', true, 'monthly', array['EMP-0600', 'EMP-0700'], 'pdf', 'EMP-0445', 'EMP-0445'),
   ('Finance requests by amount', 'Money requests with their amounts and outcomes',
    'requests', array['reference', 'form', 'requester', 'amount', 'status', 'submitted_at', 'cycle_days'],
-   '{"category": ["Finance"], "period": "last_90"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445');
+   '{"category": ["Finance"], "period": "last_90"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445'),
+  -- SOW 3.2 1.8: "View list of processed approvals".
+  ('Processed approvals', 'Every approval step decided — approved or rejected — by whom, when and how fast',
+   'steps', array['reference', 'form', 'requester', 'stage', 'approver', 'approver_department', 'status', 'acted_at', 'response_days'],
+   '{"status": ["approved", "rejected"], "period": "last_90"}', true, 'none', '{}', 'xlsx', 'EMP-0445', 'EMP-0445');
 
 select app.generate_history(app.current_tenant(), 180);
 
@@ -705,6 +709,15 @@ select d.id, rt.name, rt.description, rt.dataset, rt.columns, rt.filters, rt.sta
    and not exists (select 1 from public.report_templates x where x.tenant_id = d.id);
 
 select app.generate_history(d.id, 180) from public.tenants d where d.kind = 'demo' and not d.history_seeded;
+
+-- Standard reports added since an evaluation was issued.
+insert into public.report_templates (tenant_id, name, description, dataset, columns, filters, standard, schedule, recipients, format, created_by, approved_by)
+select d.id, rt.name, rt.description, rt.dataset, rt.columns, rt.filters, rt.standard, rt.schedule, rt.recipients, rt.format, rt.created_by, rt.approved_by
+  from public.tenants d
+  join public.tenants tpl on tpl.kind = 'template'
+  join public.report_templates rt on rt.tenant_id = tpl.id and rt.standard
+ where d.kind = 'demo'
+   and not exists (select 1 from public.report_templates x where x.tenant_id = d.id and x.name = rt.name);
 
 update public.roles
    set permissions = permissions || array(select p from unnest(array['reports.manage', 'notifications.manage']) p
@@ -788,6 +801,8 @@ select app.seed_sow_gaps(app.current_tenant());
 select app.seed_sow_gaps(d.id) from public.tenants d where d.kind = 'demo';
 select app.seed_division_admins(app.current_tenant());
 select app.seed_division_admins(d.id) from public.tenants d where d.kind = 'demo';
+select app.seed_form_overseers(app.current_tenant());
+select app.seed_form_overseers(d.id) from public.tenants d where d.kind = 'demo';
 -- Notices, stationery and maintenance had their chains built once for
 -- every organisation in the database: the seed builds them as the owner,
 -- and the rule lookup did not name the organisation (fixed in

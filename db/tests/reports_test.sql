@@ -109,8 +109,8 @@ begin;
   select pg_temp.check('somebody without reports.view sees no report templates',
     (select count(*)::int from public.report_templates), 0);
   select pg_temp.as_emp('EMP-0830');   -- Lena: Compliance auditor
-  select pg_temp.check('...a compliance auditor sees the standard seven',
-    (select count(*)::int from public.report_templates where standard), 7);
+  select pg_temp.check('...a compliance auditor sees the standard eight',
+    (select count(*)::int from public.report_templates where standard), 8);
 commit;
 
 -- =====================================================================

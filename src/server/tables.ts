@@ -276,6 +276,12 @@ export const TABLES: Record<string, TableDef> = {
     ['form_template_id', 'notifyee_user_id', 'is_auto_added', 'label', 'events', 'condition'],
     ['condition'],
   ),
+  // Read only: granted and taken through set_form_oversight.
+  form_overseers: T(
+    ['role_id', 'form_template_id', 'assigned_by', 'created_at'],
+    [],
+    [],
+  ),
   // Read only: given and taken through assign_role_group.
   role_groups: T(
     ['role_id', 'department', 'assigned_by', 'created_at'],
@@ -370,6 +376,7 @@ export const RPCS: Record<string, readonly string[]> = {
   // Stage 3: a workflow's task settings — deadlines and signatures — for
   // somebody with forms.settings, who may not otherwise touch the design.
   update_rule_settings: ['p_rule', 'p_deadline_days', 'p_require_signature', 'p_timing'],
+  set_form_oversight: ['p_role', 'p_form', 'p_on'],
   // Stage 5: campaigns and divisions. Each checks who may, in the database.
   record_campaign_actuals:    ['p_campaign', 'p_on_date', 'p_cost', 'p_beneficiaries', 'p_transactions', 'p_volume', 'p_note'],
   set_campaign_status:        ['p_campaign', 'p_status', 'p_note'],

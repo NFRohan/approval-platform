@@ -253,6 +253,13 @@ begin
 
   -- form_template_ids is an ARRAY of uuids, so it is remapped element by
   -- element rather than by a join.
+  insert into public.form_overseers (tenant_id, role_id, form_template_id, assigned_by, created_at)
+  select v_new, mr.new, mf.new, o.assigned_by, o.created_at
+    from public.form_overseers o
+    join _m mr on mr.old = o.role_id
+    join _m mf on mf.old = o.form_template_id
+   where o.tenant_id = v_tpl;
+
   insert into _m select id, gen_random_uuid() from public.delegation_rules where tenant_id = v_tpl;
   insert into public.delegation_rules (id, tenant_id, delegator_id, delegate_id, start_date, end_date, reason, form_template_ids, created_at)
   select m.new, v_new, d.delegator_id, d.delegate_id, d.start_date, d.end_date, d.reason,

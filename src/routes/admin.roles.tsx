@@ -38,15 +38,22 @@ function RolesPage() {
   const [groups, setGroups] = useState<{ role_id: string; department: string }[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
+  // The forms each role sees every request of (db/009_visibility.sql, rule 6).
+  const [overseen, setOverseen] = useState<{ role_id: string; form_template_id: string }[]>([]);
+  const [forms, setForms] = useState<{ id: string; name: string }[]>([]);
 
   const load = useCallback(async () => {
-    const [r, e, h, g, d] = await Promise.all([
+    const [r, e, h, g, d, o, f] = await Promise.all([
       db.from("roles").select("id, name, description, permissions, status, pending_name, pending_permissions, scope_department, pending_scope, created_by, changed_by, approved_by").order("name"),
       db.from("employees").select("employee_id, name, designation, active").order("name"),
       db.from("employee_roles").select("employee_id, role_id"),
       db.from("role_groups").select("role_id, department"),
       db.from("departments").select("name").order("name"),
+      db.from("form_overseers").select("role_id, form_template_id"),
+      db.from("form_templates").select("id, name").eq("status", "published").order("name"),
     ]);
+    setOverseen((o.data ?? []) as { role_id: string; form_template_id: string }[]);
+    setForms((f.data ?? []) as { id: string; name: string }[]);
     setGroups((g.data ?? []) as { role_id: string; department: string }[]);
     setDepartments(((d.data ?? []) as { name: string }[]).map((x) => x.name));
     setRoles((r.data ?? []) as Role[]);
@@ -139,6 +146,8 @@ function RolesPage() {
             groups={groups.filter((x) => x.role_id === r.id).map((x) => x.department)}
             departments={departments}
             myDepartment={currentUser.department ?? null}
+            oversees={overseen.filter((x) => x.role_id === r.id).map((x) => x.form_template_id)}
+            forms={forms}
           />
         ))}
       </div>
@@ -197,15 +206,22 @@ function RoleEditor({ title, initial, departments, onSave, onCancel }: {
   );
 }
 
-function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act, groups, departments, myDepartment }: {
+function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act, groups, departments, myDepartment, oversees, forms }: {
   role: Role; manage: boolean; assign: boolean; me: string; holders: string[]; employees: Employee[];
   groups: string[]; departments: string[]; myDepartment: string | null;
+  oversees: string[]; forms: { id: string; name: string }[];
   nameOf: Map<string, string>;
   act: (label: string, fn: () => Promise<{ ok: boolean; error?: string }>) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState("");
   const [addingGroup, setAddingGroup] = useState("");
+  const [addingForm, setAddingForm] = useState("");
+  const formName = (id: string) => forms.find((f) => f.id === id)?.name ?? "A form";
+  const oversee = (formId: string, on: boolean) => async () => {
+    const { error } = await db.rpc("set_form_oversight", { p_role: r.id, p_form: formId, p_on: on });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  };
 
   if (editing) {
     return (
@@ -299,6 +315,47 @@ function RoleCard({ role: r, manage, assign, me, holders, employees, nameOf, act
           </span>
         )}
       </div>
+      {(oversees.length > 0 || manage) && (
+        <>
+          <div style={{ fontSize: 12, color: "#71717A", margin: "12px 0 6px" }}
+            title="Whoever holds this role sees every request of these forms, and no others they have no part in">
+            Sees every request of
+          </div>
+          <div className="flex gap-1.5 flex-wrap items-center" data-role-oversees={r.name}>
+            {oversees.map((id) => (
+              <span key={id} className="inline-flex items-center gap-1 rounded-full" style={{ padding: "2px 4px 2px 9px", fontSize: 12, background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#065F46" }}>
+                {formName(id)}
+                {manage && (
+                  <button
+                    title="Stop this role seeing every request of the form"
+                    aria-label={`Stop overseeing ${formName(id)}`}
+                    onClick={() => void act(`${r.name} no longer sees every ${formName(id)}`, oversee(id, false))}
+                    style={{ border: "none", background: "transparent", cursor: "pointer", padding: 2, display: "inline-flex" }}
+                  ><X size={12} /></button>
+                )}
+              </span>
+            ))}
+            {oversees.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>Only the requests they have a part in</span>}
+            {manage && r.status === "active" && (
+              <span className="inline-flex items-center gap-1.5">
+                <select
+                  name={`oversee-${r.name}`}
+                  aria-label={`${r.name}: see every request of`}
+                  style={{ ...inputStyle, width: 240, padding: "4px 8px", fontSize: 12 }}
+                  value={addingForm}
+                  onChange={(e) => setAddingForm(e.target.value)}
+                >
+                  <option value="">Add a form…</option>
+                  {forms.filter((f) => !oversees.includes(f.id)).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+                <Button small disabled={!addingForm} onClick={async () => {
+                  if (await act(`${r.name} now sees every ${formName(addingForm)}`, oversee(addingForm, true))) setAddingForm("");
+                }}>Add</Button>
+              </span>
+            )}
+          </div>
+        </>
+      )}
       {r.status === "active" && holders.length > 0 && (
         <Notice tone="zinc">
           <span style={{ fontSize: 12 }}>Approved by {nameOf.get(r.approved_by ?? "") ?? r.approved_by ?? "—"}; created by {nameOf.get(r.created_by ?? "") ?? r.created_by ?? "—"}.</span>
