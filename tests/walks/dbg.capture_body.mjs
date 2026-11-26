@@ -145,7 +145,7 @@ const html = `<!doctype html>
 </style></head>
 <body>
 <div id="mock-stage"></div>
-<div id="mock-bar"><div id="mock-list"></div><button type="button" id="mock-toggle">Screens</button></div>
+<div id="mock-bar"><div id="mock-list"></div><button type="button" id="mock-toggle">All screens</button></div>
 ${templates}
 <script>
 // A static capture of the AMS app (bKash evaluation, synthetic data).
@@ -164,7 +164,7 @@ function show(k, push) {
     f.title = 'Phone';
     f.style.cssText = 'width:390px;height:844px;border:0;display:block;margin:24px auto;border-radius:24px;box-shadow:0 0 0 10px #18181b,0 20px 50px rgba(0,0,0,.25);background:#fff';
     f.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>' + document.querySelector('style').textContent + '</style></head><body class="' + (t.dataset.bodyClass || '') + '">' + t.innerHTML + '</body></html>';
-    f.onload = () => f.contentDocument.addEventListener('click', (e) => { const a = e.target.closest('a[href]'); if (a && a.getAttribute('href').startsWith('/')) { e.preventDefault(); const k = find(a.getAttribute('href'), true); if (k) show(k, true); } });
+    f.onload = () => f.contentDocument.addEventListener('click', (e) => handle(e, true));
     stage.replaceChildren(f);
     stage.className = 'phone';
     document.body.className = '';
@@ -191,20 +191,58 @@ const groups = {};
 for (const p of INDEX) (groups[p.person] ||= []).push(p);
 list.innerHTML = Object.entries(groups).map(([who, ps]) => '<h4>' + who + '</h4>' + ps.map((p) => '<a href="#' + p.k + '" data-k="' + p.k + '">' + p.label.replace(/</g, '&lt;') + '</a>').join('')).join('');
 document.getElementById('mock-toggle').onclick = () => list.classList.toggle('open');
-document.addEventListener('click', (e) => {
+// The app moves between pages with buttons its router handles, not
+// links; here they are matched by what they say.
+const NAV = { 'Dashboard': '/', 'Home': '/', 'Pending Approvals': '/approvals', 'Approval History': '/approvals/history',
+  'Delegation': '/approvals/delegate', 'Form Builder': '/builder', 'Published Forms': '/forms', 'Available Forms': '/forms',
+  'Forms': '/forms', 'My Submissions': '/submissions', 'Requests': '/submissions', 'Movement Orders': '/movement-orders',
+  'Notice Board': '/notices', 'Activity Log': '/activity', 'Analytics': '/analytics', 'Reports': '/reports',
+  'Campaigns': '/campaigns', 'Trackers': '/trackers', 'Users': '/admin/users', 'Roles': '/admin/roles',
+  'People & Directory': '/admin/people', 'Working Calendar': '/admin/calendar', 'Clearance Checklists': '/admin/checklists',
+  'Email': '/admin/email', 'Integrations': '/admin/integrations', 'Audit Centre': '/admin/audit', 'Account': '/account',
+  'Approvals': '/approvals', 'Developers': '/developers' };
+const NAV_KEYS = Object.keys(NAV).sort((a, b) => b.length - a.length);
+const REFS = {};
+for (const p of INDEX) {
+  if (!p.path.startsWith('/status/') || p.tab || p.phone) continue;
+  const m = document.getElementById(p.k).content.textContent.match(/AMS-\\d{4}-\\d{5}/);
+  if (m && !REFS[m[0]]) REFS[m[0]] = p.k;
+}
+const FORMS = INDEX.filter((p) => p.path.startsWith('/forms/') && !p.phone && p.label !== p.path);
+const go = (k) => { if (k) { show(k, true); return true; } return false; };
+function handle(e, inPhone) {
   const a = e.target.closest('a[href]');
-  if (a && a.dataset.k) { e.preventDefault(); show(a.dataset.k, true); return; }
-  if (a && a.getAttribute('href').startsWith('/')) { e.preventDefault(); const k = find(a.getAttribute('href')); if (k) show(k, true); return; }
+  if (a && a.dataset.k) { e.preventDefault(); return go(a.dataset.k); }
+  if (a && a.getAttribute('href').startsWith('/')) { e.preventDefault(); return go(find(a.getAttribute('href'), inPhone)); }
+  if (e.target.closest('#mock-bar')) return false;
   // A tab captured separately: switch to that capture.
   const tab = e.target.closest('[role=tab]');
   if (tab && current) {
     const name = (tab.innerText || '').trim();
-    const base = current.tab ? INDEX.find((p) => p.path === current.path && p.who === current.who && !p.tab && !p.phone) : current;
-    const k = name === (INDEX.find((p) => p.k === base?.k)?.tab || '') ? base?.k
-      : (INDEX.find((p) => p.path === current.path && p.who === current.who && p.tab === name) || base || {}).k;
-    if (k) show(k, true);
+    const base = INDEX.find((p) => p.path === current.path && p.who === current.who && !p.tab && !p.phone);
+    const hit = INDEX.find((p) => p.path === current.path && p.who === current.who && p.tab === name);
+    return go((hit || base || {}).k);
   }
-});
+  const btn = e.target.closest('button, [role=button], [role=menuitem]');
+  const label = btn ? (btn.innerText || '').trim().split('\\n')[0].trim() : '';
+  // The person switcher: the list of every screen, by person.
+  if (btn && current && (btn.innerText || '').includes(current.person)) { e.preventDefault(); list.classList.add('open'); return true; }
+  if (btn && label) {
+    const key = NAV_KEYS.find((k) => label === k || label.startsWith(k));
+    if (key && go(find(NAV[key], inPhone))) { e.preventDefault(); return true; }
+  }
+  // A row or card naming a request, or a form.
+  let el = e.target;
+  for (let i = 0; el && i < 6; i++, el = el.parentElement) {
+    const t = el.innerText || '';
+    const m = t.match(/AMS-\\d{4}-\\d{5}/g);
+    if (m && new Set(m).size === 1 && REFS[m[0]] && REFS[m[0]] !== current?.k) return go(REFS[m[0]]);
+    const fs = FORMS.filter((p) => t.includes(p.label));
+    if (fs.length === 1 && t.length < 400 && current?.path !== fs[0].path) return go(fs[0].k);
+  }
+  return false;
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('#mock-list, #mock-toggle')) list.classList.remove('open'); handle(e, false); });
 window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (k && k !== current?.k && document.getElementById(k)) show(k, false); });
 show((location.hash.slice(1) && document.getElementById(location.hash.slice(1))) ? location.hash.slice(1) : INDEX[0].k, false);
 </script>
