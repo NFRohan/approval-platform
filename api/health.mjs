@@ -54,7 +54,7 @@ export default async function handler(_req, res) {
       // it. What matters is that there is at least one live evaluation
       // with an account somebody could actually sign into.
       const { rows } = await client.query(
-        `select count(*)::int as usable
+        `select count(distinct t.id)::int as usable
            from public.tenants t
            join public.app_users u on u.tenant_id = t.id
           where app.tenant_status(t.id) = 'active'`);
