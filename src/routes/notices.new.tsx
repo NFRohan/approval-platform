@@ -1,6 +1,6 @@
 // src/routes/notices.new.tsx
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { startChain } from "@/lib/chain";
@@ -25,6 +25,8 @@ function NewNoticePage() {
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mayPost, setMayPost] = useState<boolean | null>(null);
+  useEffect(() => { void db.rpc("may_post_notice", {}).then(({ data }) => setMayPost(data === true)); }, [currentUser.employee_id]);
 
   async function handleSubmit() {
     if (!title.trim()) { toast.error("Title is required"); return; }
@@ -61,6 +63,18 @@ function NewNoticePage() {
     setSaving(false);
     toast.success("Notice submitted for approval");
     navigate({ to: "/notices/$noticeId", params: { noticeId: data.id } });
+  }
+
+  if (mayPost === false) {
+    return (
+      <div className="max-w-xl mx-auto text-center" style={{ padding: "64px 24px" }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#18181B" }}>Notices are posted by leadership</div>
+        <p style={{ fontSize: 13.5, color: "#71717A", lineHeight: 1.55, margin: "6px 0 16px" }}>
+          Department heads, CXOs, HR business partners and administrators post notices; each is approved before it is published.
+        </p>
+        <Link to="/notices" className="rounded-md text-sm font-medium inline-block" style={{ padding: "8px 14px", border: "1px solid #E4E4E7", color: "#3F3F46" }}>Back to the notice board</Link>
+      </div>
+    );
   }
 
   return (

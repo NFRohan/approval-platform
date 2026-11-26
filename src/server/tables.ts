@@ -387,6 +387,7 @@ export const RPCS: Record<string, readonly string[]> = {
   // users; who a step may be forwarded to.
   tick_checklist:             ['p_submission', 'p_item', 'p_done', 'p_note'],
   checklist_for:              ['p_submission'],
+  may_post_notice:            [],
   checklist_config:           ['p_form'],
   save_checklist:             ['p_form', 'p_track', 'p_items'],
   forward_candidates:         ['p_request'],

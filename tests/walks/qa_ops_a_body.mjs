@@ -12,11 +12,11 @@ ok('notices: ...but not a notice still waiting for approval', !body.includes('Up
 ok('notices: ...and is not offered "New Notice"', (await page.getByRole('link', { name: /New Notice/ }).count()) === 0);
 
 // Somebody who may not post notices opens the page by its address.
+// Notices are posted by leadership (decided 26 Nov): the page says so and
+// offers no form; the database refuses a post anyway.
 await go('/notices/new', TOM);
-await page.getByPlaceholder('e.g. Office closed for public holiday').fill('QA unauthorised notice');
-await page.locator('textarea').first().fill('Posted by someone who may not post notices.');
-await page.getByRole('button', { name: 'Submit for Approval' }).click();
-await settle(3000);
+ok('notices: the page tells somebody who may not post who does, and offers no form',
+  /Notices are posted by leadership/.test(await text()) && (await page.getByPlaceholder('e.g. Office closed for public holiday').count()) === 0);
 await quiet();
 const rogue = await one(`select id, status, created_by from public.notices where tenant_id = $1 and title = 'QA unauthorised notice'`, [tenant]);
 ok('notices: someone not allowed to post notices cannot create one by opening /notices/new', !rogue,

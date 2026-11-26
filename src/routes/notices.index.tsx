@@ -10,7 +10,6 @@ export const Route = createFileRoute("/notices/")({
   component: NoticeBoardPage,
 });
 
-const CREATOR_IDS = new Set(["EMP-0201", "EMP-0445"]);
 
 type Notice = {
   id: string;
@@ -31,6 +30,9 @@ function NoticeBoardPage() {
   const { currentUser } = useCurrentUser();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
+  // Leadership and administrators post notices (the database decides).
+  const [mayPost, setMayPost] = useState(false);
+  useEffect(() => { void db.rpc("may_post_notice", {}).then(({ data }) => setMayPost(data === true)); }, [currentUser.employee_id]);
   const [category, setCategory] = useState("all");
 
   useEffect(() => {
@@ -57,7 +59,7 @@ function NoticeBoardPage() {
           <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: 0 }}>Notice Board</h1>
           <p style={{ marginTop: 5, fontSize: 13.5, color: "#71717A" }}>Company-wide announcements and updates.</p>
         </div>
-        {CREATOR_IDS.has(currentUser.employee_id) && (
+        {mayPost && (
           <Link
             to="/notices/new"
             className="inline-flex items-center gap-1.5 rounded-lg"

@@ -569,6 +569,31 @@ begin
 end $$;
 do $$ begin raise notice 'pass: a password is kept in the vault only; the account row holds no copy'; end $$;
 
+-- =====================================================================
+-- 14. Notices are posted by leadership
+-- =====================================================================
+do $$
+declare v uuid;
+begin
+  set local role app_api;
+  perform pg_temp.as_emp('EMP-2847');   -- an analyst
+  if public.may_post_notice() then raise exception 'FAIL: an analyst may post notices'; end if;
+  begin
+    insert into public.notices (title, content, category, status, created_by)
+    values ('Analyst notice', 'x', 'General', 'pending', 'EMP-2847');
+    raise exception 'FAIL: an analyst posted a notice';
+  exception when others then
+    if sqlerrm like 'FAIL:%' then raise; end if;
+  end;
+  perform pg_temp.as_emp('EMP-1134');   -- head of Operations
+  if not public.may_post_notice() then raise exception 'FAIL: a department head may not post notices'; end if;
+  insert into public.notices (title, content, category, status, created_by)
+  values ('Head notice', 'x', 'General', 'pending', 'EMP-1134') returning id into v;
+  perform pg_temp.as_emp('EMP-0445');   -- system administrator
+  if not public.may_post_notice() then raise exception 'FAIL: an administrator may not post notices'; end if;
+end $$;
+do $$ begin raise notice 'pass: notices are posted by department heads, CXOs and administrators, not by everybody'; end $$;
+
 -- Tidy: the evaluation goes, and everything it held with it.
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
 

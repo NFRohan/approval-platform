@@ -1145,4 +1145,43 @@ begin
    where tenant_id = p_tenant and clearance_form is null;
 end $$;
 
+
+-- ---------------------------------------------------------------------
+-- Who may post a notice: leadership — a department's head, CXO or HR
+-- business partner — and
+-- whoever runs the organisation (org.manage, notifications.manage). It
+-- still goes for approval before it is published. Enforced here, so a
+-- screen cannot be talked round. (Decided 26 Nov.)
+-- ---------------------------------------------------------------------
+create or replace function public.may_post_notice()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select app.current_employee() is not null and (
+    app.has_permission('org.manage') or app.has_permission('notifications.manage')
+    or exists (select 1 from public.departments d
+                where d.tenant_id = app.current_tenant()
+                  and app.current_employee() in (d.head_employee_id, d.cxo_employee_id, d.hrbp_employee_id)))
+$$;
+grant execute on function public.may_post_notice() to app_api;
+
+create or replace function app.guard_notice_post()
+returns trigger
+language plpgsql
+as $$
+begin
+  -- The seed and provisioning act as nobody; people act as themselves.
+  if app.current_employee() is not null and not public.may_post_notice() then
+    raise exception 'Notices are posted by department heads, CXOs, HR business partners and administrators';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists notices_who_may_post on public.notices;
+create trigger notices_who_may_post before insert on public.notices
+  for each row execute function app.guard_notice_post();
+
 commit;
