@@ -53,3 +53,4 @@ tests/walks/*.run.mjs
 tests/walks/*.png
 tests/qa-report/
 tests/sweep/
+dist-mock

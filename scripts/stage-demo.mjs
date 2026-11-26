@@ -34,7 +34,7 @@ const SLUG = args.find((a) => !a.startsWith('--')) ?? 'bkash-a9ae5a';
 const URL = process.env.DIRECT_URL || process.env.DATABASE_URL;
 if (!URL) { console.error('set DIRECT_URL or DATABASE_URL'); process.exit(1); }
 
-const c = new pg.Client({ connectionString: URL, ssl: { rejectUnauthorized: false } });
+const c = new pg.Client({ connectionString: URL, ssl: /localhost|127\.0\.0\.1/.test(URL) ? false : { rejectUnauthorized: false } });
 await c.connect();
 const q = (sql, p) => c.query(sql, p);
 const one = async (sql, p) => (await q(sql, p)).rows[0];
