@@ -30,6 +30,8 @@ type EmployeeOption = {
 };
 
 type Props = {
+  /** Roles that may be added by hand as well as people, as "role:<role>". */
+  manualRoles?: { value: string; label: string }[];
   title: string;
   subtitle: string;
   autoEntries: AutoEntry[];
@@ -55,6 +57,7 @@ export function PeopleStep({
   onManualChange,
   formTemplateId,
   manualSlot,
+  manualRoles,
 }: Props) {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
@@ -210,13 +213,29 @@ export function PeopleStep({
                   <select
                     value={m.user_id}
                     onChange={(e) => {
-                      const emp = employees.find((x) => x.employee_id === e.target.value);
-                      updateRow(m.id, { user_id: e.target.value, name: emp?.name ?? "", designation: emp?.designation ?? "" });
+                      const v = e.target.value;
+                      const role = manualRoles?.find((r) => `role:${r.value}` === v);
+                      const emp = employees.find((x) => x.employee_id === v);
+                      updateRow(m.id, { user_id: v, name: role?.label ?? emp?.name ?? "", designation: role ? "A role, found when it happens" : emp?.designation ?? "" });
                     }}
+                    aria-label="Who"
                     className="flex-1 rounded-md bg-white"
                     style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", color: "#18181B", outline: "none" }}
                   >
-                    {employees.map((emp) => (
+                    {manualRoles && manualRoles.length > 0 ? (
+                      <>
+                        <optgroup label="Roles">
+                          {manualRoles.map((r) => <option key={r.value} value={`role:${r.value}`}>{r.label}</option>)}
+                        </optgroup>
+                        <optgroup label="People">
+                          {employees.map((emp) => (
+                            <option key={emp.employee_id} value={emp.employee_id}>
+                              {emp.name} — {emp.designation}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </>
+                    ) : employees.map((emp) => (
                       <option key={emp.employee_id} value={emp.employee_id}>
                         {emp.name} — {emp.designation}
                       </option>

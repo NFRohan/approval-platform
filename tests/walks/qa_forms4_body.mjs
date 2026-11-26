@@ -80,13 +80,13 @@ await settle(3500);
 let t = await text();
 ok('Approvers: the defaults show — the admin officer, and finance by amount since there is a money field',
   /Admin Officer|Farah Haddad/.test(t) && /Finance Approver/.test(t) && /Finance Approval Slabs/.test(t));
-await page.getByRole('button', { name: /Add a stage/ }).click();
+await page.getByRole('button', { name: /Add a stage/ }).dispatchEvent('click');
 await page.locator('input[aria-label="Stage 1 name"]').fill('Line review');
 await page.locator('[data-stage="0"] select[aria-label="Approver"]').selectOption('role:line_manager');
-await page.getByRole('button', { name: /Add a stage/ }).click();
+await page.getByRole('button', { name: /Add a stage/ }).dispatchEvent('click');
 await page.locator('input[aria-label="Stage 2 name"]').fill('Compliance check');
 await page.locator('[data-stage="1"] select[aria-label="Approver"]').selectOption('EMP-0830');
-await page.locator('[data-stage="1"]').getByRole('button', { name: /Always/ }).click();
+await page.locator('[data-stage="1"]').getByRole('button', { name: /Always/ }).dispatchEvent('click');
 await page.locator('[data-stage="1"] select[aria-label="Condition question"]').selectOption('Site');
 await page.locator('[data-stage="1"] select[aria-label="Condition operator"]').selectOption('eq');
 await page.locator('[data-stage="1"] input[aria-label="Condition value"]').fill('Chattogram');
@@ -119,12 +119,28 @@ await w.getByRole('button', { name: /Always/ }).click();
 await w.getByLabel(/condition field$/).selectOption('Unit cost');
 await w.getByLabel(/: condition$/).selectOption('gt');
 await w.getByLabel(/condition value$/).fill('20000');
+// SOW 2.1 "including approvers supervisor": the approver's line manager, told of a rejection.
+await page.getByRole('button', { name: /Add Person/ }).click();
+await settle(500);
+await page.locator('section', { hasText: 'Additional people to notify' }).getByLabel('Who').last().selectOption('role:approver_manager');
+await settle(500);
+const am = page.locator('[data-watcher="role:approver_manager"]');
+await am.getByLabel(/: Raised$/).uncheck();
+await am.getByLabel(/: Rejected$/).check();
 await page.getByRole('button', { name: /Publish Form/ }).click();
 await page.waitForURL((u) => u.pathname === '/forms', { timeout: 15000 });
 await settle(2500);
 const watch = await one(`select events, condition from public.notification_rules where form_template_id = $1 and notifyee_user_id = 'EMP-0700' and not is_auto_added`, [tid]);
 ok('Notifications: the watcher is saved — told on approval, only above 20,000',
   JSON.stringify(watch?.events) === '["approved"]' && watch?.condition?.field === 'Unit cost' && watch?.condition?.op === 'gt' && watch?.condition?.value === '20000', JSON.stringify(watch));
+const amRule = await one(`select notifyee_user_id, events from public.notification_rules where form_template_id = $1 and label = 'approver_manager' and not is_auto_added`, [tid]);
+ok("Notifications: the approver's line manager is saved as a role watcher, told on rejection",
+  amRule && amRule.notifyee_user_id === null && JSON.stringify(amRule.events) === '["rejected"]', JSON.stringify(amRule));
+await page.goto(`${BASE}/builder/notifications?templateId=${tid}&as=EMP-0445`);
+await settle(3500);
+ok("Notifications: ...and shows again when the form is reopened",
+  (await page.locator('[data-watcher="role:approver_manager"]').count()) === 1
+  && /The approver's line manager/.test(await page.locator('[data-testid="notify-when"]').innerText()));
 ok('Publish: the form is published', (await one(`select status from public.form_templates where id = $1`, [tid]))?.status === 'published');
 
 // ---------------------------------------------------------------- Tom finds it and raises it
@@ -179,7 +195,8 @@ ok('Raise: the answers are stored, the calculated total too',
   vals['Asset tag'] === 'AT-0042' && vals['Units'] === '2' && vals['Accessories'] === '["Mouse"]' && vals['I confirm the asset is for work use'] === 'Yes'
   && vals['Business reason'] === 'Replacement for a failed laptop' && vals['Line total'] === '60000', JSON.stringify(vals));
 ok('Raise: the watcher who asked only for approvals is not told it was raised',
-  (await one(`select count(*)::int n from public.notifications where entity_id = $1 and recipient_id = 'EMP-0700'`, [sub])).n === 0);
+  (await one(`select count(*)::int n from public.notifications where entity_id = $1 and recipient_id = 'EMP-0700'`, [sub])).n === 0,
+  JSON.stringify(await rows(`select kind, title from public.notifications where entity_id = $1 and recipient_id = 'EMP-0700'`, [sub])));
 
 // ---------------------------------------------------------------- approved through the chain
 for (const who of ['EMP-0445', 'EMP-0312', 'EMP-1134', 'EMP-0830']) {

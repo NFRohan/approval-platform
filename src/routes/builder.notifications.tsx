@@ -9,7 +9,7 @@ import { PeopleStep, type AutoEntry, type ManualEntry } from "@/components/build
 import { toast } from "sonner";
 import { useBuilderAccess } from "@/components/builder/access";
 import { ruleRole } from "@/lib/routing";
-import { CONDITION_OPS } from "@/components/builder/stages";
+import { CONDITION_OPS, ROLE_OPTIONS } from "@/components/builder/stages";
 
 // "Define the criteria for sending notifications": each person added by
 // hand is told on the events ticked, and, with a condition, only when
@@ -21,6 +21,16 @@ const EVENTS: { key: string; label: string }[] = [
   { key: "rejected", label: "Rejected" },
 ];
 const DEFAULT_WHEN: When = { events: ["raised"], condition: null };
+
+// Roles a watcher may be instead of a named person. The approver's line
+// manager is SOW 2.1's "approvers supervisor": told of a request raised
+// (the manager of whoever it waits on), approved or rejected (of whoever
+// decided). See app.watchers_for in db/009_sow_gaps.sql.
+const WATCHER_ROLES: { value: string; label: string }[] = [
+  { value: "approver_manager", label: "The approver's line manager" },
+  ...ROLE_OPTIONS,
+];
+const roleLabel = (v: string) => WATCHER_ROLES.find((r) => `role:${r.value}` === v)?.label;
 
 // Optional: opened with no form (a bookmark, a reload), it says so rather than failing.
 const search = z.object({ templateId: z.string().optional() });
@@ -124,11 +134,14 @@ function NotificationsStep({ templateId }: { templateId: string }) {
       setFieldLabels((fields ?? [])
         .filter((f) => f.field_name && !["section_header", "file", "signature"].includes(f.field_type ?? ""))
         .map((f) => f.field_name as string));
+      // A watcher added by hand is a person, or a role kept as "role:<role>".
+      const who = (r: { notifyee_user_id: string | null; label: string | null }) =>
+        r.notifyee_user_id ?? (r.label && WATCHER_ROLES.some((x) => x.value === r.label) ? `role:${r.label}` : null);
       setWhen(Object.fromEntries((rules ?? [])
-        .filter((r) => !r.is_auto_added && r.notifyee_user_id)
+        .filter((r) => !r.is_auto_added && who(r))
         .map((r) => {
           const c = (r as { condition?: { field?: string; op?: string; value?: string } | null }).condition;
-          return [r.notifyee_user_id as string, {
+          return [who(r) as string, {
             events: ((r as { events?: string[] | null }).events ?? ["raised"]),
             condition: c?.field ? { field: c.field, op: c.op ?? "eq", value: c.value ?? "" } : null,
           }];
@@ -141,14 +154,18 @@ function NotificationsStep({ templateId }: { templateId: string }) {
       // instead of replacing every rule with only the automatic ones.
       setManual(
         (rules ?? [])
-          .filter((r) => !r.is_auto_added && r.notifyee_user_id)
-          .map((r, i) => ({
-            id: `saved-${i}`,
-            user_id: r.notifyee_user_id as string,
-            name: empMap[r.notifyee_user_id as string]?.name ?? (r.notifyee_user_id as string),
-            designation: empMap[r.notifyee_user_id as string]?.designation ?? "",
-            deadlineDays: 0,
-          })),
+          .filter((r) => !r.is_auto_added && who(r))
+          .map((r, i) => {
+            const id = who(r) as string;
+            const role = roleLabel(id);
+            return {
+              id: `saved-${i}`,
+              user_id: id,
+              name: role ?? empMap[id]?.name ?? id,
+              designation: role ? "A role, found when it happens" : empMap[id]?.designation ?? "",
+              deadlineDays: 0,
+            };
+          }),
       );
       // Finance band watchers are regenerated from the slabs each time,
       // so only the other automatic rules are carried over.
@@ -225,11 +242,12 @@ function NotificationsStep({ templateId }: { templateId: string }) {
         })),
         ...manual.map((m) => {
           const w = when[m.user_id] ?? DEFAULT_WHEN;
+          const role = m.user_id.startsWith("role:") ? m.user_id.slice(5) : null;
           return {
             form_template_id: templateId,
-            notifyee_user_id: m.user_id,
+            notifyee_user_id: role ? null : m.user_id,
             is_auto_added: false,
-            label: "Manually added",
+            label: role ?? "Manually added",
             events: w.events.length ? w.events : ["raised"],
             condition: w.condition && w.condition.field ? w.condition : null,
           };
@@ -289,6 +307,7 @@ function NotificationsStep({ templateId }: { templateId: string }) {
         showDeadline={false}
         manual={manual}
         onManualChange={setManual}
+        manualRoles={WATCHER_ROLES}
       />
       )}
       {!loading && manual.length > 0 && (

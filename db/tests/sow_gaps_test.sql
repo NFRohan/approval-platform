@@ -427,6 +427,50 @@ begin
 end $$;
 do $$ begin raise notice 'pass: a watcher is told on the events they name, and only when the answers meet their condition'; end $$;
 
+-- The approver's line manager as a watcher (SOW 2.1 "including approvers
+-- supervisor"): on raising, the manager of whoever it waits on first; on
+-- approval, the managers of whoever approved.
+do $$
+declare v_form uuid; v_sub uuid; v_first text; v_mgr text; v_missing text;
+begin
+  perform pg_temp.as_emp(null);
+  select id into v_form from public.form_templates
+   where tenant_id = current_setting('t.tpl')::uuid and name = 'Capital Expenditure Request';
+  insert into public.notification_rules (tenant_id, form_template_id, notifyee_user_id, is_auto_added, label, events)
+  values (current_setting('t.tpl')::uuid, v_form, null, false, 'approver_manager', '{raised,approved}');
+
+  perform pg_temp.as_emp('EMP-2847');
+  v_sub := pg_temp.raise_request('Capital Expenditure Request', 'EMP-2847',
+    '{"Project": "Racks", "Classification": "Budgetary", "Amount": "300000", "Justification": "Space"}');
+  perform pg_temp.as_emp(null);
+  select ar.approver_user_id, e.line_manager_id into v_first, v_mgr
+    from public.approval_requests ar
+    join public.employees e on e.tenant_id = ar.tenant_id and e.employee_id = ar.approver_user_id
+   where ar.submission_id = v_sub and ar.status = 'pending' limit 1;
+  if v_mgr is null then raise exception 'FAIL: the first approver % has no line manager to test with', v_first; end if;
+  if v_mgr <> 'EMP-2847' and not exists (select 1 from public.notifications
+                  where entity_id = v_sub and recipient_id = v_mgr and kind = 'submission.raised') then
+    raise exception 'FAIL: the first approver''s line manager (%) was not told the request was raised', v_mgr;
+  end if;
+
+  perform pg_temp.approve_all(v_sub);
+  perform pg_temp.as_emp(null);
+  -- Every approver's manager (but the requester, who hears anyway) told of the approval.
+  select string_agg(distinct e.line_manager_id, ', ') into v_missing
+    from public.approval_requests ar
+    join public.employees e on e.tenant_id = ar.tenant_id and e.employee_id = ar.approver_user_id
+   where ar.submission_id = v_sub and ar.status = 'approved'
+     and e.line_manager_id is not null and e.line_manager_id <> 'EMP-2847'
+     and not exists (select 1 from public.notifications n where n.entity_id = v_sub
+                       and n.recipient_id = e.line_manager_id and n.kind = 'watch.approved');
+  if v_missing is not null then
+    raise exception 'FAIL: approvers'' managers not told of the approval: %', v_missing;
+  end if;
+
+  delete from public.notification_rules where form_template_id = v_form and label = 'approver_manager';
+end $$;
+do $$ begin raise notice 'pass: the approver''s line manager can be a watcher: told when the request reaches their report, and when their report approves it'; end $$;
+
 -- =====================================================================
 -- 10. Trackers
 -- =====================================================================

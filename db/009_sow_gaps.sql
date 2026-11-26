@@ -747,6 +747,12 @@ end $$;
 -- "Define the criteria for sending notifications." A form's watchers are
 -- told when a request is raised, approved or rejected — whichever each
 -- names — and, with a condition, only when the answers meet it.
+--
+-- A watcher may be a role. The requester's line manager, department head
+-- and so on resolve from the requester. "approver_manager" is the
+-- approver's line manager (SOW 2.1 "including approvers supervisor"):
+-- when a request is raised, the managers of whoever it waits on first;
+-- when it is approved or rejected, the managers of whoever decided it.
 -- =====================================================================
 create or replace function app.watchers_for(p_submission uuid, p_event text)
 returns setof text
@@ -770,6 +776,19 @@ as $$
        where s.id = p_submission
          and p_event = any (coalesce(nr.events, '{raised}'))
          and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition))
+         and app.rule_role(nr.label) is distinct from 'approver_manager'
+      union all
+      select e.line_manager_id
+        from public.form_submissions s
+        join public.notification_rules nr on nr.form_template_id = s.form_template_id and nr.tenant_id = s.tenant_id
+        join public.approval_requests ar on ar.submission_id = s.id and ar.tenant_id = s.tenant_id
+        join public.employees e on e.tenant_id = s.tenant_id and e.employee_id = ar.approver_user_id
+       where s.id = p_submission
+         and app.rule_role(nr.label) = 'approver_manager'
+         and p_event = any (coalesce(nr.events, '{raised}'))
+         and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition))
+         and ar.status = case p_event when 'raised' then 'pending' when 'approved' then 'approved' else 'rejected' end
+         and e.line_manager_id is distinct from ar.approver_user_id
     ) w
    where w.who is not null
 $$;
