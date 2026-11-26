@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import { Award, Clipboard, Clock, FileText, Link2, MessageCircleQuestion, Undo2, XCircle, FileDown } from "lucide-react";
+import { Award, Clipboard, Clock, FileText, Link2, MessageCircleQuestion, Undo2, XCircle, FileDown, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { StatusBadge, type StatusKey } from "@/components/StatusBadge";
@@ -17,6 +17,8 @@ import { CcPanel, DocumentsPanel, LinksPanel, NotesPanel } from "@/components/ti
 import { ProcessMap } from "@/components/ProcessMap";
 import { ClearanceChecklist } from "@/components/ClearanceChecklist";
 import { fmtDateTime as fmtDateTimeLib } from "@/lib/dates";
+import { downloadSheet } from "@/lib/sheet-fn";
+import { listAttachments } from "@/lib/attachment-fn";
 import { Archive } from "lucide-react";
 import { unarchiveSubmission } from "@/lib/audit-fn";
 
@@ -498,6 +500,43 @@ function StatusPage() {
     });
   }
 
+  // "A dashboard per ticket ... exportable in Excel" (SOW 2.1): the whole
+  // request — its details, answers, every approval step, the trail,
+  // questions, notes and documents — as one sheet, a Section column to
+  // filter by.
+  async function exportTicket() {
+    if (!submission) return;
+    const when = (v?: string | null) => (v ? fmtDateTimeLib(v) : "");
+    type R = { section: string; when: string; who: string; what: string; detail: string };
+    const out: R[] = [];
+    const ref = submission.ref_number ?? submission.id.slice(0, 8);
+    out.push({ section: "Request", when: when(submission.submitted_at), who: submitter?.name ?? submission.submitted_by ?? "", what: form?.name ?? "Request", detail: `${ref} · ${overall.replace(/_/g, " ")} · priority ${submission.priority ?? "normal"}` });
+    const { data: vals } = await db.from("submission_values").select("field_name, value").eq("submission_id", submission.id);
+    for (const v of (vals ?? []) as { field_name: string; value: string | null }[]) {
+      if (v.value) out.push({ section: "Answer", when: "", who: "", what: v.field_name, detail: v.value });
+    }
+    for (const r of approvals) {
+      const step = [r.stage_label, r.lane_label].filter(Boolean).join(" · ") || "Approval";
+      out.push({ section: "Approval step", when: when(r.acted_at), who: nameOf(r.approver_user_id), what: `${step} — ${String(r.status ?? "").replace(/_/g, " ")}`,
+                 detail: [r.comment, r.deadline_at ? `due ${when(r.deadline_at)}` : ""].filter(Boolean).join(" · ") });
+    }
+    for (const e of activity) out.push({ section: "History", when: when(e.at), who: e.who, what: e.action, detail: e.role ?? "" });
+    for (const q of queries) out.push({ section: "Question", when: when(q.answered_at), who: `${nameOf(q.asked_by)} → ${nameOf(q.asked_to)}`, what: q.question, detail: q.answer ?? "(not answered yet)" });
+    const [{ data: notes }, files] = await Promise.all([
+      db.from("ticket_notes").select("author_id, body, created_at").eq("submission_id", submission.id).order("created_at"),
+      listAttachments({ data: { submissionId: submission.id } }).catch(() => []),
+    ]);
+    for (const n of (notes ?? []) as { author_id: string; body: string; created_at: string }[]) out.push({ section: "Note", when: when(n.created_at), who: nameOf(n.author_id), what: "Note", detail: n.body });
+    for (const f of files) out.push({ section: "Document", when: when(f.created_at), who: nameOf(f.uploaded_by), what: `${f.file_name} (version ${f.version}${f.superseded_at ? ", superseded" : ""})`, detail: [f.description, f.tags?.length ? `#${f.tags.join(" #")}` : ""].filter(Boolean).join(" · ") });
+    try {
+      await downloadSheet(`${ref}-history.xlsx`, `${form?.name ?? "Request"} ${ref}`,
+        [{ key: "section", label: "Section" }, { key: "when", label: "When" }, { key: "who", label: "Who" }, { key: "what", label: "What" }, { key: "detail", label: "Detail" }],
+        out as unknown as Record<string, string>[]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not export it");
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto" style={{ padding: "32px 28px 56px" }}>
       <Link
@@ -616,6 +655,14 @@ function StatusPage() {
             >
               <FileDown size={13} /> Approval record (PDF)
             </a>
+            <button
+              type="button"
+              onClick={() => void exportTicket()}
+              className="inline-flex items-center gap-1.5 rounded-md"
+              style={{ padding: "5px 10px", fontSize: 12, fontWeight: 500, color: "#3F3F46", border: "1px solid #E4E4E7", background: "#fff" }}
+            >
+              <FileSpreadsheet size={13} /> History (Excel)
+            </button>
             {/* Finance's page for paying it: PO lines wrapped in full,
                 the total in words, every approval. */}
             {(form?.category === "Finance" || form?.category === "Commercial") && (
