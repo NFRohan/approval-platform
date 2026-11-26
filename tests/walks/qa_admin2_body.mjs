@@ -60,11 +60,11 @@ await page.locator('input[name="perm-users.manage"]').check();
 await page.getByRole('button', { name: /^Create$/ }).click();
 await settle(2500);
 
-await go('/admin/roles', 'EMP-0700');
+await go('/admin/roles', 'EMP-0520');
 await page.locator('button[name="approve-role-QA records clerk"]').click();
 await settle(2500);
 r = await role('QA records clerk');
-ok('the Security officer approves it', r.status === 'active' && r.approved_by === 'EMP-0700' && (await audits('role_approved', 'QA records clerk')) === 1);
+ok('the Security officer approves it', r.status === 'active' && r.approved_by === 'EMP-0520' && (await audits('role_approved', 'QA records clerk')) === 1);
 await page.locator('[data-testid="roles-waiting"] > div', { hasText: 'QA unwanted role' }).getByRole('button', { name: /^Reject$/ }).click();
 await settle(2500);
 ok('...and rejects the other, which drops out of the list', (await role('QA unwanted role')).status === 'rejected'
@@ -78,7 +78,7 @@ await page.locator('input[name="perm-roles.manage"]').check();
 await page.locator('input[name="perm-roles.approve"]').check();
 await page.getByRole('button', { name: /^Create$/ }).click();
 await settle(2500);
-await go('/admin/roles', 'EMP-0700');
+await go('/admin/roles', 'EMP-0520');
 await page.locator('button[name="approve-role-QA role steward"]').click();
 await settle(2500);
 await go('/admin/roles', 'EMP-0445');
@@ -127,7 +127,7 @@ await settle(2500);
 r = await role('QA records clerk');
 ok('a change to a role is proposed, not made', JSON.stringify(r.permissions) === '["audit.view"]' && (r.pending_permissions ?? []).includes('records.manage')
   && /Change to\s+QA records clerk/.test(await page.locator('[data-testid="roles-waiting"]').innerText()));
-await go('/admin/roles', 'EMP-0700');
+await go('/admin/roles', 'EMP-0520');
 await page.locator('button[name="approve-role-QA records clerk"]').click();
 await settle(2500);
 r = await role('QA records clerk');

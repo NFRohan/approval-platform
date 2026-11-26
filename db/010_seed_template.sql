@@ -597,22 +597,22 @@ insert into public.roles (name, description, permissions, status, created_by, ap
   ('System administrator', 'Accounts, roles, the org chart and workflow design',
    array['forms.build', 'forms.settings', 'users.manage', 'roles.manage', 'org.manage', 'audit.view', 'reports.view',
          'reports.manage', 'notifications.manage', 'integrations.manage', 'records.manage'],
-   'active', 'EMP-0445', 'EMP-0700'),
+   'active', 'EMP-0445', 'EMP-0520'),
   ('HR administrator', 'Approves accounts and profile changes; keeps the org chart',
    array['users.manage', 'users.approve', 'org.manage', 'audit.view', 'reports.view'],
-   'active', 'EMP-0445', 'EMP-0700'),
+   'active', 'EMP-0445', 'EMP-0520'),
   ('Workflow designer', 'Designs forms and their approval routes',
    array['forms.build', 'forms.settings', 'reports.view'],
-   'active', 'EMP-0445', 'EMP-0700'),
+   'active', 'EMP-0445', 'EMP-0520'),
   ('Workflow settings', 'Changes a workflow''s task settings — deadlines and signatures — and nothing else',
    array['forms.settings', 'reports.view'],
-   'active', 'EMP-0445', 'EMP-0700'),
+   'active', 'EMP-0445', 'EMP-0520'),
   ('Security officer', 'Approves roles and changes to them',
    array['roles.approve', 'audit.view'],
-   'active', 'EMP-0445', 'EMP-0700'),
+   'active', 'EMP-0445', 'EMP-0520'),
   ('Compliance auditor', 'Reads the audit trails and reports',
    array['audit.view', 'reports.view'],
-   'active', 'EMP-0445', 'EMP-0700');
+   'active', 'EMP-0445', 'EMP-0520');
 
 insert into public.employee_roles (employee_id, role_id, assigned_by)
 select v.emp, r.id, 'EMP-0445'
@@ -620,7 +620,7 @@ select v.emp, r.id, 'EMP-0445'
                ('EMP-0650', 'HR administrator'),
                ('EMP-0201', 'Workflow designer'),
                ('EMP-0312', 'Workflow settings'),
-               ('EMP-0700', 'Security officer'),
+               ('EMP-0520', 'Security officer'),
                ('EMP-0830', 'Compliance auditor')) v(emp, role)
   join public.roles r on r.name = v.role and r.tenant_id = app.current_tenant();
 
@@ -875,6 +875,25 @@ begin
 end $$;
 
 select app.localise_names(t.id) from public.tenants t where t.kind = 'demo' and t.name ilike 'bkash%';
+
+-- Approving roles is an information-security job, not a finance one: it
+-- moved from the CFO (EMP-0700) to the Head of Technology (EMP-0520).
+-- Evaluations issued before get the same, once: only where the CFO still
+-- holds it and nobody has given it to the Head of Technology.
+insert into public.employee_roles (tenant_id, employee_id, role_id, assigned_by)
+select er.tenant_id, 'EMP-0520', er.role_id, 'EMP-0445'
+  from public.employee_roles er
+  join public.roles r on r.id = er.role_id and r.tenant_id = er.tenant_id and r.name = 'Security officer'
+  join public.tenants d on d.id = er.tenant_id and d.kind = 'demo'
+ where er.employee_id = 'EMP-0700'
+   and exists (select 1 from public.employees e where e.tenant_id = er.tenant_id and e.employee_id = 'EMP-0520' and e.active)
+   and not exists (select 1 from public.employee_roles x where x.tenant_id = er.tenant_id and x.employee_id = 'EMP-0520' and x.role_id = er.role_id)
+on conflict do nothing;
+delete from public.employee_roles er
+ using public.roles r, public.tenants d
+ where r.id = er.role_id and r.tenant_id = er.tenant_id and r.name = 'Security officer'
+   and d.id = er.tenant_id and d.kind = 'demo' and er.employee_id = 'EMP-0700'
+   and exists (select 1 from public.employee_roles x where x.tenant_id = er.tenant_id and x.employee_id = 'EMP-0520' and x.role_id = er.role_id);
 -- Notices, stationery and maintenance had their chains built once for
 -- every organisation in the database: the seed builds them as the owner,
 -- and the rule lookup did not name the organisation (fixed in

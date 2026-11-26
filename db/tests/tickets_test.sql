@@ -296,8 +296,29 @@ begin
   if not exists (select 1 from public.submission_links where from_id = v_new and to_id = 'd0000000-0000-4000-8000-000000000005') then
     raise exception 'FAIL: the copy is not linked back to its original';
   end if;
+
+  -- A draft nobody will finish can be thrown away, by whoever started it.
+  refused := false;
+  begin perform public.delete_draft(v_new, 'RQ');
+  exception when others then refused := true; end;
+  if not refused then raise exception 'FAIL: somebody else deleted a draft'; end if;
+  refused := false;
+  begin perform public.delete_draft('d0000000-0000-4000-8000-000000000005', 'RQ');
+  exception when others then refused := true; end;
+  if not refused then raise exception 'FAIL: a submitted request was deleted as if it were a draft'; end if;
+  perform public.delete_draft(v_new, 'R2');
+  if exists (select 1 from public.form_submissions where id = v_new)
+     or exists (select 1 from public.submission_values where submission_id = v_new)
+     or exists (select 1 from public.attachments where submission_id = v_new)
+     or exists (select 1 from public.submission_links where from_id = v_new) then
+    raise exception 'FAIL: the deleted draft, or what it carried, is still there';
+  end if;
+  if not exists (select 1 from public.form_submissions where id = 'd0000000-0000-4000-8000-000000000005') then
+    raise exception 'FAIL: deleting the copy took its original with it';
+  end if;
   reset role;
   raise notice 'pass: requests link by reference, once, by somebody on them; a copy is a linked draft with the current documents';
+  raise notice 'pass: whoever started a draft can delete it, with its answers and documents; nobody else, and nothing already submitted';
 end $$;
 
 -- =====================================================================

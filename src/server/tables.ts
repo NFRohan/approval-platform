@@ -372,6 +372,7 @@ export const RPCS: Record<string, readonly string[]> = {
   link_submissions:     ['p_submission_id', 'p_other', 'p_note', 'p_actor'],
   unlink_submissions:   ['p_submission_id', 'p_other_id', 'p_actor'],
   copy_submission:      ['p_submission_id', 'p_actor'],
+  delete_draft:         ['p_submission_id', 'p_actor'],
   hand_over:            ['p_leaver', 'p_successor', 'p_actor'],
   // Stage 3: a workflow's task settings — deadlines and signatures — for
   // somebody with forms.settings, who may not otherwise touch the design.

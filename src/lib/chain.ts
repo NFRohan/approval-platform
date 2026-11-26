@@ -314,6 +314,11 @@ export function copySubmission(submissionId: string, actor: string) {
   return db.rpc('copy_submission', { p_submission_id: submissionId, p_actor: actor });
 }
 
+/** Throw away a draft of one's own (SOW 2.1, Save draft). */
+export function deleteDraft(submissionId: string, actor: string) {
+  return db.rpc('delete_draft', { p_submission_id: submissionId, p_actor: actor });
+}
+
 export function handOver(leaver: string, successor: string, actor: string) {
   return db.rpc('hand_over', { p_leaver: leaver, p_successor: successor, p_actor: actor });
 }

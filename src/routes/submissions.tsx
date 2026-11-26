@@ -5,12 +5,12 @@ import { toast } from "sonner";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Copy, FileText, Download, Search } from "lucide-react";
+import { Copy, FileText, Download, Search, Trash2 } from "lucide-react";
 import { toCsv, downloadCsv } from "@/lib/csv";
 import { downloadSheet } from "@/lib/sheet-fn";
 import { fmtDate } from "@/lib/dates";
 import { todayInOrg } from "@/lib/workdays";
-import { copySubmission } from "@/lib/chain";
+import { copySubmission, deleteDraft } from "@/lib/chain";
 
 export const Route = createFileRoute("/submissions")({
   validateSearch: (s: Record<string, unknown>): { archived?: number } => (Number(s.archived) === 1 ? { archived: 1 } : {}),
@@ -158,6 +158,15 @@ function SubmissionsPage() {
     }
   }
 
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  async function removeDraft(r: Row) {
+    const { error } = await deleteDraft(r.id, currentUser.employee_id);
+    if (error) { toast.error(error.message); return; }
+    setConfirmDelete(null);
+    setRows((rs) => rs.filter((x) => x.id !== r.id));
+    toast.success("Draft deleted");
+  }
+
   async function copy(r: Row) {
     if (!r.form_template_id) return;
     const { data, error } = await copySubmission(r.id, currentUser.employee_id);
@@ -284,6 +293,25 @@ function SubmissionsPage() {
                     {r.legacy_source ? `From ${r.legacy_source}` : "Archived"}
                   </span>
                 )}
+                {r.status === "draft" && tab === "mine" && (confirmDelete === r.id ? (
+                  <div className="flex items-center gap-1.5" style={{ fontSize: 12 }}>
+                    <span style={{ color: "#52525B" }}>Delete this draft?</span>
+                    <button onClick={() => removeDraft(r)} className="rounded-md text-white"
+                            style={{ padding: "4px 8px", fontSize: 12, background: "#B91C1C" }}>Delete</button>
+                    <button onClick={() => setConfirmDelete(null)} className="rounded-md"
+                            style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #E4E4E7", background: "#fff", color: "#52525B" }}>Keep</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDelete(r.id)}
+                    className="inline-flex items-center gap-1 rounded-md"
+                    title="Delete this draft"
+                    aria-label="Delete draft"
+                    style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #FECACA", background: "#fff", color: "#B91C1C" }}
+                  >
+                    <Trash2 size={12} /> Delete
+                  </button>
+                ))}
                 {!r.legacy_ref && <button
                   onClick={() => copy(r)}
                   className="inline-flex items-center gap-1 rounded-md"

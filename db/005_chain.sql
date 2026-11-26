@@ -2091,6 +2091,43 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Throw a draft away.
+--
+-- "There should be provision to save any request and work later the same
+-- document and submit it for approval" (SOW 2.1, Save draft). A draft
+-- nobody means to finish would otherwise sit in My Submissions for
+-- ever. Only its requester may delete it, and only while it is a draft:
+-- nobody has seen it, so nothing of it is a record. Its answers and
+-- attachments go with it; the deletion itself is in the audit trail.
+-- ---------------------------------------------------------------------
+create or replace function public.delete_draft(p_submission_id uuid, p_actor text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v record;
+begin
+  p_actor := app.acting(p_actor);
+  select s.id, s.submitted_by, s.status, s.ref_number, f.name as form
+    into v
+    from public.form_submissions s
+    left join public.form_templates f on f.id = s.form_template_id
+   where s.id = p_submission_id and s.tenant_id = app.current_tenant()
+   for update of s;
+  if not found then raise exception 'no such draft'; end if;
+  if p_actor is null or v.submitted_by is distinct from p_actor then
+    raise exception 'only whoever started a draft can delete it';
+  end if;
+  if v.status <> 'draft' then
+    raise exception 'only a draft can be deleted; this request is %', v.status;
+  end if;
+  delete from public.form_submissions where id = p_submission_id;
+  perform app.audit('draft_deleted', 'form_submission', p_submission_id,
+                    coalesce(v.form, 'Draft') || coalesce(' ' || v.ref_number, ''));
+end $$;
+
+-- ---------------------------------------------------------------------
 -- Somebody is leaving: hand everything of theirs to a successor.
 --
 -- "Leavers' delegation." A date-ranged delegation covers a holiday; a
@@ -2262,6 +2299,7 @@ grant execute on function
   public.link_submissions(uuid, text, text, text),
   public.unlink_submissions(uuid, uuid, text),
   public.copy_submission(uuid, text),
+  public.delete_draft(uuid, text),
   public.hand_over(text, text, text),
   app.resolve_role(text, text),
   app.is_org_role(text),

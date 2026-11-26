@@ -14,7 +14,7 @@ import { type ApprovalSlab } from "@/lib/approvalSlabs";
 import { resolveWatcher } from "@/lib/routing";
 import { addWorkingDays, loadOrgHolidays } from "@/lib/workdays";
 import { uploadAttachment } from "@/lib/attachment-fn";
-import { setCc } from "@/lib/chain";
+import { deleteDraft, setCc } from "@/lib/chain";
 import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/forms/$formId")({
@@ -85,6 +85,14 @@ function FillFormPage() {
   // moment a draft is first saved, so saving twice updates one row
   // rather than leaving a trail of abandoned ones.
   const [openDraft, setOpenDraft] = useState<string | null>(draftId ?? null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const discardDraft = async () => {
+    if (!openDraft) return;
+    const { error } = await deleteDraft(openDraft, currentUser.employee_id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Draft deleted");
+    navigate({ to: "/submissions" });
+  };
   // How urgent it is, and who it is copied to — set on the review step.
   const [priority, setPriority] = useState<"normal" | "high" | "urgent">("normal");
   const [cc, setCcList] = useState<string[]>([]);
@@ -729,6 +737,18 @@ function FillFormPage() {
 
             <div className="flex items-center gap-3">
               <span className="text-[12px]" style={{ color: "#A1A1AA" }}>Step {stepIndex + 1} of {steps.length}</span>
+              {openDraft && (confirmDiscard ? (
+                <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, marginRight: 4 }}>
+                  <span style={{ color: "#52525B" }}>Delete this draft?</span>
+                  <button onClick={discardDraft} className="rounded-md text-white" style={{ padding: "6px 10px", fontSize: 12.5, background: "#B91C1C" }}>Delete</button>
+                  <button onClick={() => setConfirmDiscard(false)} className="rounded-md bg-white" style={{ padding: "6px 10px", fontSize: 12.5, border: "1px solid #E4E4E7", color: "#52525B" }}>Keep</button>
+                </span>
+              ) : (
+                <button onClick={() => setConfirmDiscard(true)} className="rounded-md bg-white"
+                        style={{ padding: "10px 12px", fontSize: 13.5, color: "#B91C1C", border: "1px solid transparent" }}>
+                  Delete draft
+                </button>
+              ))}
               {isLastStep ? (
                 <>
                 <button
