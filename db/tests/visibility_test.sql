@@ -260,3 +260,9 @@ begin
   perform public.set_tracker_reminder(v_sub, current_date + 1, 'chase');
 end $$;
 do $$ begin raise notice 'pass: raising a request still works end to end, and a reminder needs one you can see'; end $$;
+
+-- Tidy: the evaluation goes, and everything it held with it.
+-- Removing an organisation is platform staff's to do (row security on tenants).
+select set_config('app.is_staff', 'true', false);
+delete from public.tenants where id = current_setting('t.tpl')::uuid;
+select set_config('app.is_staff', 'false', false);

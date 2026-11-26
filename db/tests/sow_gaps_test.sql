@@ -494,7 +494,7 @@ begin
     raise exception 'FAIL: a push was queued for somebody with no device';
   end if;
   insert into public.push_subscriptions (tenant_id, employee_id, endpoint, p256dh, auth)
-  values (current_setting('t.tpl')::uuid, 'EMP-1134', 'https://push.example.test/sam-phone', 'k', 'a');
+  values (current_setting('t.tpl')::uuid, 'EMP-1134', 'https://push.example.test/sam-phone-' || current_setting('t.tpl'), 'k', 'a');
   perform app.notify('EMP-1134', 'approval.turn', 'Your approval is needed', 'Leave Application is waiting on you.', 'form_submission', v_sub);
   perform app.notify('EMP-1134', 'note.added', 'A note on a request', 'Tom added a note.', 'form_submission', v_sub);
   select * into o from public.push_outbox where employee_id = 'EMP-1134' and url = '/approvals';
@@ -597,6 +597,9 @@ end $$;
 do $$ begin raise notice 'pass: notices are posted by HR, department heads, CXOs and administrators, not by everybody'; end $$;
 
 -- Tidy: the evaluation goes, and everything it held with it.
+-- Removing an organisation is platform staff's to do (row security on tenants).
+select set_config('app.is_staff', 'true', false);
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
+select set_config('app.is_staff', 'false', false);
 
 do $$ begin raise notice 'ALL SOW GAP TESTS PASSED'; end $$;
