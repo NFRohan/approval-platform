@@ -777,6 +777,14 @@ as $$
          and p_event = any (coalesce(nr.events, '{raised}'))
          and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition))
          and app.rule_role(nr.label) is distinct from 'approver_manager'
+         -- A finance band's watcher ("Band: 500,000 and above") hears only
+         -- of requests whose amount reaches a band of theirs; it used to be
+         -- every request on the form, so the top band heard of small ones.
+         and (coalesce(nr.label, '') not like 'Band:%'
+              or exists (select 1 from public.approval_slabs sl
+                          where sl.form_template_id = s.form_template_id and sl.tenant_id = s.tenant_id
+                            and sl.approver_user_id = nr.notifyee_user_id
+                            and sl.min_amount <= app.amount_in(s.form_template_id, app.answers_of(s.id))))
       union all
       select e.line_manager_id
         from public.form_submissions s

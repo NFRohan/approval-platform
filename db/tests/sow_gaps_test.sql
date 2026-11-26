@@ -469,6 +469,34 @@ begin
 
   delete from public.notification_rules where form_template_id = v_form and label = 'approver_manager';
 end $$;
+-- A finance band's watcher hears only of amounts that reach their band.
+do $$
+declare v_form uuid; v_small uuid; v_big uuid; v_top text;
+begin
+  perform pg_temp.as_emp(null);
+  select id into v_form from public.form_templates
+   where tenant_id = current_setting('t.tpl')::uuid and name = 'Capital Expenditure Request';
+  select approver_user_id into v_top from public.approval_slabs
+   where form_template_id = v_form order by min_amount desc limit 1;
+  insert into public.notification_rules (tenant_id, form_template_id, notifyee_user_id, is_auto_added, label, events)
+  select current_setting('t.tpl')::uuid, v_form, v_top, true,
+         'Band: ' || to_char(min_amount, 'FM999,999,999') || ' and above', '{raised}'
+    from public.approval_slabs where form_template_id = v_form and approver_user_id = v_top limit 1;
+  perform pg_temp.as_emp('EMP-2847');
+  v_small := pg_temp.raise_request('Capital Expenditure Request', 'EMP-2847',
+    '{"Project": "Chairs", "Classification": "Budgetary", "Amount": "1000", "Justification": "Worn"}');
+  v_big := pg_temp.raise_request('Capital Expenditure Request', 'EMP-2847',
+    '{"Project": "Campus", "Classification": "Budgetary", "Amount": "900000000", "Justification": "Growth"}');
+  perform pg_temp.as_emp(null);
+  if exists (select 1 from app.watchers_for(v_small, 'raised') w(who) where who = v_top) then
+    raise exception 'FAIL: the top band (%) watches a 1,000 request', v_top;
+  end if;
+  if not exists (select 1 from app.watchers_for(v_big, 'raised') w(who) where who = v_top) then
+    raise exception 'FAIL: the top band (%) does not watch a request in their band', v_top;
+  end if;
+  delete from public.notification_rules where form_template_id = v_form and label like 'Band:%' and notifyee_user_id = v_top;
+end $$;
+do $$ begin raise notice 'pass: a finance band''s watcher hears only of requests whose amount reaches their band'; end $$;
 do $$ begin raise notice 'pass: the approver''s line manager can be a watcher: told when the request reaches their report, and when their report approves it'; end $$;
 
 -- =====================================================================

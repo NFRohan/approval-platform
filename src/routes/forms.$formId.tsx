@@ -160,6 +160,9 @@ function FillFormPage() {
           team: cfg.team,
           ccTeam: cfg.ccTeam,
           allowOther: cfg.allowOther,
+          // The builder's min, max, lengths and pattern. Never read here,
+          // so "Units at most 10" let 12 through.
+          validation: (cfg as { validation?: PlacedField["validation"] }).validation,
           order_index: row.order_index ?? 0,
         };
       });
