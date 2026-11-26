@@ -162,6 +162,69 @@ begin
 end $$;
 
 -- =====================================================================
+-- 3b. Changes that wait for a second person reach them, and the answer
+--     reaches whoever asked (SOW §3.6 2.1, 2.5)
+-- =====================================================================
+do $$
+declare v_id uuid; v_role uuid; v_n int;
+begin
+  perform pg_temp.as_emp('EMP-0445');   -- Farah: System administrator (reports.manage)
+  v_id := public.save_report(null, 'Told about', null, 'requests', array['reference'], '{"period": "all"}');
+
+  -- Lena asks; every holder of reports.manage is told, Lena is not.
+  perform pg_temp.as_emp('EMP-0830');
+  perform public.request_report_change(v_id, array['reference', 'status'], 'For the monthly pack');
+  if not exists (select 1 from public.notifications where tenant_id = current_setting('t.tpl')::uuid
+                   and recipient_id = 'EMP-0445' and kind = 'admin.request' and entity_id = v_id
+                   and body like '%For the monthly pack%') then
+    raise exception 'FAIL: the administrator was not told a column change is waiting';
+  end if;
+  if exists (select 1 from public.notifications where tenant_id = current_setting('t.tpl')::uuid
+               and recipient_id = 'EMP-0830' and kind = 'admin.request' and entity_id = v_id) then
+    raise exception 'FAIL: whoever asked was told their own change is waiting';
+  end if;
+
+  -- It is in Farah's queue, with what it adds; not in Lena's.
+  perform pg_temp.as_emp('EMP-0445');
+  perform pg_temp.check('the column change is in the administrator''s queue',
+    (select detail from public.admin_queue() where kind = 'report' and id = v_id), 'adds status');
+  perform pg_temp.as_emp('EMP-0830');
+  perform pg_temp.check('...and not in the queue of whoever asked', (select count(*)::int from public.admin_queue() where id = v_id), 0);
+
+  -- Turned down with a reason: nothing changes, and Lena is told why.
+  perform pg_temp.as_emp('EMP-0445');
+  perform public.decide_report_change(v_id, false, 'Status is already on Open approvals');
+  perform pg_temp.check('a turned-down change leaves the columns alone',
+    (select columns from public.report_templates where id = v_id), array['reference']);
+  perform pg_temp.check('...and leaves the queue', (select count(*)::int from public.admin_queue() where id = v_id), 0);
+  if not exists (select 1 from public.notifications where tenant_id = current_setting('t.tpl')::uuid
+                   and recipient_id = 'EMP-0830' and kind = 'admin.decided' and entity_id = v_id
+                   and title like '%was not approved' and body like '%Reason: Status is already on Open approvals%') then
+    raise exception 'FAIL: whoever asked was not told the change was turned down, with the reason';
+  end if;
+
+  -- A role change: the security officer is told and finds it in the queue.
+  select id into v_role from public.roles where tenant_id = current_setting('t.tpl')::uuid and name = 'Workflow settings';
+  perform pg_temp.as_emp('EMP-0445');
+  perform public.propose_role_change(v_role, 'Workflow settings', array['forms.settings', 'reports.view', 'audit.view']);
+  select count(*) into v_n from public.notifications
+   where tenant_id = current_setting('t.tpl')::uuid and kind = 'admin.request' and entity_id = v_role
+     and recipient_id in (select er.employee_id from public.employee_roles er join public.roles r on r.id = er.role_id
+                           where r.tenant_id = current_setting('t.tpl')::uuid and 'roles.approve' = any (r.permissions));
+  if v_n = 0 then raise exception 'FAIL: nobody who approves roles was told of a role change'; end if;
+  perform pg_temp.as_emp((select er.employee_id from public.employee_roles er join public.roles r on r.id = er.role_id
+                           where r.tenant_id = current_setting('t.tpl')::uuid and r.name = 'Security officer' limit 1));
+  perform pg_temp.check('the role change is in the security officer''s queue',
+    (select detail from public.admin_queue() where kind = 'role' and id = v_role), 'adds audit.view');
+  perform public.decide_role(v_role, true);
+  if not exists (select 1 from public.notifications where tenant_id = current_setting('t.tpl')::uuid
+                   and recipient_id = 'EMP-0445' and kind = 'admin.decided' and entity_id = v_role and title like '%was approved') then
+    raise exception 'FAIL: whoever proposed the role change was not told it was approved';
+  end if;
+  raise notice 'pass: a change waiting for a second person reaches them, in a notification and their queue; the answer, with its reason, reaches whoever asked';
+end $$;
+
+-- =====================================================================
 -- 4. Every notification is an email
 -- =====================================================================
 do $$
@@ -172,7 +235,7 @@ begin
   select count(*) into v_before from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid;
   perform app.notify('EMP-2847', 'note.added', 'A note was added', 'Sam added a note', 'form_submission', gen_random_uuid());
   reset role;
-  select * into v from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid order by created_at desc limit 1;
+  select * into v from public.email_outbox where tenant_id = current_setting('t.tpl')::uuid and recipient_id = 'EMP-2847' and kind = 'note.added' order by created_at desc limit 1;
   if v.kind <> 'note.added' or v.status <> 'queued' or v.to_address <> 'tom.bexley@example.com' or v.context->>'title' <> 'A note was added' then
     raise exception 'FAIL: the notification was not queued as an email to the work address: %', row_to_json(v);
   end if;

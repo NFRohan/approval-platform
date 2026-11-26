@@ -19,6 +19,7 @@ import { AttachmentLink } from "@/components/AttachmentLink";
 import { SignaturePad } from "@/components/SignaturePad";
 import { ClearanceChecklist } from "@/components/ClearanceChecklist";
 import { fmtDate as fmtDateLib } from "@/lib/dates";
+import { AdminQueue } from "@/components/AdminQueue";
 
 export const Route = createFileRoute("/approvals")({
   // A notification that says your approval is needed can name which
@@ -167,6 +168,7 @@ function ApprovalsPage() {
 
 function ApprovalsInbox() {
   const { currentUser } = useCurrentUser();
+  const [adminCount, setAdminCount] = useState(0);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -817,6 +819,8 @@ function ApprovalsInbox() {
         </p>
       </div>
 
+      <AdminQueue employeeId={currentUser.employee_id} onCount={setAdminCount} />
+
       {myQuestions.length > 0 && (
         <div className="rounded-xl bg-white mb-5" style={{ border: "1px solid #C7D2FE", padding: "14px 16px" }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "#3730A3", marginBottom: 10 }}>
@@ -861,7 +865,7 @@ function ApprovalsInbox() {
       {loading ? (
         <div className="text-sm text-zinc-500">Loading…</div>
       ) : rows.length === 0 ? (
-        <EmptyState />
+        adminCount > 0 ? null : <EmptyState />
       ) : (
         <div className="space-y-3">
           {rows.map((r) => {

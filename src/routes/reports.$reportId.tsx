@@ -169,10 +169,13 @@ function ChangeWaiting({ report, canDecide, mine, onDone }: { report: ReportTemp
   const label = (k: string) => DATASETS[report.dataset].columns.find((c) => c.key === k)?.label ?? k;
   const added = (report.pending_columns ?? []).filter((k) => !report.columns.includes(k));
   const removed = report.columns.filter((k) => !(report.pending_columns ?? []).includes(k));
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
   const decide = async (approve: boolean) => {
-    const r = await decideReportChange({ data: { id: report.id, approve } });
+    if (!approve && !reason.trim()) return void toast.error("Give a reason; it goes to whoever asked.");
+    const r = await decideReportChange({ data: { id: report.id, approve, reason: approve ? undefined : reason } });
     if (!r.ok) return void toast.error(r.error);
-    toast.success(approve ? "Change approved — the report now shows these columns" : "Change rejected");
+    toast.success(approve ? "Change approved — the report now shows these columns" : "Change turned down; they have been told why");
     await onDone();
   };
   return (
@@ -186,11 +189,21 @@ function ChangeWaiting({ report, canDecide, mine, onDone }: { report: ReportTemp
           {removed.map((k) => <Pill key={k} tone="red">− {label(k)}</Pill>)}
           {!added.length && !removed.length && <Pill>Columns reordered</Pill>}
         </div>
+        {mine && <div style={{ marginTop: 6, fontSize: 12.5 }}>It is in the administrators' Pending Approvals; you will be told when it is decided.</div>}
+        {canDecide && rejecting && (
+          <div className="flex gap-2 items-center" style={{ marginTop: 8 }}>
+            <input aria-label="Reason" autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+                   placeholder="Why not? They will see this." className="flex-1 rounded-md"
+                   style={{ padding: "6px 9px", fontSize: 13, border: "1px solid #FDE68A", background: "#fff", color: "#18181B" }} />
+            <Button small onClick={() => setRejecting(false)}>Cancel</Button>
+            <Button small tone="danger" onClick={() => void decide(false)}>Turn it down</Button>
+          </div>
+        )}
       </div>
-      {canDecide && (
+      {canDecide && !rejecting && (
         <div className="flex gap-2">
           <Button small tone="good" name="approve-change" onClick={() => void decide(true)}>Approve</Button>
-          <Button small tone="danger" onClick={() => void decide(false)}>Reject</Button>
+          <Button small tone="danger" onClick={() => setRejecting(true)}>Reject</Button>
         </div>
       )}
     </div>

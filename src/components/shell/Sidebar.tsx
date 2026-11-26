@@ -1,4 +1,6 @@
 import { useEffect, useState, type SVGProps } from "react";
+import { adminQueue } from "@/lib/admin-fn";
+import { ADMIN_QUEUE_CHANGED } from "@/components/AdminQueue";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { signOut } from "@/lib/auth-fn";
 import {
@@ -386,7 +388,25 @@ export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultC
     };
   }, [currentUser.employee_id]);
 
-  const nav = buildNav(currentUser, { pendingCount, isApprover, campaignDepartments });
+  // What waits on them as an administrator: accounts, profiles, roles,
+  // report columns (public.admin_queue). Counted with their steps, and
+  // reason enough to show the queue to somebody no route names.
+  const decides = ["users.approve", "roles.approve", "reports.manage"].some((p) => currentUser.permissions.includes(p));
+  const [adminCount, setAdminCount] = useState(0);
+  useEffect(() => {
+    if (!decides) { setAdminCount(0); return; }
+    let alive = true;
+    const fetchAdmin = async () => {
+      const r = await adminQueue();
+      if (alive && r.ok) setAdminCount(r.items.length);
+    };
+    void fetchAdmin();
+    const every = window.setInterval(fetchAdmin, 60_000);
+    window.addEventListener(ADMIN_QUEUE_CHANGED, fetchAdmin);
+    return () => { alive = false; window.clearInterval(every); window.removeEventListener(ADMIN_QUEUE_CHANGED, fetchAdmin); };
+  }, [currentUser.employee_id, decides]);
+
+  const nav = buildNav(currentUser, { pendingCount: pendingCount + adminCount, isApprover: isApprover || adminCount > 0, campaignDepartments });
 
   const isActive = (to?: string) => {
     if (!to) return false;

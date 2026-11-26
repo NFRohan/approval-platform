@@ -360,10 +360,15 @@ begin
   returning name into v_name;
   if v_name is null then raise exception 'no such report'; end if;
   perform app.audit('report_change_requested', 'report', p_id, v_name);
+  perform app.notify_holders('reports.manage', 'Column change waiting: ' || v_name,
+    app.employee_name(app.current_employee()) || ' asked for different columns on ' || v_name
+      || coalesce('. Their note: ' || nullif(trim(p_note), ''), '.'),
+    'report', p_id, app.current_employee());
 end $$;
 
 -- An admin decides, and not the one who asked.
-create or replace function public.decide_report_change(p_id uuid, p_approve boolean)
+drop function if exists public.decide_report_change(uuid, boolean);
+create or replace function public.decide_report_change(p_id uuid, p_approve boolean, p_reason text default null)
 returns void
 language plpgsql
 security definer
@@ -385,8 +390,82 @@ begin
          updated_at = now()
    where id = p_id;
   perform app.audit(case when p_approve then 'report_change_approved' else 'report_change_rejected' end,
-                    'report', p_id, v.name);
+                    'report', p_id, v.name || coalesce(': ' || nullif(trim(p_reason), ''), ''));
+  perform app.tell_requester(v.change_requested_by, p_approve, 'Your column change to ' || v.name, p_reason, 'report', p_id);
 end $$;
+
+-- ---------------------------------------------------------------------
+-- What waits on me as an administrator.
+--
+-- New accounts and profile changes (users.approve), new roles and role
+-- changes (roles.approve), report column changes (reports.manage):
+-- whatever the person may decide and did not ask for themselves. Shown
+-- in Pending Approvals beside the requests whose steps they hold.
+-- ---------------------------------------------------------------------
+create or replace function public.admin_queue()
+returns table (kind text, id uuid, title text, detail text, note text,
+               requested_by text, requested_by_name text, requested_at timestamptz)
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  with me as (select app.current_employee() as emp)
+  select * from (
+    select 'account'::text, u.id, 'New account: ' || coalesce(u.full_name, u.username),
+           u.username || ' · ' || case when u.auth_source = 'ldap' then 'signs in through the directory' else 'local password' end
+             || coalesce(' · ' || (select e.designation || ', ' || e.department from public.employees e
+                                    where e.tenant_id = u.tenant_id and e.employee_id = u.employee_id), ''),
+           null::text, u.created_by_employee, app.employee_name(u.created_by_employee), u.created_at
+      from public.app_users u, me
+     where u.tenant_id = app.current_tenant() and u.approval_state = 'pending'
+       and app.has_permission('users.approve')
+       and u.created_by_employee is distinct from me.emp and u.employee_id is distinct from me.emp
+    union all
+    select 'profile', u.id, 'Profile change: ' || coalesce(u.full_name, u.username),
+           concat_ws(' · ',
+             case when u.pending_profile->>'full_name' is distinct from u.full_name and u.pending_profile->>'full_name' is not null
+                  then 'name ' || coalesce(u.full_name, '—') || ' → ' || (u.pending_profile->>'full_name') end,
+             case when u.pending_profile->>'email' is distinct from u.email and u.pending_profile->>'email' is not null
+                  then 'email ' || coalesce(u.email, '—') || ' → ' || (u.pending_profile->>'email') end),
+           null, u.pending_profile->>'by', app.employee_name(u.pending_profile->>'by'), (u.pending_profile->>'at')::timestamptz
+      from public.app_users u, me
+     where u.tenant_id = app.current_tenant() and u.pending_profile is not null
+       and app.has_permission('users.approve')
+       and (u.pending_profile->>'by') is distinct from me.emp
+    union all
+    select 'role', r.id, 'New role: ' || r.name,
+           coalesce(nullif(array_to_string(r.permissions, ', '), ''), 'no permissions')
+             || coalesce(' · limited to ' || r.scope_department, ''),
+           r.description, r.created_by, app.employee_name(r.created_by), r.created_at
+      from public.roles r, me
+     where r.tenant_id = app.current_tenant() and r.status = 'pending'
+       and app.has_permission('roles.approve') and r.created_by is distinct from me.emp
+    union all
+    select 'role', r.id, 'Change to role: ' || r.name,
+           concat_ws(' · ',
+             case when r.pending_name is not null and r.pending_name <> r.name then 'renamed to ' || r.pending_name end,
+             nullif('adds ' || array_to_string(array(select unnest(r.pending_permissions) except select unnest(r.permissions)), ', '), 'adds '),
+             nullif('removes ' || array_to_string(array(select unnest(r.permissions) except select unnest(r.pending_permissions)), ', '), 'removes '),
+             case when r.pending_scope is distinct from r.scope_department
+                  then coalesce('limited to ' || r.pending_scope, 'organisation-wide') end),
+           null, r.changed_by, app.employee_name(r.changed_by), r.updated_at
+      from public.roles r, me
+     where r.tenant_id = app.current_tenant() and r.status = 'active' and r.pending_permissions is not null
+       and app.has_permission('roles.approve') and r.changed_by is distinct from me.emp
+    union all
+    select 'report', t.id, 'Column change: ' || t.name,
+           concat_ws(' · ',
+             nullif('adds ' || array_to_string(array(select replace(c, '_', ' ') from unnest(t.pending_columns) c except select replace(c, '_', ' ') from unnest(t.columns) c), ', '), 'adds '),
+             nullif('removes ' || array_to_string(array(select replace(c, '_', ' ') from unnest(t.columns) c except select replace(c, '_', ' ') from unnest(t.pending_columns) c), ', '), 'removes '),
+             case when t.pending_columns <> t.columns and t.pending_columns::text[] @> t.columns and t.columns @> t.pending_columns then 'reorders the columns' end),
+           t.change_note, t.change_requested_by, app.employee_name(t.change_requested_by), t.updated_at
+      from public.report_templates t, me
+     where t.tenant_id = app.current_tenant() and t.pending_columns is not null
+       and app.has_permission('reports.manage') and t.change_requested_by is distinct from me.emp
+  ) q(kind, id, title, detail, note, requested_by, requested_by_name, requested_at)
+  order by requested_at
+$$;
 
 create or replace function public.set_report_schedule(p_id uuid, p_schedule text, p_recipients text[], p_format text)
 returns void
@@ -754,7 +833,8 @@ grant execute on function
   public.save_report(uuid, text, text, text, text[], jsonb),
   public.delete_report(uuid),
   public.request_report_change(uuid, text[], text),
-  public.decide_report_change(uuid, boolean),
+  public.decide_report_change(uuid, boolean, text),
+  public.admin_queue(),
   public.set_report_schedule(uuid, text, text[], text),
   public.queue_report_email(uuid, text[]),
   public.save_email_template(text, text, text, boolean),

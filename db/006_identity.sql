@@ -238,6 +238,63 @@ begin
   return v;
 end $$;
 
+-- ---------------------------------------------------------------------
+-- Telling the second person.
+--
+-- Accounts, profile changes, roles and report columns each wait for
+-- somebody other than whoever asked. "Admins are not told one is
+-- waiting; a rejection carries no reason and nobody is told" (SOW §3.6
+-- 2.1, 2.5): whoever may decide is told when one is asked for, and
+-- whoever asked is told the outcome, with the reason.
+-- ---------------------------------------------------------------------
+create or replace function app.employee_name(p_employee text)
+returns text
+language sql
+stable
+security definer
+set search_path = public, app, pg_temp
+as $$
+  select coalesce((select name from public.employees
+                    where tenant_id = app.current_tenant() and employee_id = p_employee), p_employee)
+$$;
+
+create or replace function app.notify_holders(p_permission text, p_title text, p_body text,
+                                              p_entity_type text, p_entity_id uuid, p_except text)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare r record;
+begin
+  for r in
+    select e.employee_id from public.employees e
+     where e.tenant_id = app.current_tenant() and e.active
+       and e.employee_id is distinct from p_except
+       and exists (select 1 from public.roles ro
+                    where ro.tenant_id = e.tenant_id and ro.id in (select app.held_roles(e.employee_id))
+                      and p_permission = any (ro.permissions))
+  loop
+    perform app.notify(r.employee_id, 'admin.request', p_title, p_body, p_entity_type, p_entity_id);
+  end loop;
+end $$;
+
+create or replace function app.tell_requester(p_requester text, p_approve boolean, p_what text, p_reason text,
+                                              p_entity_type text, p_entity_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+begin
+  if p_requester is null or p_requester = app.current_employee() then return; end if;
+  perform app.notify(p_requester, 'admin.decided',
+    p_what || case when p_approve then ' was approved' else ' was not approved' end,
+    app.employee_name(app.current_employee()) || case when p_approve then ' approved it.' else ' turned it down.' end
+      || coalesce(' ' || case when p_approve then 'Note: ' else 'Reason: ' end || nullif(trim(p_reason), ''), ''),
+    p_entity_type, p_entity_id);
+end $$;
+
 -- Register an account for an employee. It cannot be used until somebody
 -- else approves it. The password arrives hashed: the server generates it,
 -- shows it once, and keeps only the hash.
@@ -277,12 +334,16 @@ begin
   returning id into v_id;
 
   perform app.audit('account_requested', 'app_user', v_id, 'Account requested for ' || v_emp.name || ' (' || p_username || ')');
+  perform app.notify_holders('users.approve', 'New account waiting: ' || v_emp.name,
+    app.employee_name(app.current_employee()) || ' asked for an account for ' || v_emp.name || ' (' || p_username || ').',
+    'app_user', v_id, app.current_employee());
   return v_id;
 end $$;
 
 -- Approve or reject a new account. Not by whoever asked for it, and not
 -- by the person it is for.
-create or replace function public.decide_account(p_user uuid, p_approve boolean)
+drop function if exists public.decide_account(uuid, boolean);
+create or replace function public.decide_account(p_user uuid, p_approve boolean, p_reason text default null)
 returns text
 language plpgsql
 security definer
@@ -305,7 +366,9 @@ begin
          approved_by_employee = app.current_employee()
    where id = p_user;
   perform app.audit(case when p_approve then 'account_approved' else 'account_rejected' end,
-                    'app_user', p_user, v.username);
+                    'app_user', p_user, v.username || coalesce(': ' || nullif(trim(p_reason), ''), ''));
+  perform app.tell_requester(v.created_by_employee, p_approve,
+    'The account for ' || coalesce(v.full_name, v.username), p_reason, 'app_user', p_user);
   return case when p_approve then 'approved' else 'rejected' end;
 end $$;
 
@@ -328,9 +391,13 @@ begin
            'at',        now())
    where id = p_user;
   perform app.audit('profile_change_proposed', 'app_user', p_user, v.username);
+  perform app.notify_holders('users.approve', 'Profile change waiting: ' || coalesce(v.full_name, v.username),
+    app.employee_name(app.current_employee()) || ' proposed a change to ' || coalesce(v.full_name, v.username) || '''s name or email.',
+    'app_user', p_user, app.current_employee());
 end $$;
 
-create or replace function public.decide_profile(p_user uuid, p_approve boolean)
+drop function if exists public.decide_profile(uuid, boolean);
+create or replace function public.decide_profile(p_user uuid, p_approve boolean, p_reason text default null)
 returns void
 language plpgsql
 security definer
@@ -350,7 +417,9 @@ begin
          pending_profile = null
    where id = p_user;
   perform app.audit(case when p_approve then 'profile_change_approved' else 'profile_change_rejected' end,
-                    'app_user', p_user, v.username);
+                    'app_user', p_user, v.username || coalesce(': ' || nullif(trim(p_reason), ''), ''));
+  perform app.tell_requester(v.pending_profile->>'by', p_approve,
+    'The profile change for ' || coalesce(v.full_name, v.username), p_reason, 'app_user', p_user);
 end $$;
 
 -- Active, disabled (temporary) or deactivated (permanent).
@@ -461,6 +530,9 @@ begin
           coalesce(p_permissions, '{}'), 'pending', app.current_employee(), nullif(trim(p_scope), ''))
   returning id into v_id;
   perform app.audit('role_requested', 'role', v_id, trim(p_name));
+  perform app.notify_holders('roles.approve', 'New role waiting: ' || trim(p_name),
+    app.employee_name(app.current_employee()) || ' created the role ' || trim(p_name) || '; it works once somebody else approves it.',
+    'role', v_id, app.current_employee());
   return v_id;
 end $$;
 
@@ -486,9 +558,13 @@ begin
          changed_by = app.current_employee(), updated_at = now()
    where id = p_role;
   perform app.audit('role_change_proposed', 'role', p_role, v.name);
+  perform app.notify_holders('roles.approve', 'Role change waiting: ' || v.name,
+    app.employee_name(app.current_employee()) || ' proposed a change to the role ' || v.name || '; it works as before until somebody else approves it.',
+    'role', p_role, app.current_employee());
 end $$;
 
-create or replace function public.decide_role(p_role uuid, p_approve boolean)
+drop function if exists public.decide_role(uuid, boolean);
+create or replace function public.decide_role(p_role uuid, p_approve boolean, p_reason text default null)
 returns text
 language plpgsql
 security definer
@@ -523,7 +599,11 @@ begin
     raise exception 'that role has nothing waiting for approval';
   end if;
 
-  perform app.audit(case when p_approve then 'role_approved' else 'role_rejected' end, 'role', p_role, v.name);
+  perform app.audit(case when p_approve then 'role_approved' else 'role_rejected' end, 'role', p_role,
+                    v.name || coalesce(': ' || nullif(trim(p_reason), ''), ''));
+  perform app.tell_requester(case when v.status = 'pending' then v.created_by else v.changed_by end, p_approve,
+    case when v.status = 'pending' then 'The new role ' || v.name else 'The change to the role ' || v.name end,
+    p_reason, 'role', p_role);
   return case when p_approve then 'approved' else 'rejected' end;
 end $$;
 
@@ -904,15 +984,15 @@ end $ds$;
 grant execute on all functions in schema app to app_api;
 grant execute on function
   public.create_account(text, text, text),
-  public.decide_account(uuid, boolean),
+  public.decide_account(uuid, boolean, text),
   public.propose_profile(uuid, text, text),
-  public.decide_profile(uuid, boolean),
+  public.decide_profile(uuid, boolean, text),
   public.set_account_status(uuid, text),
   public.unlock_account(uuid),
   public.set_account_password(uuid, text),
   public.create_role(text, text, text[], text),
   public.propose_role_change(uuid, text, text[], text),
-  public.decide_role(uuid, boolean),
+  public.decide_role(uuid, boolean, text),
   public.assign_role(text, uuid, boolean),
   public.update_rule_settings(uuid, int, boolean, jsonb),
   public.import_employees(jsonb, boolean),

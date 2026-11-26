@@ -338,3 +338,51 @@ export const listSyncs = createServerFn({ method: 'GET' })
       return [];
     }
   });
+
+// ---------------------------------------------------------------------
+// What waits on an administrator
+//
+// New accounts, profile changes, roles and report column changes, each
+// waiting for somebody other than whoever asked (public.admin_queue).
+// Shown in Pending Approvals; decided there or on the item's own page.
+// ---------------------------------------------------------------------
+export type AdminItem = {
+  kind: 'account' | 'profile' | 'role' | 'report';
+  id: string;
+  title: string;
+  detail: string | null;
+  note: string | null;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  requested_at: string | null;
+};
+
+export const adminQueue = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<Result<{ items: AdminItem[] }>> => {
+    try {
+      const { rows } = await run((c) => c.query('select * from public.admin_queue()'));
+      return { ok: true, items: rows as AdminItem[] };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+const DECIDE: Record<AdminItem['kind'], string> = {
+  account: 'select public.decide_account($1, $2, $3)',
+  profile: 'select public.decide_profile($1, $2, $3)',
+  role: 'select public.decide_role($1, $2, $3)',
+  report: 'select public.decide_report_change($1, $2, $3)',
+};
+
+export const decideAdminItem = createServerFn({ method: 'POST' })
+  .inputValidator((input: { kind: AdminItem['kind']; id: string; approve: boolean; reason?: string }) => input)
+  .handler(async ({ data }): Promise<Result> => {
+    const sql = DECIDE[data.kind];
+    if (!sql) return { ok: false, error: 'Nothing of that kind waits for a decision.' };
+    try {
+      await run((c) => c.query(sql, [data.id, data.approve === true, String(data.reason ?? '').trim() || null]));
+      return { ok: true };
+    } catch (err) {
+      return refusal(err);
+    }
+  });

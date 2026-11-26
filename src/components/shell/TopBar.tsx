@@ -132,6 +132,9 @@ const ROUTED = new Set([
   "form_submission",
   "notice",
   "movement_order",
+  "report",
+  "role",
+  "app_user",
 ]);
 function hasTarget(n: Note): boolean {
   return Boolean(n.entity_id && ROUTED.has(n.entity_type ?? ""));
@@ -158,6 +161,11 @@ function NoteRow({
   const toQueue =
     n.kind === "approval.turn" || n.kind === "approval.returned" || n.kind === "approval.review" ||
     (n.kind === "question.asked" && n.entity_type !== "form_submission");
+  // An account, role or report change waiting for a second person is
+  // decided from Pending Approvals.
+  if (n.kind === "admin.request") {
+    return <Link to="/approvals" {...shared}>{children}</Link>;
+  }
   if (toQueue && n.entity_id) {
     return (
       <Link to="/approvals" search={{ focus: n.entity_id }} {...shared}>
@@ -182,6 +190,16 @@ function NoteRow({
         );
       case "movement_order":
         return <Link to="/movement-orders" {...shared}>{children}</Link>;
+      case "report":
+        return (
+          <Link to="/reports/$reportId" params={{ reportId: n.entity_id }} {...shared}>
+            {children}
+          </Link>
+        );
+      case "role":
+        return <Link to="/admin/roles" {...shared}>{children}</Link>;
+      case "app_user":
+        return <Link to="/admin/users" {...shared}>{children}</Link>;
     }
   }
   return <div className={className} style={style}>{children}</div>;

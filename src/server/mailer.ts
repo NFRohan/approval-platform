@@ -75,6 +75,9 @@ const PATHS: Record<string, (id: string) => string> = {
   notice: (id) => `/notices/${id}`,
   movement_order: () => '/movement-orders',
   campaign: (id) => `/campaigns/${id}`,
+  report: (id) => `/reports/${id}`,
+  role: () => '/admin/roles',
+  app_user: () => '/admin/users',
 };
 
 export type BuiltEmail = {
@@ -114,7 +117,8 @@ export async function buildEmail(client: pg.PoolClient, o: OutboxRow, opts: { at
       if (s.priority && s.priority !== 'normal') details.push(['Priority', String(s.priority).replace(/^./, (c: string) => c.toUpperCase())]);
     }
   }
-  if (o.entity_type && o.entity_id && PATHS[o.entity_type]) vars.link = appUrl() + PATHS[o.entity_type](o.entity_id);
+  if (o.kind === 'admin.request') vars.link = appUrl() + '/approvals';
+  else if (o.entity_type && o.entity_id && PATHS[o.entity_type]) vars.link = appUrl() + PATHS[o.entity_type](o.entity_id);
   if (!vars.link && o.kind.startsWith('approval.')) vars.link = appUrl() + '/approvals';
 
   // The approval record goes with the news that a request is approved.

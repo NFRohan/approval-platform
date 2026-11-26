@@ -160,10 +160,11 @@ export const requestReportChange = createServerFn({ method: 'POST' })
   });
 
 export const decideReportChange = createServerFn({ method: 'POST' })
-  .inputValidator((input: { id: string; approve: boolean }) => input)
+  .inputValidator((input: { id: string; approve: boolean; reason?: string }) => input)
   .handler(async ({ data }): Promise<Result> => {
     try {
-      await run((c) => c.query('select public.decide_report_change($1, $2)', [data.id, data.approve === true]));
+      await run((c) => c.query('select public.decide_report_change($1, $2, $3)',
+        [data.id, data.approve === true, String(data.reason ?? '').trim() || null]));
       return { ok: true };
     } catch (err) {
       return refusal(err);
