@@ -32,6 +32,10 @@ begin
   if new.status = 'pending' and new.opened_at is null then
     new.opened_at := now();
   end if;
+  -- A step that waited behind others gets its whole allowance from now.
+  if tg_op = 'UPDATE' and old.status = 'waiting' and new.status = 'pending' and new.deadline_days is not null then
+    new.deadline_at := app.add_working_days(now(), new.deadline_days, new.tenant_id);
+  end if;
   return new;
 end $$;
 

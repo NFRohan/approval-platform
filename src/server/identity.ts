@@ -24,6 +24,7 @@ export type AccountRow = {
   is_staff: boolean;
   status: string;
   approval_state: string;
+  employee_active?: boolean | null;
   must_change_pw: boolean;
   password_changed_at: Date | null;
   password_history: string[];
@@ -49,6 +50,7 @@ const ACCOUNT_COLUMNS = `
   u.id, u.username, c.password_hash, u.role, u.is_staff, u.status, u.approval_state,
   u.must_change_pw, u.password_changed_at, coalesce(c.password_history, '{}') as password_history,
   u.failed_attempts, u.locked_at,
+  (select e.active from public.employees e where e.tenant_id = u.tenant_id and e.employee_id = u.employee_id) as employee_active,
   u.mfa_enabled, u.mfa_secret, u.mfa_last_step, u.auth_source, u.employee_id, u.tenant_id,
   t.slug, t.expires_at, t.persona_switching, t.require_admin_mfa, t.default_persona,
   case when u.tenant_id is null then 'active' else app.tenant_status(u.tenant_id) end as tenant_state`;
@@ -76,6 +78,7 @@ export function accountRefusal(row: AccountRow): string | null {
   if (row.approval_state === 'pending') return 'This account is waiting for approval.';
   if (row.approval_state === 'rejected') return 'This account was not approved.';
   if (row.status === 'deactivated') return 'This account has been deactivated.';
+  if (row.employee_id && row.employee_active === false) return 'This person has left the organisation, so the account no longer signs in.';
   if (row.status !== 'active') return 'This account has been disabled.';
   if (row.tenant_state === 'revoked') return 'This evaluation has been withdrawn. Get in touch for a new one.';
   if (row.tenant_state === 'expired') return 'This evaluation has expired. Get in touch for an extension.';

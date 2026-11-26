@@ -301,6 +301,22 @@ begin
 
   insert into public.notifications (recipient_id, kind, title, body, entity_type, entity_id)
   values (p_recipient, p_kind, p_title, p_body, p_entity_type, p_entity_id);
+
+  -- Whoever stands in for them today is told too, about a step they may
+  -- now act on: otherwise a delegation works but nobody knows a step waits.
+  if p_kind in ('approval.turn', 'approval.reminder', 'approval.due_soon', 'approval.overdue') then
+    insert into public.notifications (recipient_id, kind, title, body, entity_type, entity_id)
+    select d.delegate_id, p_kind,
+           p_title || ' (standing in for ' || coalesce((select e.name from public.employees e
+                                                         where e.tenant_id = d.tenant_id and e.employee_id = p_recipient), p_recipient) || ')',
+           p_body, p_entity_type, p_entity_id
+      from public.delegation_rules d
+     where d.tenant_id = app.current_tenant() and d.delegator_id = p_recipient
+       and (now() at time zone 'Asia/Dhaka')::date between d.start_date and d.end_date
+       and (d.form_template_ids is null
+            or (p_entity_type = 'form_submission'
+                and (select s.form_template_id from public.form_submissions s where s.id = p_entity_id) = any (d.form_template_ids)));
+  end if;
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -883,7 +899,7 @@ begin
   -- a high one a day less, never under one working day.
   insert into public.approval_requests
     (submission_id, notice_id, stationery_request_id, maintenance_request_id,
-     approver_user_id, step_index, lane, lane_step, status, deadline_at,
+     approver_user_id, step_index, lane, lane_step, status, deadline_at, deadline_days,
      quorum, stage_label, lane_label, require_signature, remind_hours)
   select
     case when p_subject_type = 'form_submission'     then p_subject_id end,
@@ -896,6 +912,7 @@ begin
                                               when 'urgent' then ceil(p.days / 2.0)::int
                                               when 'high'   then p.days - 1
                                               else p.days end)),
+    greatest(1, case v_priority when 'urgent' then ceil(p.days / 2.0)::int when 'high' then p.days - 1 else p.days end),
     p.quorum, p.stage_label, p.lane_label, p.require_signature, p.remind_hours
   from app.plan_chain(p_subject_type, p_form_template_id, v_requester, v_answers) p;
 

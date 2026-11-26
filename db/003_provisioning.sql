@@ -371,8 +371,8 @@ begin
   -- outward: exactly one is set on any given row, so the other three
   -- resolve to null and the arc is preserved on the far side.
   insert into _m select id, gen_random_uuid() from public.approval_requests where tenant_id = v_tpl;
-  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at, opened_at, remind_hours)
-  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at, a.opened_at, a.remind_hours
+  insert into public.approval_requests (id, tenant_id, submission_id, notice_id, stationery_request_id, maintenance_request_id, approver_user_id, step_index, lane, lane_step, lane_label, quorum, stage_label, require_signature, signature, signed_at, status, comment, acted_at, deadline_at, reassigned_from, created_at, opened_at, remind_hours, deadline_days)
+  select m.new, v_new, ms.new, mn.new, mst.new, mmr.new, a.approver_user_id, a.step_index, a.lane, a.lane_step, a.lane_label, a.quorum, a.stage_label, a.require_signature, a.signature, a.signed_at, a.status, a.comment, a.acted_at, a.deadline_at, a.reassigned_from, a.created_at, a.opened_at, a.remind_hours, a.deadline_days
     from public.approval_requests a
     join      _m m   on m.old   = a.id
     left join _m ms  on ms.old  = a.submission_id

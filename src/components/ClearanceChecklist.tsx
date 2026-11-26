@@ -44,6 +44,8 @@ export function ClearanceChecklist({
 }) {
   const [tracks, setTracks] = useState<ChecklistTrack[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // A note per item, sent with its tick ("comments during the approval").
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const { data, error } = await db.rpc("checklist_for", { p_submission: submissionId });
@@ -54,7 +56,7 @@ export function ClearanceChecklist({
 
   const tick = async (itemId: string, done: boolean) => {
     setBusy(itemId);
-    const { error } = await db.rpc("tick_checklist", { p_submission: submissionId, p_item: itemId, p_done: done, p_note: null });
+    const { error } = await db.rpc("tick_checklist", { p_submission: submissionId, p_item: itemId, p_done: done, p_note: done ? (notes[itemId]?.trim() || null) : null });
     setBusy(null);
     if (error) { toast.error(error.message); return; }
     await load();
@@ -88,8 +90,8 @@ export function ClearanceChecklist({
               {t.items.map((i) => {
                 const enabled = t.can_tick && busy !== i.id;
                 return (
+                  <div key={i.id}>
                   <button
-                    key={i.id}
                     type="button"
                     disabled={!enabled}
                     onClick={() => void tick(i.id, !i.done)}
@@ -109,6 +111,16 @@ export function ClearanceChecklist({
                       )}
                     </span>
                   </button>
+                  {t.can_tick && !i.done && (
+                    <input
+                      aria-label={`Note on ${i.item}`}
+                      placeholder="Note (optional), saved when you tick it"
+                      value={notes[i.id] ?? ""}
+                      onChange={(e) => setNotes((n) => ({ ...n, [i.id]: e.target.value }))}
+                      style={{ margin: "0 0 4px 26px", width: "calc(100% - 26px)", padding: "4px 8px", fontSize: 12, border: "1px solid #E4E4E7", borderRadius: 6 }}
+                    />
+                  )}
+                  </div>
                 );
               })}
             </div>

@@ -92,7 +92,13 @@ function formatValue(raw: string | null): ReactNode {
 
     // "6000" parses as a number, so it never reached the catch below
     // that adds thousand separators.
-    if (typeof parsed === "number") return parsed.toLocaleString("en-US", { maximumFractionDigits: 4 });
+    // An identifier that happens to be all digits — a bank account, a phone
+    // number, anything led by 0 — stays exactly as typed.
+    if (typeof parsed === "number") {
+      const digits = raw.trim().replace(/\..*$/, "");
+      if (digits.length > 10 || /^0\d/.test(digits)) return raw.trim();
+      return parsed.toLocaleString("en-US", { maximumFractionDigits: 4 });
+    }
 
     // Array → pill badges
     if (Array.isArray(parsed)) {
@@ -187,6 +193,7 @@ function ApprovalsInbox() {
     { id: string; approver_user_id: string | null; status: string | null; step_index: number | null; lane: number | null; lane_step: number | null }[]
   >([]);
   // Questions other approvers have asked me, waiting for an answer.
+  const [questionRefs, setQuestionRefs] = useState<Record<string, string>>({});
   const [myQuestions, setMyQuestions] = useState<
     { id: string; subject_id: string; subject_type: string; asked_by: string; question: string; created_at: string }[]
   >([]);
@@ -213,6 +220,12 @@ function ApprovalsInbox() {
       .is("answer", null)
       .order("created_at");
     setMyQuestions((qs ?? []) as typeof myQuestions);
+    // The references everyone else sees, for the requests asked about.
+    const qSubs = Array.from(new Set((qs ?? []).filter((q) => q.subject_type === "form_submission").map((q) => q.subject_id as string)));
+    if (qSubs.length) {
+      const { data: refs } = await db.from("form_submissions").select("id, ref_number").in("id", qSubs);
+      setQuestionRefs(Object.fromEntries(((refs ?? []) as { id: string; ref_number: string | null }[]).map((r) => [r.id, r.ref_number ?? ""])));
+    }
 
     // Dhaka's date, not UTC's: the database judges delegation windows on
     // the same calendar, so the queue and the check agree.
@@ -608,6 +621,21 @@ function ApprovalsInbox() {
   };
 
   const handleApprove = async (row: Row, signed?: string | null) => {
+    // A checklist still open is refused anyway; say so before asking for a
+    // signature, not after it has been drawn.
+    if (row.submission_id && !signed) {
+      const { data } = await db.rpc("checklist_for", { p_submission: row.submission_id });
+      const open = ((data ?? []) as { can_tick: boolean; state: string; items: { done: boolean }[] }[])
+        .filter((t) => t.can_tick && t.state === "open")
+        .reduce((n, t) => n + t.items.filter((i) => !i.done).length, 0);
+      if (open > 0) {
+        // The server's own words, and the row opened on the checklist, as a
+        // refusal from the server would do.
+        toast.error(`Tick the checklist first: ${open} item${open === 1 ? " is" : "s are"} still open`);
+        if (expanded !== row.id) void toggleExpand(row);
+        return;
+      }
+    }
     if (row.require_signature && !signed) {
       setSignature(null);
       setSigning(row);
@@ -801,7 +829,7 @@ function ApprovalsInbox() {
                   {nameFor(q.asked_by)} asked about{" "}
                   {q.subject_type === "form_submission" ? (
                     <Link to="/status/$submissionId" params={{ submissionId: q.subject_id }} style={{ color: "#4338CA", textDecoration: "underline" }}>
-                      AMS-{q.subject_id.slice(0, 8).toUpperCase()}
+                      {questionRefs[q.subject_id] || `AMS-${q.subject_id.slice(0, 8).toUpperCase()}`}
                     </Link>
                   ) : (
                     <span>AMS-{q.subject_id.slice(0, 8).toUpperCase()}</span>

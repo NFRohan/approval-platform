@@ -1853,6 +1853,9 @@ create index if not exists servicedesk_events_queued_idx on public.servicedesk_e
 -- says how often; each step built from it carries the figure.
 alter table public.approval_rules    add column if not exists remind_hours integer;
 alter table public.approval_requests add column if not exists remind_hours integer;
+-- The step's allowance in working days, so a step that waits behind others
+-- gets its full time from when it opens, not from when the chain was built.
+alter table public.approval_requests add column if not exists deadline_days integer;
 do $$ begin
   alter table public.approval_rules add constraint approval_rules_remind_hours_check
     check (remind_hours is null or remind_hours between 1 and 168);

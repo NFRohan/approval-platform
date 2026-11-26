@@ -802,8 +802,13 @@ as $$
 declare v record;
 begin
   if app.current_user_id() is null then return; end if;
-  select status, approval_state, locked_at into v from public.app_users where id = app.current_user_id();
-  if not found or v.status <> 'active' or v.approval_state <> 'approved'
+  select u.status, u.approval_state, u.locked_at,
+         -- A person's own account ends with them: someone who has left
+         -- (their employee record inactive) is signed out too.
+         (u.employee_id is not null and not coalesce((select e.active from public.employees e
+                                                      where e.tenant_id = u.tenant_id and e.employee_id = u.employee_id), false)) as left_org
+    into v from public.app_users u where u.id = app.current_user_id();
+  if not found or v.status <> 'active' or v.approval_state <> 'approved' or v.left_org
      or (v.locked_at is not null and v.locked_at > now() - interval '30 minutes') then
     raise exception 'this account is no longer signed in' using errcode = '28000';
   end if;

@@ -46,6 +46,7 @@ type SubmissionRow = {
 type EventRow = {
   id: string;
   actor_id: string | null;
+  request_id?: string | null;
   action: string;
   comment: string | null;
   target_id: string | null;
@@ -252,7 +253,7 @@ function StatusPage() {
 
     // The trail, the questions asked about it, and what it is linked to.
     const [{ data: ev }, { data: qs }, { data: kids }] = await Promise.all([
-      db.from("approval_events").select("id, actor_id, action, comment, target_id, created_at")
+      db.from("approval_events").select("id, actor_id, action, comment, target_id, created_at, request_id")
         .eq("subject_id", submissionId).order("created_at"),
       db.from("approval_queries").select("id, asked_by, asked_to, question, answer, answered_at, created_at")
         .eq("subject_id", submissionId).order("created_at"),
@@ -473,9 +474,12 @@ function StatusPage() {
     activity.length = 0;
     for (const e of events) {
       const target = e.target_id && !/^[0-9a-f]{8}-/.test(e.target_id) ? ` ${nameOf(e.target_id)}` : "";
+      // A delegate acting on somebody's step says whose step it was.
+      const stepOwner = e.request_id ? approvals.find((a) => a.id === e.request_id)?.approver_user_id : null;
+      const standingIn = e.actor_id && stepOwner && stepOwner !== e.actor_id && /approv|reject|return|clarif/.test(e.action);
       activity.push({
         at: e.created_at,
-        who: e.actor_id ? nameOf(e.actor_id) : "System",
+        who: e.actor_id ? nameOf(e.actor_id) + (standingIn ? `, for ${nameOf(stepOwner)}` : "") : "System",
         role: e.actor_id ? employees[e.actor_id]?.designation || "Approver" : "Approval engine",
         action: (EVENT_TEXT[e.action] ?? e.action) + target + (e.comment ? ` — "${e.comment}"` : ""),
         state: "pending" as StepState,

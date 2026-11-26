@@ -138,7 +138,7 @@ class Query<R = any, Out = R[] | null> implements PromiseLike<Result<Out>> {
       return { data: null as Out, error: { message: err instanceof Error ? err.message : String(err) } };
     }
 
-    if (res.error) return { data: null as Out, error: res.error, count: null };
+    if (res.error) { sessionEnded(res.error); return { data: null as Out, error: res.error, count: null }; }
 
     if (this.body.countOnly) {
       return { data: null as Out, count: res.count ?? 0, error: null };
@@ -235,6 +235,7 @@ class Channel {
 async function rpc(fn: string, args: Record<string, unknown>): Promise<Result<unknown>> {
   try {
     const res = await runData({ data: { kind: 'rpc', fn, args } });
+    if (res.error) sessionEnded(res.error);
     return res.error ? { data: null, error: res.error } : { data: res.data, error: null };
   } catch (err) {
     return { data: null, error: { message: err instanceof Error ? err.message : String(err) } };
@@ -249,3 +250,16 @@ export const db = {
 };
 
 export default db;
+
+/**
+ * The server answered that this session is over (account disabled,
+ * deactivated, the person has left, the evaluation withdrawn): go to the
+ * sign-in page instead of showing every screen empty.
+ */
+let leaving = false;
+function sessionEnded(error: { status?: number } | null) {
+  if (leaving || error?.status !== 401 || typeof window === "undefined") return;
+  if (window.location.pathname.startsWith("/login")) return;
+  leaving = true;
+  window.location.assign("/login");
+}
