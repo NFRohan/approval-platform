@@ -173,13 +173,14 @@ export const uploadAttachment = createServerFn({ method: 'POST' })
          bytes.length, bytes, uploadedBy, description, tags, version],
       );
 
-      if (sub.routed) {
-        await client.query(
-          `select app.log_event(null, 'form_submission', $1, $2, $3, $4, null)`,
-          [submissionId, uploadedBy, prev.length ? 'document_revised' : 'document_added',
-           `${fieldName}: ${cleanName(file.name)} (version ${version})`],
-        );
-      }
+      // Every upload is on the request's history (ABC access logs), the
+      // ones made before it was routed too; the trigger on attachments
+      // tells whoever watches the form (db/009_sow_gaps.sql).
+      await client.query(
+        `select app.log_event(null, 'form_submission', $1, $2, $3, $4, null)`,
+        [submissionId, uploadedBy, prev.length ? 'document_revised' : 'document_added',
+         `${fieldName}: ${cleanName(file.name)} (version ${version})${sub.routed ? '' : ', before it was routed'}`],
+      );
       return { ok: true as const, attachment: rows[0] as AttachmentInfo };
     });
   });
@@ -200,10 +201,20 @@ export const describeAttachment = createServerFn({ method: 'POST' })
       );
       if (!rows[0]) return { ok: false as const, error: 'No such document.' };
       if (!rows[0].ok) return { ok: false as const, error: 'Only somebody on this request can describe its documents.' };
-      await client.query(
-        'update public.attachments set description = $2, tags = $3 where id = $1',
+      const { rows: changed } = await client.query(
+        `update public.attachments set description = $2, tags = $3 where id = $1
+         returning file_name, field_name, version, description, tags`,
         [data.attachmentId, cleanDescription(data.description), cleanTags(data.tags)],
       );
+      // An edit to what a document says it is goes on the history too.
+      const d = changed[0];
+      if (d) {
+        await client.query(
+          `select app.log_event(null, 'form_submission', $1, app.acting($2), 'document_described', $3, null)`,
+          [rows[0].submission_id, data.actor,
+           `${d.field_name}: ${d.file_name} (version ${d.version})${d.description ? ` — "${d.description}"` : ''}${d.tags?.length ? `; tags ${d.tags.join(', ')}` : ''}`],
+        );
+      }
       return { ok: true as const };
     });
   });
@@ -242,5 +253,70 @@ export const searchDocuments = createServerFn({ method: 'GET' })
         [term, like],
       );
       return rows as TaggedDocument[];
+    });
+  });
+
+// ---------------------------------------------------------------------
+// The documents page (SOW §2.1 r8; ABC portal: "quick retrieval of all
+// related records"). Every document on a request the person may see —
+// the database decides which — by words, tag, form, reference, uploader,
+// upload date and version, newest first, a page at a time.
+// ---------------------------------------------------------------------
+export type DocumentRow = AttachmentInfo & {
+  submission_id: string;
+  ref_number: string | null;
+  form: string | null;
+  uploader_name: string | null;
+  request_status: string | null;
+};
+
+export type DocumentFilters = {
+  q?: string; tag?: string; form?: string; ref?: string; uploader?: string;
+  from?: string; to?: string; versions?: 'current' | 'all'; page?: number;
+};
+
+export const listDocuments = createServerFn({ method: 'GET' })
+  .inputValidator((input: DocumentFilters) => input ?? {})
+  .handler(async ({ data }): Promise<{ rows: DocumentRow[]; total: number; tags: string[]; forms: string[] }> => {
+    const PAGE = 50;
+    const q = String(data.q ?? '').trim().toLowerCase().slice(0, 80);
+    const like = q ? '%' + q.replace(/[\\%_]/g, (c) => '\\' + c) + '%' : null;
+    const day = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
+    const params = [
+      like, String(data.tag ?? '').trim().toLowerCase() || null, String(data.form ?? '').trim() || null,
+      String(data.ref ?? '').trim().toUpperCase() || null, String(data.uploader ?? '').trim() || null,
+      day(data.from), day(data.to), data.versions === 'all',
+    ];
+    const where = `
+          from public.attachments a
+          join public.form_submissions s on s.id = a.submission_id
+          left join public.form_templates f on f.id = s.form_template_id
+          left join public.employees e on e.tenant_id = a.tenant_id and e.employee_id = a.uploaded_by
+         where ($8 or a.superseded_at is null)
+           and ($1::text is null or lower(a.file_name) like $1 or lower(coalesce(a.description, '')) like $1
+                or exists (select 1 from unnest(a.tags) t where t like $1))
+           and ($2::text is null or $2 = any (a.tags))
+           and ($3::text is null or f.name = $3)
+           and ($4::text is null or upper(s.ref_number) like '%' || $4 || '%')
+           and ($5::text is null or a.uploaded_by = $5)
+           and ($6::date is null or (a.created_at at time zone 'Asia/Dhaka')::date >= $6::date)
+           and ($7::date is null or (a.created_at at time zone 'Asia/Dhaka')::date <= $7::date)`;
+    const ctx = await resolveContext();
+    return withContext(ctx, async (client) => {
+      const page = Math.max(0, Math.floor(Number(data.page ?? 0)));
+      const { rows } = await client.query(
+        `select a.id, a.field_name, a.file_name, a.content_type, a.size_bytes, a.uploaded_by,
+                a.created_at::text as created_at, a.description, a.tags, a.version, a.superseded_at::text as superseded_at,
+                a.submission_id, s.ref_number, f.name as form, e.name as uploader_name, s.status as request_status
+         ${where}
+          order by a.created_at desc, a.id
+          limit ${PAGE} offset ${page * PAGE}`, params);
+      const { rows: [n] } = await client.query(`select count(*)::int as n ${where}`, params);
+      const { rows: tags } = await client.query(
+        `select distinct t from public.attachments a, unnest(a.tags) t where a.superseded_at is null order by t limit 200`);
+      const { rows: forms } = await client.query(
+        `select distinct f.name from public.attachments a join public.form_submissions s on s.id = a.submission_id
+           join public.form_templates f on f.id = s.form_template_id order by f.name`);
+      return { rows: rows as DocumentRow[], total: n.n, tags: tags.map((r) => r.t), forms: forms.map((r) => r.name) };
     });
   });

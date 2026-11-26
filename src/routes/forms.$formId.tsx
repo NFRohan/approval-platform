@@ -1,4 +1,5 @@
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
+import { setCrumbLabel } from "@/lib/crumb";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Link2, Loader2, Sparkles, User } from "lucide-react";
@@ -76,6 +77,11 @@ function FillFormPage() {
   const navigate = useNavigate();
 
   const [formName, setFormName] = useState("Form");
+  useEffect(() => {
+    const path = `/forms/${formId}`;
+    if (formName !== "Form") setCrumbLabel(path, formName);
+    return () => setCrumbLabel(path, null);
+  }, [formId, formName]);
   const [fields, setFields] = useState<PlacedField[]>([]);
   const [loading, setLoading] = useState(true);
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -153,7 +159,7 @@ function FillFormPage() {
       setSlabs((slabRows ?? []) as ApprovalSlab[]);
 
       const placed: PlacedField[] = (rows ?? []).map((row) => {
-        const cfg = (row.field_config as { helper?: string; options?: string[]; placeholder?: string; formula?: string; team?: string; ccTeam?: boolean; allowOther?: boolean } | null) ?? {};
+        const cfg = (row.field_config as { helper?: string; options?: string[]; placeholder?: string; formula?: string; team?: string; ccTeam?: boolean; allowOther?: boolean; prefill?: string } | null) ?? {};
         const kind = (row.field_type ?? "text") as FieldKind;
         return {
           id: row.id,
@@ -168,6 +174,7 @@ function FillFormPage() {
           team: cfg.team,
           ccTeam: cfg.ccTeam,
           allowOther: cfg.allowOther,
+          prefill: cfg.prefill,
           // The builder's min, max, lengths and pattern. Never read here,
           // so "Units at most 10" let 12 through.
           validation: (cfg as { validation?: PlacedField["validation"] }).validation,
@@ -175,6 +182,10 @@ function FillFormPage() {
         };
       });
       setFields(placed);
+      // Fields that start filled (Finance's standing NFA notes): a draft's
+      // own answers, loaded separately, take precedence.
+      const prefilled = placed.filter((f) => f.prefill);
+      if (prefilled.length) setValues((prev) => ({ ...Object.fromEntries(prefilled.map((f) => [f.id, f.prefill])), ...prev }));
 
       // Enrich rules with employee names (including possible slab approvers)
       const approverIds = (aRules ?? []).map((r) => r.approver_user_id).filter(Boolean) as string[];

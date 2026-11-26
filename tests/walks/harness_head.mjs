@@ -9,7 +9,10 @@ import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
 const req = createRequire(REPO + 'package.json');
-const { chromium } = req('playwright');
+const { chromium, firefox } = req('playwright');
+// Which browser walks it (SOW §4.4: Chrome, Firefox and Edge):
+// WALK_BROWSER=chromium (default) | firefox | msedge.
+const BROWSER = process.env.WALK_BROWSER || 'chromium';
 
 const local = await startLocalDb();
 process.env.DATABASE_URL = local.url;
@@ -50,12 +53,13 @@ const live = async (sub) => (await rows(
   `select approver_user_id from public.approval_requests where submission_id = $1 and status = 'pending'
     order by step_index, lane, lane_step`, [sub])).map((r) => r.approver_user_id).join(',');
 
-const browser = await chromium.launch();
+const browser = BROWSER === 'firefox' ? await firefox.launch()
+  : await chromium.launch(BROWSER === 'msedge' ? { channel: 'msedge' } : {});
 const ctx = await browser.newContext();
 const page = await ctx.newPage();
 const pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(String(e)));
-page.on('console', (m) => { if (m.type() === 'error' && !/error occurred when fetching the script/.test(m.text())) pageErrors.push('console: ' + m.text().slice(0, 300)); });  // the harness serves pages, not the service worker's own fetch
+page.on('console', (m) => { if (m.type() === 'error' && !/error occurred when fetching the script|downloadable font: download failed/.test(m.text())) pageErrors.push('console: ' + m.text().slice(0, 300)); });  // the harness serves pages, not the service worker's own fetch
 await page.route(BASE + '/**', async (route) => {
   const r = route.request();
   const url = new URL(r.url());

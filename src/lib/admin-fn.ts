@@ -386,3 +386,33 @@ export const decideAdminItem = createServerFn({ method: 'POST' })
       return refusal(err);
     }
   });
+
+// ---------------------------------------------------------------------
+// Two-step sign-in policy: optional, required to administer, or required
+// of everybody (public.set_mfa_policy).
+// ---------------------------------------------------------------------
+export type MfaPolicy = 'optional' | 'admins' | 'everyone';
+
+export const getMfaPolicy = createServerFn({ method: 'GET' })
+  .handler(async (): Promise<Result<{ policy: MfaPolicy }>> => {
+    try {
+      const { rows } = await run((c) => c.query(
+        'select require_admin_mfa, require_mfa_all from public.tenants where id = app.current_tenant()'));
+      const r = rows[0] ?? {};
+      return { ok: true, policy: r.require_mfa_all ? 'everyone' : r.require_admin_mfa ? 'admins' : 'optional' };
+    } catch (err) {
+      return refusal(err);
+    }
+  });
+
+export const setMfaPolicy = createServerFn({ method: 'POST' })
+  .inputValidator((input: { policy: MfaPolicy }) => input)
+  .handler(async ({ data }): Promise<Result> => {
+    if (!['optional', 'admins', 'everyone'].includes(data.policy)) return { ok: false, error: 'Not one of the choices.' };
+    try {
+      await run((c) => c.query('select public.set_mfa_policy($1, $2)', [data.policy !== 'optional', data.policy === 'everyone']));
+      return { ok: true };
+    } catch (err) {
+      return refusal(err);
+    }
+  });

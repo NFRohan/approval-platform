@@ -361,9 +361,17 @@ begin
   if app.has_permission('users.manage') then
     raise exception 'FAIL: an administrator administered without two-step sign-in where it is required';
   end if;
-  if not app.has_permission('forms.build') then
+  -- Building forms changes the system for everybody, so it needs the
+  -- second step too (SOW §2.1 r10); a task-settings role does not.
+  if app.has_permission('forms.build') then
+    raise exception 'FAIL: an administrator built forms without two-step sign-in where it is required';
+  end if;
+  perform pg_temp.as_emp('SET');
+  perform set_config('app.mfa', 'false', true);
+  if not app.has_permission('forms.settings') then
     raise exception 'FAIL: the two-step rule took away a permission that does not administer anybody';
   end if;
+  perform pg_temp.as_emp('ADM');
   perform set_config('app.mfa', 'true', true);
   if not app.has_permission('users.manage') then
     raise exception 'FAIL: two-step sign-in did not restore the administrator''s permission';

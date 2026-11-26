@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { signIn, changePassword, verifySignInCode } from "@/lib/auth-fn";
+import { signIn, changePassword, verifySignInCode, ssoAvailable } from "@/lib/auth-fn";
 import { PasswordRules } from "@/components/PasswordRules";
 import { passwordProblem } from "@/lib/password-policy";
 
@@ -10,8 +10,11 @@ export const Route = createFileRoute("/login")({
   // so the server renders the same notice the browser does.
   // Kept as 1, which is how the idle watcher writes it: anything else is
   // rewritten by the router into a redirect.
-  validateSearch: (search: Record<string, unknown>): { idle?: 1 } => ({
+  // ?sso=…: how single sign-on went; ?code=1: it needs the account's own code.
+  validateSearch: (search: Record<string, unknown>): { idle?: 1; sso?: string; code?: 1 } => ({
     idle: search.idle ? 1 : undefined,
+    sso: typeof search.sso === "string" ? search.sso : undefined,
+    code: search.code ? 1 : undefined,
   }),
   head: () => ({ meta: [{ title: "Sign in · Admin Services Portal" }] }),
   component: LoginPage,
@@ -47,7 +50,17 @@ function LoginPage() {
   // The password was right and the account uses two-step sign-in.
   const [needCode, setNeedCode] = useState(false);
   const [code, setCode] = useState("");
-  const idle = Route.useSearch().idle === 1;
+  const search = Route.useSearch();
+  const idle = search.idle === 1;
+  const [sso, setSso] = useState<{ label: string } | null>(null);
+  useEffect(() => { void ssoAvailable().then(setSso).catch(() => setSso(null)); }, []);
+  useEffect(() => { if (search.code === 1) setNeedCode(true); }, [search.code]);
+  const SSO_PROBLEM: Record<string, string> = {
+    failed: "Single sign-on did not complete. Try again, or sign in with your username and password.",
+    "no-account": "Your organisation account has no account here yet. An administrator registers it, and a second one approves it.",
+    refused: "Your account here is not active, or is locked. An administrator can tell you why.",
+    unavailable: "Single sign-on is not reachable right now. Sign in with your username and password.",
+  };
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -244,7 +257,19 @@ function LoginPage() {
                 />
               </label>
               {error && <Problem>{error}</Problem>}
+              {!error && search.sso && SSO_PROBLEM[search.sso] && <Problem>{SSO_PROBLEM[search.sso]}</Problem>}
               <Submit busy={busy} label="Sign in" />
+              {sso && (
+                <>
+                  <div className="flex items-center gap-2" style={{ fontSize: 11.5, color: "#A1A1AA" }}>
+                    <span style={{ flex: 1, height: 1, background: "#E4E4E7" }} /> or <span style={{ flex: 1, height: 1, background: "#E4E4E7" }} />
+                  </div>
+                  <a href="/auth/oidc/start" className="rounded-md text-center font-medium" data-testid="sso"
+                     style={{ padding: "10px 14px", fontSize: 14, border: "1px solid #E4E4E7", color: "#18181B", background: "#fff", textDecoration: "none" }}>
+                    Sign in with {sso.label}
+                  </a>
+                </>
+              )}
             </form>
           )}
         </div>

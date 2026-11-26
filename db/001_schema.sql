@@ -1230,6 +1230,8 @@ alter table public.employees add column if not exists left_on date;
 -- ---------------------------------------------------------------------
 alter table public.tenants add column if not exists persona_switching boolean not null default true;
 alter table public.tenants add column if not exists require_admin_mfa boolean not null default false;
+-- require_mfa_all: two-step sign-in of everybody, not only to administer.
+alter table public.tenants add column if not exists require_mfa_all boolean not null default false;
 alter table public.tenants add column if not exists default_persona   text;
 
 -- ---------------------------------------------------------------------

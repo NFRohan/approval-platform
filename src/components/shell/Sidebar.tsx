@@ -25,7 +25,7 @@ import {
   Mail,
   Megaphone as CampaignIcon,
   type LucideIcon,
- Plug, ScrollText, CalendarDays, ListChecks, ClipboardList } from "lucide-react";
+ Plug, ScrollText, CalendarDays, ListChecks, ClipboardList, FolderSearch } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useCurrentUser, type CurrentUser } from "@/contexts/CurrentUserContext";
 import { db } from "@/lib/db";
@@ -157,6 +157,7 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
   }
   // Trackers are for everybody: the main one, and the ones kept for them.
   insights.push({ id: "trackers", label: "Trackers", Icon: ClipboardList, to: "/trackers" });
+  insights.push({ id: "documents", label: "Documents", Icon: FolderSearch, to: "/documents" });
   if (insights.length) sections = [...sections, { section: "Insights", items: insights }];
 
   const admin: Item[] = [];
@@ -306,6 +307,9 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
   ];
 }
 
+/** The list a request's page was last reached from, for the sidebar's highlight. */
+let lastList: "/approvals" | "/submissions" = "/submissions";
+
 export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultCollapsed?: boolean; mobile?: boolean } = {}) {
   const [hover, setHover] = useState<string | null>(null);
   const [collapsedState, setCollapsed] = useState(defaultCollapsed);
@@ -408,12 +412,17 @@ export function Sidebar({ defaultCollapsed = false, mobile = false }: { defaultC
 
   const nav = buildNav(currentUser, { pendingCount: pendingCount + adminCount, isApprover: isApprover || adminCount > 0, campaignDepartments });
 
+  if (pathname === "/approvals" || pathname.startsWith("/approvals/")) lastList = "/approvals";
+  else if (pathname.startsWith("/submissions") || pathname === "/") lastList = "/submissions";
+  const cameFrom = lastList;
   const isActive = (to?: string) => {
     if (!to) return false;
     if (to === "/") return pathname === "/";
-    if (to === "/approvals") return pathname === "/approvals";
-    // A request's own page is one of your submissions.
-    if (to === "/submissions") return pathname.startsWith("/submissions") || pathname.startsWith("/status/");
+    // A request's own page belongs to the list it was opened from: an
+    // approver who opened it from the queue is still in Approvals.
+    const onStatus = pathname.startsWith("/status/") || pathname.startsWith("/certificate/");
+    if (to === "/approvals") return pathname === "/approvals" || (onStatus && cameFrom === "/approvals");
+    if (to === "/submissions") return pathname.startsWith("/submissions") || (onStatus && cameFrom !== "/approvals");
     if (to.includes("$")) {
       const base = to.split("/$")[0];
       return pathname.startsWith(base);

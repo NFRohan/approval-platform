@@ -9,7 +9,7 @@ import { Button, Card, Field, NoPermission, Page, inputStyle } from "@/component
 import { ColumnPicker, FilterBar, ResultTable } from "@/components/reports/ReportParts";
 
 export const Route = createFileRoute("/reports/new")({
-  head: () => ({ meta: [{ title: "New report · Admin Services Portal" }] }),
+  head: () => ({ meta: [{ title: "New Report · Admin Services Portal" }] }),
   component: NewReport,
 });
 
@@ -41,14 +41,14 @@ function NewReport() {
     });
   }, [dataset, columns, filters]);
 
-  if (!can("reports.manage")) return <Page title="New report"><NoPermission need="reports.manage" /></Page>;
+  if (!can("reports.manage")) return <Page title="New Report"><NoPermission need="reports.manage" /></Page>;
 
   return (
     <div className="mx-auto" style={{ maxWidth: 1280, padding: "28px 28px 56px" }}>
       <Link to="/reports" className="inline-flex items-center gap-1" style={{ fontSize: 12.5, color: "#71717A", textDecoration: "none", marginBottom: 10 }}>
         <ArrowLeft size={13} /> Reports
       </Link>
-      <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: "0 0 16px" }}>New report</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: "0 0 16px" }}>New Report</h1>
 
       <Card title="1. What it is about">
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>

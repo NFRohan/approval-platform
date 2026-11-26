@@ -287,6 +287,45 @@
   [data-testid="tracker-filters"] > * { width: 100% !important; }
   [data-testid="tracker-list"] { flex-direction: row; overflow-x: auto; }
   [data-testid="tracker-list"] > button { flex: 0 0 auto; }
+  /* A row that scrolls sideways fades at its edge, so it reads as more to see. */
+  .tabs-scroll, [data-testid="tracker-list"] { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); }
+}
+
+/* =====================================================================
+   Native controls, in the app's own look.
+
+   A select the browser draws itself is grey, bevelled and different on
+   every machine; a raw checkbox is the operating system's blue. Every
+   select gets the app's border, radius and chevron, and every checkbox
+   and radio the brand colour. :where() keeps these at zero specificity,
+   so a control styled on purpose keeps its own look.
+   ===================================================================== */
+:where(select:not([multiple])) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  color: #18181b;
+  padding: 6px 10px;
+}
+select:not([multiple]):not([style*="appearance"]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 12px 12px !important;
+  padding-right: 30px !important;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+select:not([multiple]):disabled { cursor: default; opacity: 0.6; }
+select:focus-visible { outline: 2px solid var(--color-brand-500, #4f46e5); outline-offset: 1px; }
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--color-brand-500, #4f46e5);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
 }
 
 /* =====================================================================
@@ -322,3 +361,4 @@
   h1, h2, h3 { break-after: avoid; }
   thead { display: table-header-group; }
 }
+.approval-secondary:hover { background: #f4f4f5 !important; color: #18181b !important; }

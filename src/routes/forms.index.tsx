@@ -8,7 +8,7 @@ import { fmtDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/forms/")({
   head: () => ({
-    meta: [{ title: "Forms · Admin Services Portal" }],
+    meta: [{ title: "Available Forms · Admin Services Portal" }],
   }),
   component: FormsPage,
 });
@@ -102,7 +102,7 @@ function FormsPage() {
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Forms</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Available Forms</h1>
         {isAdmin && (
           <Link
             to="/builder"
@@ -117,11 +117,11 @@ function FormsPage() {
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <input
           aria-label="Find a form"
-          placeholder="Find a form by name or keyword — e.g. capex, leave, campaign"
+          placeholder="Find a form: capex, leave, campaign…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           className="rounded-md bg-white"
-          style={{ padding: "8px 11px", fontSize: 13, border: "1px solid #E4E4E7", flex: 1, minWidth: 260 }}
+          style={{ padding: "8px 11px", fontSize: 13, border: "1px solid #E4E4E7", flex: 1, minWidth: 220 }}
         />
         <select aria-label="Classification" value={cls} onChange={(e) => setCls(e.target.value)}
           className="rounded-md bg-white" style={{ padding: "8px 10px", fontSize: 13, border: "1px solid #E4E4E7" }}>
@@ -134,14 +134,14 @@ function FormsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b mb-6 overflow-x-auto scroll-thin" style={{ borderColor: "#E4E4E7", opacity: term ? 0.4 : 1 }}>
+      <div className="flex gap-1 border-b mb-6 overflow-x-auto scroll-thin tabs-scroll" style={{ borderColor: "#E4E4E7", opacity: term ? 0.4 : 1 }}>
         {TABS.map((t) => {
           const active = t === tab;
           return (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className="px-4 py-2.5 text-sm font-medium transition-colors"
+              className="px-4 py-2.5 text-sm font-medium transition-colors shrink-0 whitespace-nowrap"
               style={{
                 color: active ? "var(--color-brand-500)" : "#71717A",
                 borderBottom: `2px solid ${active ? "var(--color-brand-500)" : "transparent"}`,

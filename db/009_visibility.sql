@@ -226,13 +226,18 @@ begin
     insert into public.roles (tenant_id, name, description, permissions, status, created_by, approved_by)
     values (p_tenant, 'ABC declarations oversight',
             'Sees every gift, hospitality and donation declaration, and no other requests',
-            '{}', 'active', 'EMP-0445', 'EMP-0700')
+            '{}', 'active', 'EMP-0445', 'EMP-0520')
     returning id into v_role;
   end if;
   insert into public.role_groups (tenant_id, role_id, department, assigned_by)
   values (p_tenant, v_role, 'Compliance', 'EMP-0445') on conflict do nothing;
   insert into public.form_overseers (tenant_id, role_id, form_template_id, assigned_by)
   values (p_tenant, v_role, v_form, 'EMP-0445') on conflict do nothing;
+  -- And the donations form, the ABC portal's second.
+  insert into public.form_overseers (tenant_id, role_id, form_template_id, assigned_by)
+  select p_tenant, v_role, t.id, 'EMP-0445' from public.form_templates t
+   where t.tenant_id = p_tenant and t.name = 'Political & Charitable Donation'
+  on conflict do nothing;
 end $$;
 
 grant execute on function app.my_overseen_forms() to app_api;

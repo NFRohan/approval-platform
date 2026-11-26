@@ -81,7 +81,7 @@ function AnalyticsPage() {
     row("Headline", "Rejected", { count: K.rejected });
     row("Headline", "Average cycle time (days)", { avg_days: K.avgCycle, previous: K.avgCyclePrev, detail: K.medianCycle == null ? null : `median ${K.medianCycle} days` });
     row("Headline", "Approvals on time (%)", { on_time: K.onTimePct, previous: K.onTimePctPrev });
-    row("Headline", "Open requests", { count: K.open, detail: `${K.pendingNow} steps waiting now` });
+    row("Headline", "Raised and still open", { count: K.open, detail: `${K.pendingNow} steps waiting now` });
     row("Headline", "Overdue now", { count: K.overdueNow, detail: "approval steps past their deadline" });
     for (const d of data.byDepartment) row("Approval time by department", d.department, { count: d.raised, avg_days: d.avgCycle, detail: "raised; average days from raising to decision" });
     for (const f of data.byForm) row("Approval time by form", f.form, { count: f.raised, completed: f.completed, avg_days: f.avgCycle });
@@ -167,7 +167,7 @@ function AnalyticsPage() {
         <Kpi label="Average cycle time" value={fmt(k?.avgCycle, " days")} sub={k?.medianCycle != null ? `median ${k.medianCycle} days` : undefined}
           delta={delta(k?.avgCycle, k?.avgCyclePrev)} lowerIsBetter span={span} />
         <Kpi label="Approvals on time" value={fmt(k?.onTimePct, "%")} delta={pts(k?.onTimePct, k?.onTimePctPrev)} span={span} />
-        <Kpi label="Open requests" value={fmt(k?.open)} sub={k ? `${k.pendingNow} steps waiting now` : undefined} />
+        <Kpi label="Raised and still open" value={fmt(k?.open)} sub={k ? `of those raised in the period; ${k.pendingNow} steps waiting on someone now` : undefined} />
         <Kpi label="Overdue now" value={fmt(k?.overdueNow)} sub="approval steps past their deadline" warn={!!k && k.overdueNow > 0} />
       </div>
 
@@ -197,6 +197,21 @@ function AnalyticsPage() {
             <ChartCard title="Outcomes" note="Requests raised in the period, by where they are now"
               table={<SimpleTable head={["Status", "Requests"]} rows={data.status.map((s) => [label(s.status), s.count])} />}>
               <RankedBars rows={data.status.map((s) => ({ name: label(s.status), value: s.count }))} height={data.status.length * 34 + 8} />
+              {(() => {
+                const total = data.status.reduce((a, s) => a + s.count, 0);
+                const share = (st: string[]) => total ? Math.round(100 * data.status.filter((s) => st.includes(s.status)).reduce((a, s) => a + s.count, 0) / total) : 0;
+                return total > 0 && (
+                  <div className="grid grid-cols-3 gap-2" style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #F4F4F5" }} data-testid="outcome-shares">
+                    {[["Completed", share(["completed"])], ["Rejected", share(["rejected"])], ["Still open", share(["submitted", "in_progress", "on_hold"])]].map(([l, v]) => (
+                      <div key={l as string}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums" }}>{v}%</div>
+                        <div style={{ fontSize: 11.5, color: MUTED }}>{l}</div>
+                      </div>
+                    ))}
+                    <div className="col-span-3" style={{ fontSize: 11.5, color: MUTED }}>of {total} raised in the period</div>
+                  </div>
+                );
+              })()}
             </ChartCard>
           </div>
 

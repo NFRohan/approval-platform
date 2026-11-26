@@ -45,6 +45,8 @@ type Props = {
    * asked at the same time, by role, and on conditions.
    */
   manualSlot?: React.ReactNode;
+  /** Below the lists, inside the same scrolling column (the notifications step's "When each is told"). */
+  footer?: React.ReactNode;
 };
 
 
@@ -58,6 +60,7 @@ export function PeopleStep({
   formTemplateId,
   manualSlot,
   manualRoles,
+  footer,
 }: Props) {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
@@ -214,14 +217,22 @@ export function PeopleStep({
                   <select
                     value={m.user_id}
                     onChange={(e) => {
-                      const v = e.target.value;
+                      let v = e.target.value;
+                      // An outside or distribution address is typed in.
+                      if (v === "role:team:email:") {
+                        const addr = window.prompt("The email address to tell (a distribution list, or somebody outside):")?.trim().toLowerCase();
+                        if (!addr || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) return;
+                        v = `role:team:email:${addr}`;
+                        updateRow(m.id, { user_id: v, name: `Email ${addr}`, designation: "An address, told by email" });
+                        return;
+                      }
                       const role = manualRoles?.find((r) => `role:${r.value}` === v);
                       const emp = employees.find((x) => x.employee_id === v);
                       updateRow(m.id, { user_id: v, name: role?.label ?? emp?.name ?? "", designation: role ? "A role, found when it happens" : emp?.designation ?? "" });
                     }}
                     aria-label="Who"
                     className="flex-1 rounded-md bg-white"
-                    style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", color: "#18181B", outline: "none" }}
+                    style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", color: "#18181B", outline: "none", minWidth: 0, width: "100%", textOverflow: "ellipsis" }}
                   >
                     {manualRoles && manualRoles.length > 0 ? (
                       <>
@@ -269,6 +280,7 @@ export function PeopleStep({
           )}
         </section>
         )}
+        {footer}
       </div>
     </div>
   );

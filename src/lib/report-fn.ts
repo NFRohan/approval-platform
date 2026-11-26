@@ -33,17 +33,21 @@ async function run<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
 }
 
 
+export type Schedule = 'none' | 'daily' | 'weekly' | 'monthly' | 'quarterly';
+export const SCHEDULES: Schedule[] = ['none', 'daily', 'weekly', 'monthly', 'quarterly'];
+
 export type ReportTemplate = {
   id: string; name: string; description: string | null; dataset: Dataset; columns: string[]; filters: ReportFilters;
   standard: boolean; pending_columns: string[] | null; change_note: string | null; change_requested_by: string | null;
-  change_requested_by_name: string | null; schedule: 'none' | 'weekly' | 'monthly'; recipients: string[];
+  change_requested_by_name: string | null; schedule: Schedule; recipients: string[];
   format: 'xlsx' | 'pdf' | 'csv'; last_sent_at: string | null; updated_at: string;
+  schedule_day: number | null; external_recipients: string[];
 };
 
 const TEMPLATE_SQL = `
   select rt.id, rt.name, rt.description, rt.dataset, rt.columns, rt.filters, rt.standard, rt.pending_columns,
          rt.change_note, rt.change_requested_by, e.name as change_requested_by_name, rt.schedule, rt.recipients,
-         rt.format, rt.last_sent_at, rt.updated_at
+         rt.format, rt.last_sent_at, rt.updated_at, rt.schedule_day, rt.external_recipients
     from public.report_templates rt
     left join public.employees e on e.employee_id = rt.change_requested_by and e.tenant_id = rt.tenant_id`;
 
@@ -172,13 +176,14 @@ export const decideReportChange = createServerFn({ method: 'POST' })
   });
 
 export const setReportSchedule = createServerFn({ method: 'POST' })
-  .inputValidator((input: { id: string; schedule: 'none' | 'weekly' | 'monthly'; recipients: string[]; format: 'xlsx' | 'pdf' | 'csv' }) => input)
+  .inputValidator((input: { id: string; schedule: Schedule; recipients: string[]; format: 'xlsx' | 'pdf' | 'csv'; day?: number | null; external?: string[] }) => input)
   .handler(async ({ data }): Promise<Result> => {
     try {
-      if (!['none', 'weekly', 'monthly'].includes(data.schedule) || !['xlsx', 'pdf', 'csv'].includes(data.format)) {
+      if (!SCHEDULES.includes(data.schedule) || !['xlsx', 'pdf', 'csv'].includes(data.format)) {
         return { ok: false, error: 'That schedule is not one of the choices.' };
       }
-      await run((c) => c.query('select public.set_report_schedule($1, $2, $3, $4)', [data.id, data.schedule, data.recipients ?? [], data.format]));
+      await run((c) => c.query('select public.set_report_schedule($1, $2, $3, $4, $5, $6)',
+        [data.id, data.schedule, data.recipients ?? [], data.format, data.day ?? null, data.external ?? []]));
       return { ok: true };
     } catch (err) {
       return refusal(err);
@@ -199,3 +204,16 @@ export const emailReport = createServerFn({ method: 'POST' })
       return refusal(err);
     }
   });
+
+/** "Every working day", "Weekly on Sunday", "Monthly on the 5th", in words. */
+export function scheduleWords(schedule: Schedule, day: number | null | undefined): string {
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const nth = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'}`;
+  switch (schedule) {
+    case 'daily': return 'Every working day';
+    case 'weekly': return `Weekly on ${WEEKDAYS[(day ?? 7) - 1]}`;
+    case 'monthly': return `Monthly on the ${nth(day ?? 1)}`;
+    case 'quarterly': return `Quarterly on the ${nth(day ?? 1)}`;
+    default: return 'Not scheduled';
+  }
+}

@@ -401,6 +401,7 @@ export const RPCS: Record<string, readonly string[]> = {
   save_checklist:             ['p_form', 'p_track', 'p_items'],
   forward_candidates:         ['p_request'],
   tracker_list:               ['p_filters'],
+  my_completed_this_month:    [],
   save_tracker:               ['p_id', 'p_name', 'p_description', 'p_shared_with', 'p_filters'],
   delete_tracker:             ['p_id'],
   set_tracker_reminder:       ['p_submission', 'p_on', 'p_note'],

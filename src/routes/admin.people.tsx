@@ -12,7 +12,7 @@ import { Button, Card, NoPermission, Notice, Page, Pill, fmtWhen } from "@/compo
 import { Divisions } from "@/components/admin/Divisions";
 
 export const Route = createFileRoute("/admin/people")({
-  head: () => ({ meta: [{ title: "People · Admin Services Portal" }] }),
+  head: () => ({ meta: [{ title: "People & Directory · Admin Services Portal" }] }),
   component: PeoplePage,
 });
 
@@ -48,12 +48,12 @@ function PeoplePage() {
     void directoryStatus().then(setDir).catch(() => setDir({ configured: false, host: null }));
   }, [load, currentUser.employee_id]);
 
-  if (!manage && !can("audit.view")) return <Page title="People"><NoPermission need="org.manage" /></Page>;
+  if (!manage && !can("audit.view")) return <Page title="People & Directory"><NoPermission need="org.manage" /></Page>;
 
   return (
     <Page
       wide
-      title="People"
+      title="People & Directory"
       intro="The org chart — who works here, their department, title and line manager — comes from the HR master file or the directory. Approval routes read it: a requester's own manager, their department's head, HR business partner and CXO."
     >
       <Divisions canManage={manage} />

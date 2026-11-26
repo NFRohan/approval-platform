@@ -74,7 +74,12 @@ returns text[]
 language sql
 immutable
 as $$
-  select array['users.manage', 'users.approve', 'roles.manage', 'roles.approve', 'org.manage']
+  -- Administering people, roles and the org chart; and, since 27 Nov,
+  -- what changes how the system behaves for everyone: forms and routes,
+  -- integrations, records and retention, notification settings (SOW
+  -- §2.1 r10; §6 checklist).
+  select array['users.manage', 'users.approve', 'roles.manage', 'roles.approve', 'org.manage',
+               'forms.build', 'integrations.manage', 'records.manage', 'notifications.manage']
 $$;
 
 -- Does whoever is acting hold this permission?
@@ -126,10 +131,10 @@ as $$
     -- Where the organisation requires it, administering accounts, roles
     -- or the org chart needs a session that passed two-step sign-in.
     -- The server says so in app.mfa; holding the role is not enough.
-    when p_permission = any (app.admin_permissions())
-     and coalesce(current_setting('app.mfa', true), '') <> 'true'
+    when coalesce(current_setting('app.mfa', true), '') <> 'true'
      and exists (select 1 from public.tenants t
-                  where t.id = app.current_tenant() and t.require_admin_mfa) then
+                  where t.id = app.current_tenant()
+                    and (t.require_mfa_all or (t.require_admin_mfa and p_permission = any (app.admin_permissions())))) then
       false
     else exists (
       select 1
@@ -982,7 +987,34 @@ begin
 end $ds$;
 
 grant execute on all functions in schema app to app_api;
+-- Two-step sign-in: required to administer, or required of everybody.
+-- Changing it is itself administration, so it is audited.
+create or replace function public.set_mfa_policy(p_admins boolean, p_everyone boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+begin
+  perform app.require_permission('users.manage');
+  -- Requiring it of others is for somebody who has it: otherwise the next
+  -- request would take away the right to undo it.
+  if (coalesce(p_admins, false) or coalesce(p_everyone, false))
+     and coalesce(current_setting('app.mfa', true), '') <> 'true' then
+    raise exception 'sign in with two-step verification yourself before requiring it of others';
+  end if;
+  update public.tenants
+     set require_admin_mfa = coalesce(p_admins, false) or coalesce(p_everyone, false),
+         require_mfa_all = coalesce(p_everyone, false)
+   where id = app.current_tenant();
+  perform app.audit('mfa_policy_changed', 'tenant', app.current_tenant(),
+    case when p_everyone then 'Two-step sign-in required of everybody'
+         when p_admins then 'Two-step sign-in required to administer'
+         else 'Two-step sign-in optional' end);
+end $$;
+
 grant execute on function
+  public.set_mfa_policy(boolean, boolean),
   public.create_account(text, text, text),
   public.decide_account(uuid, boolean, text),
   public.propose_profile(uuid, text, text),

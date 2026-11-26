@@ -427,6 +427,7 @@ begin
 end $$;
 do $$ begin raise notice 'pass: a watcher is told on the events they name, and only when the answers meet their condition'; end $$;
 
+
 -- The approver's line manager as a watcher (SOW 2.1 "including approvers
 -- supervisor"): on raising, the manager of whoever it waits on first; on
 -- approval, the managers of whoever approved.
@@ -781,6 +782,65 @@ do $$ begin raise notice 'pass: a designer limited to Finance designs Finance''s
 -- Tidy: the evaluation goes, and everything it held with it.
 -- Removing an organisation is platform staff's to do (row security on tenants).
 select set_config('app.is_staff', 'true', false);
+reset role;
+-- A document added or revised (ABC: notification per document): whoever
+-- watches the form for documents is told, the uploader is not, and
+-- nothing is said about a draft.
+do $$
+declare v_sub uuid; v_form uuid; v_draft uuid;
+begin
+  select id into v_form from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Gift & Hospitality Declaration';
+  insert into public.notification_rules (tenant_id, form_template_id, notifyee_user_id, label, events)
+  values (current_setting('t.tpl')::uuid, v_form, 'EMP-0832', 'Compliance documents', array['document_added', 'document_revised']);
+  perform pg_temp.as_emp('EMP-2847');
+  v_sub := pg_temp.raise_request('Gift & Hospitality Declaration', 'EMP-2847',
+    '{"Declaration type": "Gift received", "Counterparty": "Vendor", "Value": "5000"}');
+  perform app.log_event(null, 'form_submission', v_sub, 'EMP-2847', 'document_added', 'Supporting document: invoice.pdf (version 1)');
+  perform app.log_event(null, 'form_submission', v_sub, 'EMP-2847', 'document_revised', 'Supporting document: invoice.pdf (version 2)');
+  if (select count(*) from public.notifications where entity_id = v_sub and recipient_id = 'EMP-0832' and kind = 'watch.document') <> 2 then
+    raise exception 'FAIL: the document watcher was not told of the document and its revision';
+  end if;
+  if exists (select 1 from public.notifications where entity_id = v_sub and recipient_id = 'EMP-2847' and kind = 'watch.document') then
+    raise exception 'FAIL: the uploader was told of their own document';
+  end if;
+  insert into public.form_submissions (tenant_id, form_template_id, submitted_by, status)
+  values (current_setting('t.tpl')::uuid, v_form, 'EMP-2847', 'draft') returning id into v_draft;
+  perform app.log_event(null, 'form_submission', v_draft, 'EMP-2847', 'document_added', 'Supporting document: draft.pdf (version 1)');
+  if exists (select 1 from public.notifications where entity_id = v_draft and kind = 'watch.document') then
+    raise exception 'FAIL: a watcher was told of a document on a draft';
+  end if;
+  raise notice 'pass: a document added or revised reaches whoever watches the form for documents; not the uploader, not on a draft';
+end $$;
+
+reset role;
+-- A team as a watcher (SOW §3.3 1.3): a department, a role's holders, an
+-- outside address.
+do $$
+declare v_form uuid; v_sub uuid; v_n int; v_want int;
+begin
+  select id into v_form from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Leave Application';
+  insert into public.notification_rules (tenant_id, form_template_id, label, events) values
+    (current_setting('t.tpl')::uuid, v_form, 'team:dept:Compliance', array['raised']),
+    (current_setting('t.tpl')::uuid, v_form, 'team:role:Security officer', array['raised']),
+    (current_setting('t.tpl')::uuid, v_form, 'team:email:hr-desk@example.com', array['raised']);
+  perform pg_temp.as_emp('EMP-2847');
+  v_sub := pg_temp.raise_request('Leave Application', 'EMP-2847', '{}');
+  select count(*) into v_want from public.employees where tenant_id = current_setting('t.tpl')::uuid and department = 'Compliance' and active;
+  select count(distinct recipient_id) into v_n from public.notifications n
+   where n.entity_id = v_sub and n.kind = 'submission.raised'
+     and n.recipient_id in (select employee_id from public.employees where tenant_id = current_setting('t.tpl')::uuid and department = 'Compliance');
+  if v_want = 0 or v_n <> v_want then raise exception 'FAIL: the department was not told, % of %', v_n, v_want; end if;
+  if not exists (select 1 from public.notifications n where n.entity_id = v_sub and n.kind = 'submission.raised'
+                   and n.recipient_id in (select er.employee_id from public.employee_roles er join public.roles r on r.id = er.role_id
+                                           where r.tenant_id = current_setting('t.tpl')::uuid and r.name = 'Security officer')) then
+    raise exception 'FAIL: the role''s holders were not told';
+  end if;
+  if not exists (select 1 from public.email_outbox where entity_id = v_sub and to_address = 'hr-desk@example.com' and recipient_id is null) then
+    raise exception 'FAIL: the outside address was not emailed';
+  end if;
+  raise notice 'pass: a department, a role''s holders and an outside address can each watch a form';
+end $$;
+
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
 select set_config('app.is_staff', 'false', false);
 

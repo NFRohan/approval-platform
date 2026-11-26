@@ -49,7 +49,9 @@ export const listEvaluations = createServerFn({ method: 'GET' })
                 u.username, u.last_login_at,
                 app.tenant_status(t.id) as state
            from public.tenants t
-           left join public.app_users u on u.tenant_id = t.id
+           -- The evaluation's own login: the first account made for it.
+           left join lateral (select username, last_login_at from public.app_users x
+                               where x.tenant_id = t.id order by x.created_at, x.id limit 1) u on true
           where t.kind = 'demo'
           order by t.created_at desc`);
       return rows.map((r) => ({

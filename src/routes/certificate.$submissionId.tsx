@@ -18,6 +18,9 @@ type ApprovalRow = {
   approver_user_id: string | null;
   status: string | null;
   acted_at: string | null;
+  stage_label?: string | null;
+  lane_label?: string | null;
+  signature?: string | null;
 };
 
 type EmployeeRow = {
@@ -111,7 +114,7 @@ function CertificatePage() {
 
     const { data: appr } = await db
       .from("approval_requests")
-      .select("id, approver_user_id, status, acted_at")
+      .select("id, approver_user_id, status, acted_at, stage_label, lane_label, signature")
       .eq("submission_id", submissionId)
       .eq("status", "approved")
       .order("acted_at", { ascending: true });
@@ -305,6 +308,32 @@ function CertificatePage() {
             </div>
           )}
 
+          {/* Signed and sealed: whoever gave the final settlement, as the
+              organisation's authorised signatory, and its seal. */}
+          {approvals.length > 0 && (() => {
+            const final = [...approvals].reverse().find((a) => /final settlement/i.test(`${a.stage_label ?? ""} ${a.lane_label ?? ""}`))
+              ?? approvals[approvals.length - 1];
+            const who = final.approver_user_id ? employees[final.approver_user_id] : undefined;
+            const issued = fmtDate(final.acted_at ?? new Date().toISOString());
+            return (
+              <div className="flex items-end justify-between gap-6" style={{ margin: "28px 40px 0" }} data-testid="certificate-signatory">
+                <div style={{ minWidth: 220 }}>
+                  <div style={{ height: 56, display: "flex", alignItems: "flex-end" }}>
+                    {final.signature
+                      ? <img src={final.signature} alt={`Signature of ${who?.name ?? "the signatory"}`} style={{ maxHeight: 56, maxWidth: 220 }} />
+                      : <span style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive", fontSize: 28, color: "#1E1B4B" }}>{who?.name ?? ""}</span>}
+                  </div>
+                  <div style={{ borderTop: "1px solid #18181B", marginTop: 4, paddingTop: 6, width: 240 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>{who?.name ?? final.approver_user_id}</div>
+                    <div style={{ fontSize: 11.5, color: "#52525B" }}>{who?.designation ?? "Authorised signatory"}{org ? `, ${org}` : ""}</div>
+                    <div style={{ fontSize: 11, color: "#71717A", marginTop: 2 }}>Authorised signatory · {issued}</div>
+                  </div>
+                </div>
+                <Seal org={org || "Approval Management"} date={issued} />
+              </div>
+            );
+          })()}
+
           {/* QR + footer */}
           <div
             style={{
@@ -341,5 +370,24 @@ function CertificatePage() {
         }
       `}</style>
     </>
+  );
+}
+
+/** The organisation's seal: its name around the rim, the clearance and its date inside. */
+function Seal({ org, date }: { org: string; date: string }) {
+  const ring = `${org.toUpperCase()} • CLEARANCE • `;
+  return (
+    <svg width="118" height="118" viewBox="0 0 120 120" role="img" aria-label={`Seal of ${org}`} style={{ flexShrink: 0, transform: "rotate(-8deg)", opacity: 0.9 }}>
+      <defs>
+        <path id="seal-ring" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0" />
+      </defs>
+      <circle cx="60" cy="60" r="57" fill="none" stroke="#4338CA" strokeWidth="2.5" />
+      <circle cx="60" cy="60" r="35" fill="none" stroke="#4338CA" strokeWidth="1.2" />
+      <text fontSize="9.5" fontWeight="700" letterSpacing="1.4" fill="#4338CA">
+        <textPath href="#seal-ring" textLength="272" lengthAdjust="spacingAndGlyphs">{ring.repeat(Math.max(1, Math.ceil(28 / ring.length)))}</textPath>
+      </text>
+      <text x="60" y="57" textAnchor="middle" fontSize="11" fontWeight="800" fill="#4338CA" letterSpacing="1">CLEARED</text>
+      <text x="60" y="71" textAnchor="middle" fontSize="8.5" fill="#4338CA">{date}</text>
+    </svg>
   );
 }

@@ -225,6 +225,51 @@ begin
 end $$;
 
 -- =====================================================================
+-- 3c. Alerts to administrators; two-step sign-in policy
+-- =====================================================================
+do $$
+declare v_t uuid := current_setting('t.tpl')::uuid; v_n int;
+begin
+  -- A failed sync tells whoever keeps the org chart, once in its window.
+  insert into public.directory_syncs (tenant_id, source, result, error) values (v_t, 'ldap', '{}', 'could not reach ldap.example.com');
+  insert into public.directory_syncs (tenant_id, source, result, error) values (v_t, 'ldap', '{}', 'could not reach ldap.example.com');
+  select count(*) into v_n from public.notifications where tenant_id = v_t and kind = 'admin.alert' and title = 'The directory sync failed';
+  if v_n = 0 then raise exception 'FAIL: nobody was told the directory sync failed'; end if;
+  if exists (select 1 from public.notifications n where n.tenant_id = v_t and n.kind = 'admin.alert' and n.title = 'The directory sync failed'
+              group by n.recipient_id having count(*) > 1) then
+    raise exception 'FAIL: a failing sync alerted the same person twice in its window';
+  end if;
+  -- A scheduled job that errors tells whoever reads the audit centre.
+  insert into public.system_runs (tenant_id, job, error) values (v_t, 'daily_round', 'deadlock detected');
+  if not exists (select 1 from public.notifications where tenant_id = v_t and kind = 'admin.alert' and title = 'A scheduled job failed') then
+    raise exception 'FAIL: nobody was told a scheduled job failed';
+  end if;
+  -- Three lockouts in an hour tell whoever manages accounts.
+  insert into public.activity_log (tenant_id, action, entity_type, entity_id, detail)
+  select v_t, 'account_locked', 'app_user', gen_random_uuid(), 'locked after 10 wrong attempts' from generate_series(1, 3);
+  if not exists (select 1 from public.notifications where tenant_id = v_t and kind = 'admin.alert' and title = 'Several accounts were locked') then
+    raise exception 'FAIL: nobody was told of a burst of lockouts';
+  end if;
+  raise notice 'pass: a failed sync, a failed job and a burst of lockouts each alert the administrators who can act, once a window';
+
+  -- Two-step sign-in: required to administer now covers building forms;
+  -- required of everybody, nothing counts without it.
+  perform pg_temp.as_emp('EMP-0445');
+  perform set_config('app.mfa', 'true', true);
+  perform public.set_mfa_policy(true, false);
+  perform set_config('app.mfa', 'false', true);
+  perform pg_temp.check('without the second step, an administrator cannot build forms', app.has_permission('forms.build'), false);
+  perform pg_temp.check('...but can still read reports', app.has_permission('reports.view'), true);
+  perform set_config('app.mfa', 'true', true);
+  perform public.set_mfa_policy(true, true);
+  perform set_config('app.mfa', 'false', true);
+  perform pg_temp.check('required of everybody: nothing counts without it', app.has_permission('reports.view'), false);
+  perform set_config('app.mfa', 'true', true);
+  perform public.set_mfa_policy(false, false);
+  raise notice 'pass: two-step sign-in can be required to administer (forms and integrations included) or of everybody';
+end $$;
+
+-- =====================================================================
 -- 4. Every notification is an email
 -- =====================================================================
 do $$
@@ -285,6 +330,38 @@ begin
   n2 := app.queue_due_reports(current_setting('t.tpl')::uuid);
   if n1 < 2 or n2 <> 0 then raise exception 'FAIL: scheduled reports queued % then %', n1, n2; end if;
   raise notice 'pass: scheduled reports are queued when due, and not again until the next period';
+end $$;
+
+-- Daily, weekly on a day, monthly and quarterly on a date; outside addresses too.
+do $$
+declare v_id uuid; v_n bigint; v_b bigint;
+begin
+  perform pg_temp.check('weekly on Sunday falls on the latest Sunday', app.report_due_on('weekly', 7, '2026-11-27'), '2026-11-22'::date);
+  perform pg_temp.check('...and on Thursday, on that Thursday itself', app.report_due_on('weekly', 4, '2026-11-26'), '2026-11-26'::date);
+  perform pg_temp.check('monthly on the 5th', app.report_due_on('monthly', 5, '2026-11-27'), '2026-11-05'::date);
+  perform pg_temp.check('quarterly on the 1st', app.report_due_on('quarterly', 1, '2026-11-27'), '2026-10-01'::date);
+
+  perform pg_temp.as_emp('EMP-0445');
+  select id into v_id from public.report_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Open approvals';
+  if not pg_temp.refused(format($q$select public.set_report_schedule(%L, 'daily', array[]::text[], 'xlsx', null, array['not an address'])$q$, v_id)) then
+    raise exception 'FAIL: a schedule took something that is not an email address';
+  end if;
+  perform public.set_report_schedule(v_id, 'quarterly', array['EMP-0830'], 'csv', 1, array['Audit@Example.com', 'audit@example.com']);
+  perform pg_temp.check('outside addresses are kept once, in lower case',
+    (select external_recipients from public.report_templates where id = v_id), array['audit@example.com']);
+  update public.report_templates set last_sent_at = date_trunc('quarter', now()) - interval '20 days' where id = v_id;
+  perform pg_temp.as_emp(null);
+  select count(*) into v_b from public.email_outbox where report_id = v_id and kind = 'report.scheduled';
+  perform app.queue_due_reports(current_setting('t.tpl')::uuid);
+  select count(*) - v_b into v_n from public.email_outbox where report_id = v_id and kind = 'report.scheduled';
+  perform pg_temp.check('a due quarterly report goes to its people and its outside address', v_n, 2::bigint);
+  if not exists (select 1 from public.email_outbox where report_id = v_id and to_address = 'audit@example.com' and recipient_id is null) then
+    raise exception 'FAIL: the outside address was not sent the report';
+  end if;
+  perform app.queue_due_reports(current_setting('t.tpl')::uuid);
+  select count(*) - v_b into v_n from public.email_outbox where report_id = v_id and kind = 'report.scheduled';
+  perform pg_temp.check('...once a quarter', v_n, 2::bigint);
+  raise notice 'pass: reports go out daily on working days, weekly on a day, monthly or quarterly on a date, to people and outside addresses';
 end $$;
 
 -- =====================================================================
@@ -394,7 +471,8 @@ begin
   select r.id, r.form_template_id into v_rule, v_form from public.approval_rules r
    where r.tenant_id = current_setting('t.tpl')::uuid and r.subject_type = 'form_submission'
      and r.step_index = 0 and r.condition is null and r.label is distinct from 'slab_finance'
-   order by r.position limit 1;
+     and r.approver_user_id is not null and r.lane is null
+   order by r.position, r.id limit 1;
   update public.approval_rules set warn_hours = 6, escalate_days = 1, escalate_levels = 3 where id = v_rule;
   select warn_hours, escalate_days, escalate_levels into v
     from app.plan_chain('form_submission', v_form, 'EMP-NOBODY', '{}'::jsonb)

@@ -72,7 +72,6 @@ function useLiveStats(employeeId: string, department: string | null, seesAllForm
     let cancel = false;
     (async () => {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
       const [
         { count: pending },
@@ -87,8 +86,8 @@ function useLiveStats(employeeId: string, department: string | null, seesAllForm
           .eq("approver_user_id", employeeId).eq("status", "pending").lt("deadline_at", now.toISOString()),
         db.from("form_submissions").select("status")
           .eq("submitted_by", employeeId).in("status", ["submitted", "in_progress", "on_hold"]),
-        db.from("form_submissions").select("*", { count: "exact", head: true })
-          .eq("submitted_by", employeeId).eq("status", "completed").gte("submitted_at", monthStart),
+        // Decided this month, whenever it was raised (db/009_sow_gaps.sql).
+        db.rpc("my_completed_this_month", {}).then((r) => ({ count: (r.data as number | null) ?? 0 })),
         db.from("form_templates").select("audience_departments").eq("status", "published"),
       ]);
 

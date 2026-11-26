@@ -14,7 +14,7 @@ await go('/analytics', KOFI);
 ok('analytics: ...as is /analytics', /needs the reports\.view permission/.test(await text()));
 await go('/reports', LENA);
 ok('reports: the auditor sees the seven standard reports', (await page.locator('[data-testid="report-cards"] a').count()) >= 7 && /Standard reports/i.test(await text()));
-ok('reports: ...but may not build one (no New report)', (await page.getByRole('button', { name: /New report/ }).count()) === 0);
+ok('reports: ...but may not build one (no New report)', (await page.getByRole('button', { name: /New report/i }).count()) === 0);
 await go('/reports/new', LENA);
 ok('reports: ...and /reports/new refuses her', /needs the reports\.manage permission/.test(await text()));
 
@@ -115,7 +115,7 @@ const sch = await one(`select schedule, format, recipients from public.report_te
 ok('reports: it is scheduled monthly, as CSV, to the auditor', sch.schedule === 'monthly' && sch.format === 'csv' && JSON.stringify(sch.recipients) === JSON.stringify([LENA]), JSON.stringify(sch));
 await go('/reports', LENA, 3000);
 const qaCard = page.locator('[data-testid="report-cards"] a', { hasText: 'QA every rejection' });
-ok('reports: the auditor sees it among the organisation\'s reports, marked monthly to one person', (await qaCard.count()) === 1 && /monthly to 1 person/i.test(await qaCard.innerText()));
+ok('reports: the auditor sees it among the organisation\'s reports, marked monthly to one person', (await qaCard.count()) === 1 && /monthly on the 1st to 1 person/i.test(await qaCard.innerText()));
 // The daily round queues a scheduled report that is due.
 await quiet();
 await rows(`update public.report_templates set last_sent_at = now() - interval '40 days' where id = $1`, [qa.id]);
@@ -142,7 +142,7 @@ let wantOver = await overdueNow();
 await go('/analytics', LENA, 4500);
 ok(`analytics 90 days: Requests raised = ${want.raised}`, (await kpi('Requests raised')) === want.raised, String(await kpi('Requests raised')));
 ok(`analytics 90 days: Completed = ${want.completed}`, (await kpi('Completed')) === want.completed, String(await kpi('Completed')));
-ok(`analytics 90 days: Open requests = ${want.open}`, (await kpi('Open requests')) === want.open, String(await kpi('Open requests')));
+ok(`analytics 90 days: Raised and still open = ${want.open}`, (await kpi('Raised and still open')) === want.open, String(await kpi('Raised and still open')));
 ok(`analytics: Overdue now = ${wantOver} steps past their deadline`, (await kpi('Overdue now')) === wantOver, String(await kpi('Overdue now')));
 ok('analytics: the charts are drawn', (await page.locator('.recharts-surface').count()) >= 4, String(await page.locator('.recharts-surface').count()));
 // Charts as tables.
@@ -167,8 +167,8 @@ for (const [btn, days] of [['30 days', 30], ['12 months', 365]]) {
   await page.getByRole('button', { name: btn, exact: true }).click();
   await settle(3500);
   ok(`analytics ${btn}: raised ${want.raised}, completed ${want.completed}, open ${want.open}`,
-    (await kpi('Requests raised')) === want.raised && (await kpi('Completed')) === want.completed && (await kpi('Open requests')) === want.open,
-    `${await kpi('Requests raised')}/${await kpi('Completed')}/${await kpi('Open requests')}`);
+    (await kpi('Requests raised')) === want.raised && (await kpi('Completed')) === want.completed && (await kpi('Raised and still open')) === want.open,
+    `${await kpi('Requests raised')}/${await kpi('Completed')}/${await kpi('Raised and still open')}`);
 }
 await quiet();
 want = await expect(90, 'Finance');
@@ -177,8 +177,8 @@ await go('/analytics', LENA, 4000);
 await page.locator('select[aria-label="Department"]').selectOption('Finance');
 await settle(3500);
 ok(`analytics Finance, 90 days: raised ${want.raised}, completed ${want.completed}, open ${want.open}`,
-  (await kpi('Requests raised')) === want.raised && (await kpi('Completed')) === want.completed && (await kpi('Open requests')) === want.open,
-  `${await kpi('Requests raised')}/${await kpi('Completed')}/${await kpi('Open requests')}`);
+  (await kpi('Requests raised')) === want.raised && (await kpi('Completed')) === want.completed && (await kpi('Raised and still open')) === want.open,
+  `${await kpi('Requests raised')}/${await kpi('Completed')}/${await kpi('Raised and still open')}`);
 ok(`analytics Finance: overdue steps on Finance's requests = ${wantOver}`, (await kpi('Overdue now')) === wantOver, String(await kpi('Overdue now')));
 await quiet();
 want = await expect(90, null, 'Travel & Expense Reimbursement');

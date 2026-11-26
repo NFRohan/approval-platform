@@ -14,6 +14,7 @@
     "test": "npm run typecheck && npm run test:callsites && npm run test:identity && npm run test:reports && npm run test:commercial && npm run test:integration && npm run test:auth && npm run test:render && npm run db:test && npm run test:journey",
     "test:callsites": "node scripts/callsites-test.mjs",
     "test:units": "node scripts/units-test.mjs",
+    "test:oidc": "node scripts/oidc-test.mjs",
     "test:auth": "node --env-file=.env scripts/auth-test.mjs",
     "test:identity": "node scripts/identity-test.mjs",
     "test:ldap": "node scripts/ldap-test.mjs",

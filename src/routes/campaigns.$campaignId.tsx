@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { setCrumbLabel } from "@/lib/crumb";
 import { DateInput } from "@/components/DateInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -45,6 +46,7 @@ function CampaignPage() {
     const camp = cs as Campaign | null;
     if (camp) camp.budget = Number(camp.budget);
     setC(camp);
+    if (camp) setCrumbLabel(`/campaigns/${camp.id}`, camp.name);
     setActuals(((acts ?? []) as Actual[]).map((a) => ({ ...a, cost: Number(a.cost), volume: a.volume === null ? null : Number(a.volume) })));
     setCoupons((cps ?? []) as Coupon[]);
     setExts((xs ?? []) as Extension[]);

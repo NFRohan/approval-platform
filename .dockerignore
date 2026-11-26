@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-mock
+.git
+.env
+.env.*
+docs
+tests
+*.pdf
+*.docx
+.vercel

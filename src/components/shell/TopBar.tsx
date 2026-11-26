@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useCrumbLabel } from "@/lib/crumb";
 import { BrandMark } from "./Sidebar";
 import { Bell, ChevronRight, HelpCircle, KeyRound, LogOut } from "lucide-react";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -35,14 +36,15 @@ const SECTION: Record<string, string> = {
   campaigns: "Campaigns",
   reports: "Reports",
   admin: "Administration",
-  account: "Your account",
+  account: "Account",
   developers: "API documentation",
   trackers: "Trackers",
+  documents: "Documents",
 };
 
 const LEAF: Record<string, string> = {
-  delegate: "Delegate Authority",
-  history: "History",
+  delegate: "Delegation",
+  history: "Approval History",
   approvers: "Approvers",
   notifications: "Notifications",
   new: "New",
@@ -51,9 +53,9 @@ const LEAF: Record<string, string> = {
   people: "People & Directory",
   email: "Email",
   integrations: "Integrations",
-  calendar: "Working calendar",
-  checklists: "Clearance checklists",
-  audit: "Audit centre",
+  calendar: "Working Calendar",
+  checklists: "Clearance Checklists",
+  audit: "Audit Centre",
 };
 
 const IS_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-|^d+$/i;
@@ -89,7 +91,7 @@ export function crumbsFor(pathname: string): Array<{ label: string; to?: string 
       label: IS_ID.test(seg)
         ? (DETAIL[parts[0]] ?? "Detail")
         : seg === "new"
-          ? "New " + (DETAIL[parts[0]] ?? "item")
+          ? "New " + (DETAIL[parts[0]] ?? "Item")
           : (LEAF[seg] ?? seg.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase())),
       to: "/" + parts.slice(0, i + 1).join("/"),
     });
@@ -165,6 +167,9 @@ function NoteRow({
   // decided from Pending Approvals.
   if (n.kind === "admin.request") {
     return <Link to="/approvals" {...shared}>{children}</Link>;
+  }
+  if (n.kind === "admin.alert") {
+    return <Link to="/admin/audit" {...shared}>{children}</Link>;
   }
   if (toQueue && n.entity_id) {
     return (
@@ -420,7 +425,8 @@ export function TopBar() {
   const { currentUser } = useCurrentUser();
   const { notes, unread, markAllRead } = useNotifications(currentUser.employee_id);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const crumbs = crumbsFor(pathname);
+  const named = useCrumbLabel(pathname);
+  const crumbs = crumbsFor(pathname).map((c, i, all) => (named && i === all.length - 1 && !c.to ? { ...c, label: named } : c));
 
   // Clicking anywhere else closes it, the same way the search box works.
   // The bell is excluded because it is a toggle: letting this fire first

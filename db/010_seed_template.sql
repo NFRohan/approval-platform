@@ -197,7 +197,7 @@ insert into public.form_fields (form_template_id, field_type, field_name, order_
   ('11111111-0000-4000-8000-000000000013', 'textarea', 'Request details',        2, true,  '{}'),
   ('11111111-0000-4000-8000-000000000013', 'select',   'NFA type',               3, true,  '{"options":["Information only","Requires SO configuration"]}'),
   ('11111111-0000-4000-8000-000000000013', 'money',    'Total cost',             4, true,  '{}'),
-  ('11111111-0000-4000-8000-000000000013', 'textarea', 'Finance notes',          5, false, '{}');
+  ('11111111-0000-4000-8000-000000000013', 'textarea', 'Finance notes',          5, false, '{"prefill": "Budget line: Commercial, MNO partnerships. Cost centre CC-COM-114, GL 5102-030. Partner settlement monthly against invoice; VAT and AIT deducted at source. Business Finance reviews any change to cost or KPI.", "helper": "Preloaded by Finance; edit if this NFA differs"}');
 
 insert into public.approval_rules
   (form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, lane, quorum, stage_label, condition) values
@@ -280,6 +280,7 @@ insert into public.form_fields (form_template_id, field_type, field_name, order_
   ('11111111-0000-4000-8000-000000000009', 'reviewer',   'Business finance reviewer',   6, false,
    '{"team": "Business Finance", "ccTeam": true, "helper": "Who in Business Finance reviews it. People on leave cannot be chosen; the whole team is copied."}'),
   ('11111111-0000-4000-8000-000000000009', 'file',       'NFA document',                7, false, '{"helper": "The vetted NFA and business case, as a Word file"}'),
+  ('11111111-0000-4000-8000-000000000009', 'select',     'Needs SO configuration',      8, false, '{"options":["No","Yes"],"helper":"Yes if the SO team must configure it in the system once approved"}'),
 
   ('11111111-0000-4000-8000-000000000010', 'gen_employee_name', 'Employee name',        0, true,  '{}'),
   ('11111111-0000-4000-8000-000000000010', 'text',       'Campaign name',               1, true,  '{}'),
@@ -301,6 +302,7 @@ insert into public.form_fields (form_template_id, field_type, field_name, order_
   ('11111111-0000-4000-8000-000000000010', 'text',       'Product',                    17, true,  '{}'),
   ('11111111-0000-4000-8000-000000000010', 'text',       'Campaign beneficiary',       18, true,  '{}'),
   ('11111111-0000-4000-8000-000000000010', 'file',       'Business case document',     19, false, '{}'),
+  ('11111111-0000-4000-8000-000000000010', 'select',     'Needs SO configuration',     20, false, '{"options":["No","Yes"],"helper":"Yes if the SO team must configure it in the system once approved"}'),
 
   ('11111111-0000-4000-8000-000000000006', 'textarea',   'PO lines',                    6, false,
    '{"placeholder":"One PO a line: PO number | description | amount","helper":"Printed on the payment top sheet"}');
@@ -330,10 +332,15 @@ insert into public.approval_rules
    '{"field": "Approval route", "op": "eq", "value": "Exceptional"}'),
   ('11111111-0000-4000-8000-000000000009', 'EMP-0410', 2, false, 'answer:Business finance reviewer', 1, 0, null, null, 'Business finance review', null),
   ('11111111-0000-4000-8000-000000000009', null,       2, false, 'department_head',  2, 0, null, null, null, null),
+  -- ... and to SO for configuration when it needs it, after the head.
+  ('11111111-0000-4000-8000-000000000009', 'EMP-0520', 3, false, 'so_configuration', 3, 0, null, null, 'SO configuration',
+   '{"field": "Needs SO configuration", "op": "eq", "value": "Yes"}'),
 
   -- Campaign NFA: line manager, then finance by total cost.
   ('11111111-0000-4000-8000-000000000010', 'EMP-1134', 2, true,  'line_manager',    0, 0, null, null, null, null),
-  ('11111111-0000-4000-8000-000000000010', null,       3, true,  'slab_finance',    1, 0, null, null, null, null);
+  ('11111111-0000-4000-8000-000000000010', null,       3, true,  'slab_finance',    1, 0, null, null, null, null),
+  ('11111111-0000-4000-8000-000000000010', 'EMP-0520', 3, false, 'so_configuration', 2, 0, null, null, 'SO configuration',
+   '{"field": "Needs SO configuration", "op": "eq", "value": "Yes"}');
 
 insert into public.approval_slabs (form_template_id, min_amount, max_amount, approver_user_id, order_index) values
   ('11111111-0000-4000-8000-000000000008', 0,         null, 'EMP-0312', 0),
@@ -875,6 +882,96 @@ begin
 end $$;
 
 select app.localise_names(t.id) from public.tenants t where t.kind = 'demo' and t.name ilike 'bkash%';
+
+-- ---------------------------------------------------------------------
+-- Named accounts on a bKash evaluation, so Admin → Users shows what the
+-- account rules do: active ones (local password, directory sign-in,
+-- two-step sign-in), one waiting for a second administrator, a profile
+-- change waiting, one disabled and one locked after ten wrong passwords.
+-- None can sign in (no usable password): the evaluation login switches
+-- persona. Idempotent: an employee who has an account keeps it.
+-- ---------------------------------------------------------------------
+create or replace function app.seed_named_accounts(p_tenant uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare a record; n int := 0; v_user text;
+begin
+  for a in
+    select * from (values
+      ('EMP-0201', 'approved', 'active',   'local', false, false, null::text, interval '2 hours'),
+      ('EMP-0312', 'approved', 'active',   'ldap',  false, false, null,       interval '1 day'),
+      ('EMP-0830', 'approved', 'active',   'local', true,  false, null,       interval '3 hours'),
+      ('EMP-0800', 'approved', 'active',   'local', true,  false, 'profile',  interval '5 days'),
+      ('EMP-0411', 'approved', 'disabled', 'local', false, false, null,       interval '40 days'),
+      ('EMP-0416', 'approved', 'active',   'local', false, true,  null,       interval '1 day'),
+      ('EMP-3120', 'pending',  'active',   'ldap',  false, false, null,       null)
+    ) v(emp, approval, status, source, mfa, locked, extra, last_seen)
+  loop
+    continue when not exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = a.emp and active);
+    continue when exists (select 1 from public.app_users where tenant_id = p_tenant and employee_id = a.emp);
+    select lower(replace(name, ' ', '.')) into v_user from public.employees where tenant_id = p_tenant and employee_id = a.emp;
+    if exists (select 1 from public.app_users where lower(username) = v_user) then
+      v_user := v_user || '.' || substr(replace(p_tenant::text, '-', ''), 1, 4);
+    end if;
+    insert into public.app_users
+      (tenant_id, username, password_hash, full_name, email, role, status, must_change_pw, approval_state,
+       created_by_employee, approved_by_employee, employee_id, auth_source, mfa_enabled,
+       failed_attempts, locked_at, last_login_at, password_changed_at, pending_profile)
+    select p_tenant, v_user, case when a.source = 'ldap' then '!directory' else '!seeded' end, e.name, e.email, 'viewer',
+           a.status, false, a.approval, 'EMP-0445', case when a.approval = 'approved' then 'EMP-0650' end,
+           a.emp, a.source, a.mfa,
+           case when a.locked then 10 else 0 end, case when a.locked then now() - interval '25 minutes' end,
+           case when a.last_seen is not null then now() - a.last_seen end,
+           now() - interval '30 days',
+           case when a.extra = 'profile' then jsonb_build_object('full_name', e.name,
+                  'email', 'hena.mostafa.coo@' || coalesce(nullif(split_part(e.email, '@', 2), ''), 'example.com'),
+                  'by', 'EMP-0445', 'at', now() - interval '1 day') end
+      from public.employees e where e.tenant_id = p_tenant and e.employee_id = a.emp;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+select app.seed_named_accounts(t.id) from public.tenants t where t.kind = 'demo' and t.name ilike 'bkash%';
+
+-- Evaluations issued before these get them too, matched by form name:
+-- the SO configuration question and step on the campaign forms, and
+-- Finance's standing notes on the MNO NFA.
+insert into public.form_fields (tenant_id, form_template_id, field_type, field_name, order_index, is_required, field_config)
+select f.tenant_id, f.id, 'select', 'Needs SO configuration',
+       coalesce((select max(order_index) + 1 from public.form_fields x where x.form_template_id = f.id), 0), false,
+       '{"options":["No","Yes"],"helper":"Yes if the SO team must configure it in the system once approved"}'::jsonb
+  from public.form_templates f join public.tenants t on t.id = f.tenant_id
+ where t.kind = 'demo' and f.name in ('Campaign Request', 'Campaign NFA')
+   and not exists (select 1 from public.form_fields x where x.form_template_id = f.id and x.field_name = 'Needs SO configuration');
+insert into public.approval_rules (tenant_id, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, stage_label, condition)
+select f.tenant_id, f.id, 'EMP-0520', 3, false, 'so_configuration',
+       (select max(step_index) + 1 from public.approval_rules r where r.form_template_id = f.id), 0, 'SO configuration',
+       '{"field": "Needs SO configuration", "op": "eq", "value": "Yes"}'::jsonb
+  from public.form_templates f join public.tenants t on t.id = f.tenant_id
+ where t.kind = 'demo' and f.name in ('Campaign Request', 'Campaign NFA')
+   and exists (select 1 from public.employees e where e.tenant_id = f.tenant_id and e.employee_id = 'EMP-0520')
+   and not exists (select 1 from public.approval_rules r where r.form_template_id = f.id and r.label = 'so_configuration');
+update public.form_fields x
+   set field_config = coalesce(x.field_config, '{}'::jsonb) || jsonb_build_object(
+         'prefill', 'Budget line: Commercial, MNO partnerships. Cost centre CC-COM-114, GL 5102-030. Partner settlement monthly against invoice; VAT and AIT deducted at source. Business Finance reviews any change to cost or KPI.',
+         'helper', 'Preloaded by Finance; edit if this NFA differs')
+  from public.form_templates f join public.tenants t on t.id = f.tenant_id
+ where x.form_template_id = f.id and t.kind = 'demo' and f.name = 'MNO Campaign NFA' and x.field_name = 'Finance notes'
+   and coalesce(x.field_config->>'prefill', '') = '';
+
+-- A second webhook beside the built-in receiver: the finance ERP, which
+-- hears of approved payments once bKash gives its address. Paused until
+-- then, so nothing is sent to the placeholder.
+insert into public.webhooks (tenant_id, name, url, events, secret, active, created_by, created_at)
+select t.id, 'Finance ERP — approved payments (awaiting its address)', 'https://erp.example.com/hooks/ams',
+       array['request.completed'], encode(sha256(convert_to(gen_random_uuid()::text, 'UTF8')), 'hex'), false, 'EMP-0445', now() - interval '12 days'
+  from public.tenants t
+ where t.kind = 'demo' and t.name ilike 'bkash%'
+   and not exists (select 1 from public.webhooks w where w.tenant_id = t.id and w.url = 'https://erp.example.com/hooks/ams');
 
 -- Approving roles is an information-security job, not a finance one: it
 -- moved from the CFO (EMP-0700) to the Head of Technology (EMP-0520).

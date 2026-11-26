@@ -11,7 +11,7 @@ import { handOver } from "@/lib/chain";
 
 export const Route = createFileRoute("/approvals/delegate")({
   head: () => ({
-    meta: [{ title: "Approval Delegation · Admin Services Portal" }],
+    meta: [{ title: "Delegation · Admin Services Portal" }],
   }),
   component: DelegationPage,
 });
@@ -173,7 +173,7 @@ function DelegationPage() {
     <div className="max-w-3xl mx-auto" style={{ padding: "32px 28px 56px" }}>
       <div className="mb-6">
         <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: "#18181B", margin: 0 }}>
-          Approval Delegation
+          Delegation
         </h1>
         <p style={{ marginTop: 6, fontSize: 14, color: "#71717A" }}>
           Delegate your approval authority to a colleague while you're on leave or unavailable.

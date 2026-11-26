@@ -15,7 +15,7 @@ import { control } from "@/components/reports/ReportParts";
 import { ChartCard, Panel, RankedBars, SimpleTable, Tip, SERIES_1, SERIES_2, SERIES_3, SERIES_4, GRID, AXIS, INK, MUTED } from "@/components/viz";
 
 export const Route = createFileRoute("/admin/audit")({
-  head: () => ({ meta: [{ title: "Audit centre · Admin Services Portal" }] }),
+  head: () => ({ meta: [{ title: "Audit Centre · Admin Services Portal" }] }),
   component: AuditPage,
 });
 
@@ -66,10 +66,10 @@ const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 function AuditPage() {
   const { can } = useCurrentUser();
-  if (!can("audit.view") && !can("records.manage")) return <Page title="Audit centre"><NoPermission need="audit.view" /></Page>;
+  if (!can("audit.view") && !can("records.manage")) return <Page title="Audit Centre"><NoPermission need="audit.view" /></Page>;
   return (
     <div className="mx-auto" style={{ maxWidth: 1280, padding: "28px 28px 56px" }}>
-      <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: INK, margin: 0 }}>Audit centre</h1>
+      <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: INK, margin: 0 }}>Audit Centre</h1>
       <p style={{ marginTop: 6, fontSize: 14, color: MUTED, marginBottom: 18, maxWidth: 820 }}>
         One trail over everything: what people did, what the application did and sent to other systems, what the scheduler ran and what changed
         in the database — searchable, exportable, and watched for what looks wrong. And how long all of it is kept.

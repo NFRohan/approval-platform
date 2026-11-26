@@ -118,6 +118,7 @@ export async function buildEmail(client: pg.PoolClient, o: OutboxRow, opts: { at
     }
   }
   if (o.kind === 'admin.request') vars.link = appUrl() + '/approvals';
+  else if (o.kind === 'admin.alert') vars.link = appUrl() + '/admin/audit';
   else if (o.entity_type && o.entity_id && PATHS[o.entity_type]) vars.link = appUrl() + PATHS[o.entity_type](o.entity_id);
   if (!vars.link && o.kind.startsWith('approval.')) vars.link = appUrl() + '/approvals';
 

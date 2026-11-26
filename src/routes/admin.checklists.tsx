@@ -16,7 +16,7 @@ import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Button, Card, Field, NoPermission, Page, Pill, inputStyle } from "@/components/admin/kit";
 
 export const Route = createFileRoute("/admin/checklists")({
-  head: () => ({ meta: [{ title: "Clearance checklists · Admin Services Portal" }] }),
+  head: () => ({ meta: [{ title: "Clearance Checklists · Admin Services Portal" }] }),
   component: ChecklistsPage,
 });
 
@@ -66,7 +66,7 @@ function ChecklistsPage() {
 
   return (
     <Page
-      title="Clearance checklists"
+      title="Clearance Checklists"
       wide
       intro={<>What each department checks before its track of a request clears: handover, property recovery, official portals.
         Whoever holds the track ticks each item, and the step cannot be approved while one is open. Items taken off stay on the

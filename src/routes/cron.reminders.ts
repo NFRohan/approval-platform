@@ -51,6 +51,11 @@ export async function reminderRound() {
     } catch (err) {
       await client.query("rollback").catch(() => {});
       await logAppError("cron reminders", err, 500, t.id);
+      // Recorded as a failed run, so the administrators are alerted
+      // (app.alert_on_run, db/009_integration.sql).
+      await pool.query(
+        "insert into public.system_runs (tenant_id, job, started_at, finished_at, error) values ($1, 'reminders', $2, now(), $3)",
+        [t.id, started, (err instanceof Error ? err.message : String(err)).slice(0, 500)]).catch(() => {});
     } finally {
       client.release();
     }

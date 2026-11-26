@@ -41,6 +41,7 @@ export type AccountRow = {
   tenant_state: string;
   persona_switching: boolean | null;
   require_admin_mfa: boolean | null;
+  require_mfa_all: boolean | null;
   default_persona: string | null;
 };
 
@@ -52,7 +53,7 @@ const ACCOUNT_COLUMNS = `
   u.failed_attempts, u.locked_at,
   (select e.active from public.employees e where e.tenant_id = u.tenant_id and e.employee_id = u.employee_id) as employee_active,
   u.mfa_enabled, u.mfa_secret, u.mfa_last_step, u.auth_source, u.employee_id, u.tenant_id,
-  t.slug, t.expires_at, t.persona_switching, t.require_admin_mfa, t.default_persona,
+  t.slug, t.expires_at, t.persona_switching, t.require_admin_mfa, t.require_mfa_all, t.default_persona,
   case when u.tenant_id is null then 'active' else app.tenant_status(u.tenant_id) end as tenant_state`;
 
 export async function accountByUsername(client: pg.PoolClient, username: string): Promise<AccountRow | null> {
@@ -166,7 +167,8 @@ export async function buildSession(
     canSwitch,
     permissions,
     mfa: opts.mfa,
-    requireAdminMfa: row.require_admin_mfa === true,
+    requireAdminMfa: row.require_admin_mfa === true || row.require_mfa_all === true,
+    requireMfaAll: row.require_mfa_all === true,
     seen: nowSeconds(),
   };
 }
@@ -175,8 +177,12 @@ const PASSWORD_MAX_AGE_MS = PASSWORD_MAX_AGE_DAYS * 86_400_000;
 
 /** Admin permissions only count after two-step sign-in where the organisation requires it. */
 export function effectivePermissions(session: Session, adminPermissions: readonly string[] = ADMIN_PERMISSIONS): string[] {
-  if (!session.requireAdminMfa || session.mfa) return session.permissions;
+  if (session.mfa) return session.permissions;
+  // Required of everybody: nothing counts until the second step is passed.
+  if (session.requireMfaAll) return [];
+  if (!session.requireAdminMfa) return session.permissions;
   return session.permissions.filter((p) => !adminPermissions.includes(p));
 }
 
-export const ADMIN_PERMISSIONS = ['users.manage', 'users.approve', 'roles.manage', 'roles.approve', 'org.manage'] as const;
+export const ADMIN_PERMISSIONS = ['users.manage', 'users.approve', 'roles.manage', 'roles.approve', 'org.manage',
+  'forms.build', 'integrations.manage', 'records.manage', 'notifications.manage'] as const;

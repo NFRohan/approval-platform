@@ -7,6 +7,7 @@ import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import {
   assignRole, decideAccount, decideProfile, directoryStatus, listAccounts, proposeProfile,
   registerAccount, resetAccountPassword, setAccountStatus, unlockAccount, type Account,
+  getMfaPolicy, setMfaPolicy, type MfaPolicy,
 } from "@/lib/admin-fn";
 import {
   Button, Card, Field, NoPermission, Notice, OneTimeSecret, Page, Pill, fmtWhen, inputStyle,
@@ -153,7 +154,45 @@ function UsersPage() {
           {shown.length === 0 && <div style={{ fontSize: 13, color: "#A1A1AA", padding: 12 }}>No accounts match.</div>}
         </div>
       </Card>
+      {manage && <MfaPolicyCard />}
     </Page>
+  );
+}
+
+/** Two-step sign-in: optional, required to administer, or required of everybody (SOW §2.1 r10). */
+function MfaPolicyCard() {
+  const [policy, setPolicy] = useState<MfaPolicy | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { void getMfaPolicy().then((r) => { if (r.ok) setPolicy(r.policy); }); }, []);
+  if (!policy) return null;
+  const choices: [MfaPolicy, string, string][] = [
+    ["optional", "Optional", "Anybody may turn it on for themselves."],
+    ["admins", "Required to administer", "Accounts, roles, the org chart, forms and routes, integrations, records and notification settings work only after the second step."],
+    ["everyone", "Required of everybody", "Nobody can do anything until they have signed in with the second step; anybody without it is asked to set it up."],
+  ];
+  return (
+    <Card title="Two-step sign-in">
+      <div className="flex flex-col gap-2" role="radiogroup" aria-label="Two-step sign-in" data-testid="mfa-policy">
+        {choices.map(([v, label, note]) => (
+          <label key={v} className="flex items-start gap-2.5 rounded-lg" style={{ padding: "10px 12px", border: `1px solid ${policy === v ? "#C7D2FE" : "#E4E4E7"}`, background: policy === v ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
+            <input type="radio" name="mfa-policy" value={v} checked={policy === v} disabled={busy} style={{ marginTop: 2 }}
+              onChange={async () => {
+                if (v === "everyone" && !window.confirm("Require two-step sign-in of everybody? Anybody who has not set it up will be asked to before they can do anything.")) return;
+                setBusy(true);
+                const r = await setMfaPolicy({ data: { policy: v } });
+                setBusy(false);
+                if (!r.ok) return void toast.error(r.error);
+                setPolicy(v);
+                toast.success(`Two-step sign-in: ${label.toLowerCase()}. It applies from each person's next sign-in.`);
+              }} />
+            <span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: "#18181B" }}>{label}</span>
+              <span style={{ display: "block", fontSize: 12.5, color: "#71717A", marginTop: 2 }}>{note}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </Card>
   );
 }
 

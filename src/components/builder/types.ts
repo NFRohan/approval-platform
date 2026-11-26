@@ -78,6 +78,8 @@ export type PlacedField = {
   ccTeam?: boolean;
   /** multi_select: the requester may add an option of their own. */
   allowOther?: boolean;
+  /** text, textarea: what a new request starts with, e.g. Finance's standing NFA notes. */
+  prefill?: string;
   validation?: {
     minLength?: number;
     maxLength?: number;

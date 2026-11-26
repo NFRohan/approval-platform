@@ -1,0 +1,177 @@
+# =====================================================================
+# AMS on Kubernetes (SOW §4.9, §6 hosting).
+#
+#   kubectl create namespace ams
+#   kubectl -n ams create secret generic ams-env --from-env-file=.env.production
+#   kubectl -n ams apply -f deploy/k8s/ams.yaml
+#
+# The secret holds every variable in docs/DEPLOY.md (DATABASE_URL,
+# DIRECT_URL, JWT_SECRET, MFA_KEY, CRON_SECRET, APP_URL, SMTP_URL, ...).
+# The image is built from the Dockerfile at the root of the repository;
+# set its name below. Schema changes run once per release as the
+# migrate Job, before the Deployment rolls.
+# =====================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ams-migrate
+  labels: { app: ams, part: migrate }
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata: { labels: { app: ams, part: migrate } }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.example.com/ams:latest
+          command: ["node", "scripts/db-apply.mjs"]
+          envFrom: [{ secretRef: { name: ams-env } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ams
+  labels: { app: ams }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: ams, part: web } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  template:
+    metadata: { labels: { app: ams, part: web } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000 }
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: web
+          image: registry.example.com/ams:latest
+          ports: [{ name: http, containerPort: 3000 }]
+          envFrom: [{ secretRef: { name: ams-env } }]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: PGPOOL_MAX, value: "10" }
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 250m, memory: 384Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ams
+  labels: { app: ams }
+spec:
+  selector: { app: ams, part: web }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+# TLS ends at the ingress; the app trusts X-Forwarded-Proto and -Host.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ams
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 8m
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls: [{ hosts: [ams.example.com], secretName: ams-tls }]
+  rules:
+    - host: ams.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ams, port: { name: http } } }
+---
+# The three scheduled jobs Vercel Cron ran: each calls the app with
+# CRON_SECRET. Times are UTC (08:00, 20:00 and 04:00 in Dhaka).
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: ams-daily, labels: { app: ams, part: cron } }
+spec:
+  schedule: "0 2 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: call
+              image: curlimages/curl:8.11.1
+              envFrom: [{ secretRef: { name: ams-env } }]
+              command: ["sh", "-c", "curl -fsS -m 600 -H \"Authorization: Bearer $CRON_SECRET\" http://ams/cron/daily"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: ams-reminders, labels: { app: ams, part: cron } }
+spec:
+  schedule: "0 14 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: call
+              image: curlimages/curl:8.11.1
+              envFrom: [{ secretRef: { name: ams-env } }]
+              command: ["sh", "-c", "curl -fsS -m 600 -H \"Authorization: Bearer $CRON_SECRET\" http://ams/cron/reminders"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: ams-directory-sync, labels: { app: ams, part: cron } }
+spec:
+  schedule: "0 22 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: call
+              image: curlimages/curl:8.11.1
+              envFrom: [{ secretRef: { name: ams-env } }]
+              command: ["sh", "-c", "curl -fsS -m 600 -H \"Authorization: Bearer $CRON_SECRET\" http://ams/cron/directory-sync"]
+---
+# The audit trail pushed to the SIEM every five minutes (SIEM_URL,
+# SIEM_AUTH, SIEM_FORMAT in the secret; without SIEM_URL it does nothing).
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: ams-siem, labels: { app: ams, part: cron } }
+spec:
+  schedule: "*/5 * * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: call
+              image: curlimages/curl:8.11.1
+              envFrom: [{ secretRef: { name: ams-env } }]
+              command: ["sh", "-c", "curl -fsS -m 120 -H \"Authorization: Bearer $CRON_SECRET\" http://ams/cron/siem"]

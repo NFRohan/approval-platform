@@ -12,7 +12,7 @@ import { control } from "@/components/reports/ReportParts";
 import { SERIES_1, SERIES_2, SERIES_3, INK, MUTED } from "@/components/viz";
 
 export const Route = createFileRoute("/admin/calendar")({
-  head: () => ({ meta: [{ title: "Working calendar · Admin Services Portal" }] }),
+  head: () => ({ meta: [{ title: "Working Calendar · Admin Services Portal" }] }),
   component: CalendarPage,
 });
 
@@ -81,7 +81,7 @@ function CalendarPage() {
 
   return (
     <div className="mx-auto" style={{ maxWidth: 1280, padding: "28px 28px 56px" }}>
-      <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: INK, margin: 0 }}>Working calendar</h1>
+      <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", color: INK, margin: 0 }}>Working Calendar</h1>
       <p style={{ marginTop: 6, fontSize: 14, color: MUTED, marginBottom: 18, maxWidth: 820 }}>
         The days no deadline counts. Fridays and Saturdays, and the government's holidays — the Eid and Puja breaks among them — so a three-day
         approval asked for before Eid is due after it. Days that depend on the moon are provisional until it is sighted; move them here when it is.

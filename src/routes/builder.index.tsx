@@ -168,6 +168,7 @@ function BuilderEditor() {
               team: (cfg as { team?: string }).team,
               ccTeam: (cfg as { ccTeam?: boolean }).ccTeam,
               allowOther: (cfg as { allowOther?: boolean }).allowOther,
+              prefill: (cfg as { prefill?: string }).prefill,
               order_index: row.order_index ?? 0,
             };
           }),
@@ -212,7 +213,7 @@ function BuilderEditor() {
       field_type: field.kind,
       is_required: field.required,
       order_index: field.order_index,
-      field_config: { helper: field.helper, options: field.options, placeholder: field.placeholder, validation: field.validation, formula: field.formula, team: field.team, ccTeam: field.ccTeam, allowOther: field.allowOther },
+      field_config: { helper: field.helper, options: field.options, placeholder: field.placeholder, validation: field.validation, formula: field.formula, team: field.team, ccTeam: field.ccTeam, allowOther: field.allowOther, prefill: field.prefill || undefined },
     });
     if (error) toast.error("Failed to save field: " + error.message);
     else setSavedAgo("just now");
@@ -226,7 +227,7 @@ function BuilderEditor() {
         field_name: field.label,
         is_required: field.required,
         order_index: field.order_index,
-        field_config: { helper: field.helper, options: field.options, placeholder: field.placeholder, validation: field.validation, formula: field.formula, team: field.team, ccTeam: field.ccTeam, allowOther: field.allowOther },
+        field_config: { helper: field.helper, options: field.options, placeholder: field.placeholder, validation: field.validation, formula: field.formula, team: field.team, ccTeam: field.ccTeam, allowOther: field.allowOther, prefill: field.prefill || undefined },
       })
       .eq("id", field.id);
     if (!error) setSavedAgo("just now");
@@ -452,6 +453,7 @@ function BuilderEditor() {
           team: field.team,
           ccTeam: field.ccTeam,
           allowOther: field.allowOther,
+          prefill: field.prefill || undefined,
         },
       }));
       const { error } = await db.from("form_fields").insert(rows);

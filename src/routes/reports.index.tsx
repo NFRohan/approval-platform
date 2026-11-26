@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { BarChart3, CalendarClock, FileSpreadsheet, GitPullRequestArrow, Plus } from "lucide-react";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
-import { listReports, type ReportTemplate } from "@/lib/report-fn";
+import { listReports, scheduleWords, type ReportTemplate } from "@/lib/report-fn";
 import { DATASETS } from "@/lib/report-catalogue";
 import { Button, NoPermission, Notice, Page, Pill } from "@/components/admin/kit";
 
@@ -36,7 +36,7 @@ function ReportsPage() {
       <div className="flex items-center gap-2 mb-5 flex-wrap">
         {can("reports.manage") && (
           <Link to="/reports/new" style={{ textDecoration: "none" }}>
-            <Button tone="brand"><Plus size={14} /> New report</Button>
+            <Button tone="brand"><Plus size={14} /> New Report</Button>
           </Link>
         )}
         <Link to="/analytics" style={{ textDecoration: "none" }}>
@@ -82,7 +82,7 @@ function Section({ title, reports, empty }: { title: string; reports: ReportTemp
               <Pill>{DATASETS[r.dataset].label}</Pill>
               <Pill>{r.columns.length} columns</Pill>
               {r.schedule !== "none" && (
-                <Pill tone="brand"><CalendarClock size={11} style={{ marginRight: 4 }} />{r.schedule === "weekly" ? "Emailed weekly" : "Emailed monthly"} to {r.recipients.length} {r.recipients.length === 1 ? "person" : "people"}</Pill>
+                <Pill tone="brand"><CalendarClock size={11} style={{ marginRight: 4 }} />{scheduleWords(r.schedule, r.schedule_day)} to {r.recipients.length + (r.external_recipients?.length ?? 0)} {r.recipients.length + (r.external_recipients?.length ?? 0) === 1 ? "person" : "people"}</Pill>
               )}
               {r.pending_columns && <Pill tone="amber"><GitPullRequestArrow size={11} style={{ marginRight: 4 }} />Change requested</Pill>}
             </div>

@@ -123,6 +123,8 @@ export type Session = {
   mfa: boolean;
   /** Does the organisation require two-step sign-in to administer? */
   requireAdminMfa: boolean;
+  /** Does it require two-step sign-in of everybody? */
+  requireMfaAll?: boolean;
   /** Epoch seconds of the last request, for the idle timeout. */
   seen: number;
   /**
@@ -197,6 +199,7 @@ export async function verifySession(token: string | undefined): Promise<Session 
       permissions: Array.isArray(payload.permissions) ? payload.permissions.map(String) : [],
       mfa: payload.mfa === true,
       requireAdminMfa: payload.requireAdminMfa === true,
+      requireMfaAll: payload.requireMfaAll === true,
       // A token without one predates the idle timeout; it counts as idle.
       seen: Number(payload.seen) || 0,
       born: Number(payload.born) || undefined,

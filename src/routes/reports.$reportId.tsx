@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { setCrumbLabel } from "@/lib/crumb";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -9,6 +10,7 @@ import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import {
   decideReportChange, deleteReport, emailReport, getReport, reportFilterOptions, requestReportChange,
   runReportFn, saveReport, setReportSchedule, type FilterOptions, type ReportTemplate,
+  scheduleWords,
 } from "@/lib/report-fn";
 import { DATASETS, describeFilters, type ReportFilters, type ReportResult } from "@/lib/report-catalogue";
 import { Button, Card, Field, NoPermission, Notice, Page, Pill, fmtWhen, inputStyle } from "@/components/admin/kit";
@@ -41,6 +43,7 @@ function ReportPage() {
     const r = await getReport({ data: { id: reportId } });
     if (!r.ok) { setError(r.error); return; }
     setReport(r.report);
+    setCrumbLabel(`/reports/${r.report.id}`, r.report.name);
     setFilters(r.report.filters ?? {});
   }, [reportId]);
 
@@ -82,7 +85,7 @@ function ReportPage() {
             <Pill>{ds.label}</Pill>
             {report.standard && <Pill tone="brand">Standard</Pill>}
             {report.schedule !== "none" && (
-              <Pill tone="brand"><CalendarClock size={11} style={{ marginRight: 4 }} />{report.schedule === "weekly" ? "Weekly" : "Monthly"} · {report.format.toUpperCase()}</Pill>
+              <Pill tone="brand"><CalendarClock size={11} style={{ marginRight: 4 }} />{scheduleWords(report.schedule, report.schedule_day)} · {report.format.toUpperCase()}</Pill>
             )}
           </div>
           <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "#71717A" }}>{report.description ?? ds.description}</p>
@@ -284,7 +287,10 @@ function SchedulePanel({ report, people, onClose, onSaved }: { report: ReportTem
   const [schedule, setSchedule] = useState(report.schedule);
   const [recipients, setRecipients] = useState(report.recipients);
   const [format, setFormat] = useState(report.format);
+  const [day, setDay] = useState<number | null>(report.schedule_day ?? null);
+  const [external, setExternal] = useState((report.external_recipients ?? []).join(", "));
   const [busy, setBusy] = useState(false);
+  const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   return (
     <Card title="Send it on a schedule" aside={<Button small onClick={onClose}>Close</Button>}>
       <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)" }}>
@@ -292,10 +298,26 @@ function SchedulePanel({ report, people, onClose, onSaved }: { report: ReportTem
           <Field label="How often">
             <select name="schedule" style={control} value={schedule} onChange={(e) => setSchedule(e.target.value as ReportTemplate["schedule"])}>
               <option value="none">Not scheduled</option>
+              <option value="daily">Every working day</option>
               <option value="weekly">Every week</option>
               <option value="monthly">Every month</option>
+              <option value="quarterly">Every quarter</option>
             </select>
           </Field>
+          {schedule === "weekly" && (
+            <Field label="On">
+              <select name="schedule-day" style={control} value={day ?? 7} onChange={(e) => setDay(Number(e.target.value))}>
+                {WEEKDAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}
+              </select>
+            </Field>
+          )}
+          {(schedule === "monthly" || schedule === "quarterly") && (
+            <Field label={schedule === "monthly" ? "On day of the month" : "On day of the quarter's first month"}>
+              <select name="schedule-day" style={control} value={day ?? 1} onChange={(e) => setDay(Number(e.target.value))}>
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="As">
             <select name="format" style={control} value={format} onChange={(e) => setFormat(e.target.value as ReportTemplate["format"])}>
               <option value="xlsx">Excel</option>
@@ -307,12 +329,20 @@ function SchedulePanel({ report, people, onClose, onSaved }: { report: ReportTem
             {report.last_sent_at ? `Last sent ${fmtWhen(report.last_sent_at)}.` : "Not sent yet."} Sent with the daily round at 08:00, Dhaka.
           </div>
         </div>
-        <Field label="To"><PeoplePicker people={people} value={recipients} onChange={setRecipients} /></Field>
+        <div className="flex flex-col gap-3">
+          <Field label="To"><PeoplePicker people={people} value={recipients} onChange={setRecipients} /></Field>
+          <Field label="And to outside addresses (a distribution list, an auditor)">
+            <input aria-label="Outside addresses" style={control} value={external} onChange={(e) => setExternal(e.target.value)}
+                   placeholder="finance-control@bkash.com, auditor@example.com" />
+          </Field>
+        </div>
       </div>
       <div style={{ marginTop: 14 }}>
         <Button tone="brand" busy={busy} onClick={async () => {
           setBusy(true);
-          const r = await setReportSchedule({ data: { id: report.id, schedule, recipients, format } });
+          const ext = external.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+          const r = await setReportSchedule({ data: { id: report.id, schedule, recipients, format,
+            day: schedule === "weekly" ? (day ?? 7) : schedule === "monthly" || schedule === "quarterly" ? (day ?? 1) : null, external: ext } });
           setBusy(false);
           if (!r.ok) return void toast.error(r.error);
           toast.success(schedule === "none" ? "No longer scheduled" : "Schedule saved");

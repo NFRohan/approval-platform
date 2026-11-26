@@ -785,6 +785,21 @@ as $$
                           where sl.form_template_id = s.form_template_id and sl.tenant_id = s.tenant_id
                             and sl.approver_user_id = nr.notifyee_user_id
                             and sl.min_amount <= app.amount_in(s.form_template_id, app.answers_of(s.id))))
+      -- A team (SOW §3.3 1.3): everybody in a department, or everybody
+      -- holding a role, when the request happens.
+      union all
+      select e.employee_id
+        from public.form_submissions s
+        join public.notification_rules nr on nr.form_template_id = s.form_template_id and nr.tenant_id = s.tenant_id
+        join public.employees e on e.tenant_id = s.tenant_id and e.active
+       where s.id = p_submission
+         and p_event = any (coalesce(nr.events, '{raised}'))
+         and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition))
+         and ((nr.label like 'team:dept:%' and e.department = substr(nr.label, 11))
+              or (nr.label like 'team:role:%' and exists (
+                    select 1 from public.roles ro
+                     where ro.tenant_id = s.tenant_id and ro.name = substr(nr.label, 11)
+                       and ro.id in (select app.held_roles(e.employee_id, s.tenant_id)))))
       union all
       select e.line_manager_id
         from public.form_submissions s
@@ -793,6 +808,7 @@ as $$
         join public.employees e on e.tenant_id = s.tenant_id and e.employee_id = ar.approver_user_id
        where s.id = p_submission
          and app.rule_role(nr.label) = 'approver_manager'
+         and p_event in ('raised', 'approved', 'rejected')
          and p_event = any (coalesce(nr.events, '{raised}'))
          and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition))
          and ar.status = case p_event when 'raised' then 'pending' when 'approved' then 'approved' else 'rejected' end
@@ -800,6 +816,29 @@ as $$
     ) w
    where w.who is not null
 $$;
+
+-- Outside or distribution addresses watching a form ("team:email:…"):
+-- emailed directly, as nobody here has a bell for them.
+create or replace function app.email_watchers(p_submission uuid, p_event text, p_kind text, p_title text, p_body text)
+returns int
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare n int;
+begin
+  if coalesce(current_setting('app.no_mail', true), '') = 'true' then return 0; end if;
+  insert into public.email_outbox (tenant_id, kind, recipient_id, to_address, context, entity_type, entity_id, status)
+  select distinct s.tenant_id, p_kind, null::text, lower(substr(nr.label, 12)),
+         jsonb_build_object('title', p_title, 'body', p_body), 'form_submission', s.id, 'queued'
+    from public.form_submissions s
+    join public.notification_rules nr on nr.form_template_id = s.form_template_id and nr.tenant_id = s.tenant_id
+   where s.id = p_submission and nr.label like 'team:email:_%'
+     and p_event = any (coalesce(nr.events, '{raised}'))
+     and (nr.condition is null or app.condition_holds(app.answers_of(s.id), nr.condition));
+  get diagnostics n = row_count;
+  return n;
+end $$;
 
 -- Approved or rejected: the watchers who asked to hear it are told.
 -- The requester hears from the engine already, so not twice from here.
@@ -812,6 +851,24 @@ as $$
 declare v_event text; r record; v_requester text;
 begin
   if new.subject_type <> 'form_submission' then return new; end if;
+  -- A document added to, or revised on, a request (ABC: "notification
+  -- per document"): whoever watches the form for it is told, not whoever
+  -- uploaded it, and not while the request is still a draft.
+  if new.action in ('document_added', 'document_revised') then
+    if (select status from public.form_submissions where id = new.subject_id) in ('draft', 'cancelled') then return new; end if;
+    for r in select who from app.watchers_for(new.subject_id, new.action) who where who is distinct from new.actor_id loop
+      perform app.notify(r.who, 'watch.document',
+        case new.action when 'document_added' then 'A document was added to a request you watch'
+                        else 'A document was revised on a request you watch' end,
+        app.subject_label('form_submission', new.subject_id) || ': ' || coalesce(new.comment, 'a document')
+          || coalesce(', by ' || (select name from public.employees where tenant_id = new.tenant_id and employee_id = new.actor_id), '') || '.',
+        'form_submission', new.subject_id);
+    end loop;
+    perform app.email_watchers(new.subject_id, new.action, 'watch.document',
+      case new.action when 'document_added' then 'A document was added to a request you watch' else 'A document was revised on a request you watch' end,
+      app.subject_label('form_submission', new.subject_id) || ': ' || coalesce(new.comment, 'a document') || '.');
+    return new;
+  end if;
   v_event := case new.action when 'completed' then 'approved' when 'rejected' then 'rejected' end;
   if v_event is null then return new; end if;
   -- A step's rejection ends the request; one notice for it.
@@ -827,6 +884,10 @@ begin
         || case v_event when 'approved' then ' has been approved by everybody it needed.' else ' was not approved.' end,
       'form_submission', new.subject_id);
   end loop;
+  perform app.email_watchers(new.subject_id, v_event, 'watch.' || v_event,
+    case v_event when 'approved' then 'A request you watch was approved' else 'A request you watch was rejected' end,
+    app.subject_label('form_submission', new.subject_id)
+      || case v_event when 'approved' then ' has been approved by everybody it needed.' else ' was not approved.' end);
   return new;
 end $$;
 
@@ -906,10 +967,12 @@ create policy tracker_reminders_own_read on public.tracker_reminders for select 
 
 -- Requests as a tracker shows them: where each is, with whom, since when,
 -- and the reminder the person looking has set on it.
+drop function if exists public.tracker_rows(jsonb);
 create or replace function public.tracker_rows(p_filters jsonb)
 returns table (id uuid, reference text, form text, category text, requester text, requester_name text, department text,
                status text, priority text, flag text, submitted_at timestamptz, with_whom text, stage text,
-               waiting_since timestamptz, due_at timestamptz, overdue boolean, remind_on date, reminder_note text)
+               waiting_since timestamptz, due_at timestamptz, overdue boolean, remind_on date, reminder_note text,
+               decided_at timestamptz)
 language sql
 stable
 security invoker
@@ -929,11 +992,14 @@ as $$
   select s.id, s.ref_number, t.name, t.category, s.submitted_by, re.name, re.department,
          s.status, coalesce(s.priority, 'normal'), s.flag, s.submitted_at,
          o.with_whom, o.stage, o.waiting_since, o.due_at, coalesce(o.due_at < now(), false),
-         tr.remind_on, tr.note
+         tr.remind_on, tr.note,
+         case when s.status in ('completed', 'rejected', 'cancelled') then coalesce(sx.last_acted_at, s.closed_at) end
     from public.form_submissions s
     join public.form_templates t on t.id = s.form_template_id and t.tenant_id = s.tenant_id
     left join public.employees re on re.tenant_id = s.tenant_id and re.employee_id = s.submitted_by
     left join open_steps o on o.submission_id = s.id
+    -- When it was decided: its last step, or when it was closed.
+    left join public.submission_stats sx on sx.submission_id = s.id and sx.tenant_id = s.tenant_id
     -- The reminders of the person looking: a handful, joined once.
     left join (select distinct on (x.submission_id) x.submission_id, x.remind_on, x.note
                  from public.tracker_reminders x
@@ -951,7 +1017,23 @@ as $$
      and (coalesce(f.j ->> 'from', '') = '' or (s.submitted_at at time zone 'Asia/Dhaka')::date >= (f.j ->> 'from')::date)
      and (coalesce(f.j ->> 'to', '') = '' or (s.submitted_at at time zone 'Asia/Dhaka')::date <= (f.j ->> 'to')::date)
      and (coalesce(f.j ->> 'search', '') = ''
-          or concat_ws(' ', s.ref_number, s.legacy_ref, t.name, re.name, s.submitted_by) ilike '%' || (f.j ->> 'search') || '%')
+          or concat_ws(' ', s.ref_number, s.legacy_ref, t.name, re.name, s.submitted_by) ilike '%' || (f.j ->> 'search') || '%'
+          or exists (select 1 from public.submission_values sv where sv.submission_id = s.id
+                      and sv.value ilike '%' || (f.j ->> 'search') || '%'))
+     -- Decided between two dates: when it was approved or rejected (ABC:
+     -- "range on decided/approval date").
+     and (coalesce(f.j ->> 'decided_from', '') = '' or (case when s.status in ('completed', 'rejected', 'cancelled') then coalesce(sx.last_acted_at, s.closed_at) end at time zone 'Asia/Dhaka')::date >= (f.j ->> 'decided_from')::date)
+     and (coalesce(f.j ->> 'decided_to', '') = '' or (case when s.status in ('completed', 'rejected', 'cancelled') then coalesce(sx.last_acted_at, s.closed_at) end at time zone 'Asia/Dhaka')::date <= (f.j ->> 'decided_to')::date)
+     -- An answer exactly (a reference number, a counterparty), any field.
+     and (coalesce(f.j ->> 'answer', '') = ''
+          or exists (select 1 from public.submission_values sv where sv.submission_id = s.id
+                      and lower(trim(sv.value)) = lower(trim(f.j ->> 'answer'))))
+     -- A date answer in a range: the event or transaction date.
+     and (coalesce(f.j ->> 'answer_field', '') = ''
+          or exists (select 1 from public.submission_values sv where sv.submission_id = s.id
+                      and sv.field_name = f.j ->> 'answer_field' and sv.value ~ '^\d{4}-\d{2}-\d{2}'
+                      and (coalesce(f.j ->> 'answer_from', '') = '' or left(sv.value, 10)::date >= (f.j ->> 'answer_from')::date)
+                      and (coalesce(f.j ->> 'answer_to', '') = '' or left(sv.value, 10)::date <= (f.j ->> 'answer_to')::date)))
    -- Earliest deadline first: the overdue are the earliest, so they lead.
    order by o.due_at nulls last, s.submitted_at desc
    limit 1000
@@ -967,6 +1049,22 @@ security invoker
 set search_path = public, app, pg_temp
 as $$
   select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) from public.tracker_rows(p_filters) r
+$$;
+
+-- The dashboard's "Completed this month": the person's requests decided
+-- this month (Dhaka), not those raised this month and since completed.
+create or replace function public.my_completed_this_month()
+returns int
+language sql
+stable
+security invoker
+set search_path = public, app, pg_temp
+as $$
+  select count(*)::int
+    from public.form_submissions s
+    left join public.submission_stats st on st.submission_id = s.id and st.tenant_id = s.tenant_id
+   where s.tenant_id = app.current_tenant() and s.submitted_by = app.current_employee() and s.status = 'completed'
+     and coalesce(st.last_acted_at, s.closed_at) >= (date_trunc('month', now() at time zone 'Asia/Dhaka') at time zone 'Asia/Dhaka')
 $$;
 
 create or replace function public.save_tracker(p_id uuid, p_name text, p_description text, p_shared_with text, p_filters jsonb)
@@ -1184,7 +1282,32 @@ begin
          ["money","Rate per night",true,{}],
          ["calculation","Total allowance",false,{"formula":"{Nights worked} * {Rate per night}"}],
          ["textarea","Note",false,{}]]',
-       '[["line_manager","EMP-1134",2,true,0,null],["hrbp","EMP-0201",2,false,1,"HR review"]]')
+       '[["line_manager","EMP-1134",2,true,0,null],["hrbp","EMP-0201",2,false,1,"HR review"]]'),
+      -- ABC portal, the SOW's second form: "(ii) Political and Charitable
+      -- Donations", beside the gift, hospitality and entertainment one.
+      -- Compliance (two of three) and Finance by amount are added below.
+      ('Political & Charitable Donation', 'Compliance', 'regulatory', array['donation', 'political', 'charitable', 'csr', 'sponsorship', 'abc'], 'EMP-0830', false,
+       '[["gen_employee_name","Employee name",true,{}],
+         ["select","Donation type",true,{"options":["Political","Charitable","Sponsorship","Community / CSR"]}],
+         ["text","Recipient organisation",true,{}],
+         ["textarea","Purpose",true,{}],
+         ["money","Amount",true,{}],
+         ["date","Date of donation",true,{}],
+         ["select","Linked to a public official or a pending business decision?",true,{"options":["No","Yes"]}],
+         ["textarea","If yes, explain",false,{}],
+         ["file","Supporting document",false,{"helper":"The request letter, receipt or agreement; describe and tag it once attached"}]]',
+       '[["line_manager","EMP-1134",2,true,0,null]]'),
+      -- ABC portal, "Advance Adjustment": the claim against an advance once
+      -- the real cost is known, with its revised documents as new versions.
+      ('Advance Adjustment', 'Finance', 'budgetary', array['advance', 'adjustment', 'settlement', 'claim', 'supplementary', 'abc'], 'EMP-0312', false,
+       '[["gen_employee_name","Employee name",true,{}],
+         ["text","Original request reference",true,{"helper":"The request the advance was for, e.g. AMS-2026-00201"}],
+         ["money","Advance taken",true,{}],
+         ["money","Actual spent",true,{}],
+         ["calculation","To claim (or return, if negative)",false,{"formula":"{Actual spent} - {Advance taken}"}],
+         ["textarea","Explanation",true,{}],
+         ["file","Revised supporting document",false,{"helper":"Upload a revised bill again here and it is kept as a new version"}]]',
+       '[["line_manager","EMP-1134",2,true,0,null],["finance","EMP-0312",2,false,1,"Finance settlement"]]')
     ) as x(name, category, classification, keywords, created_by, within_line, fields, rules)
   loop
     continue when exists (select 1 from public.form_templates where tenant_id = p_tenant and name = f.name);
@@ -1201,13 +1324,34 @@ begin
            case when exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = e ->> 1) then e ->> 1 end,
            (e ->> 2)::int, (e ->> 3)::boolean, e ->> 0, (e ->> 4)::int, 0, e ->> 5
       from jsonb_array_elements(f.rules::jsonb) e;
-    if f.name = 'Fraud Incident Fund Transfer' then
+    if f.name = 'Political & Charitable Donation' then
+      -- Any two of the three compliance officers, then Finance by amount.
+      insert into public.approval_rules (tenant_id, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position, quorum, stage_label)
+      select p_tenant, v_form, c.emp, 3, false, 'compliance', 1, c.pos, 2, 'Compliance review'
+        from (values ('EMP-0830', 0), ('EMP-0831', 1), ('EMP-0832', 2)) c(emp, pos)
+       where exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = c.emp);
+      insert into public.approval_rules (tenant_id, form_template_id, approver_user_id, deadline_days, is_auto_added, label, step_index, position)
+      values (p_tenant, v_form, null, 3, true, 'slab_finance', 2, 0);
+      insert into public.approval_slabs (tenant_id, form_template_id, min_amount, max_amount, approver_user_id, order_index)
+      select p_tenant, v_form, s.min_amount, null, s.emp, s.ord
+        from (values (0::numeric, 'EMP-0312', 0), (100000.01, 'EMP-0600', 1), (500000.01, 'EMP-0700', 2)) s(min_amount, emp, ord)
+       where exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = s.emp);
+    end if;
+        if f.name = 'Fraud Incident Fund Transfer' then
       insert into public.approval_slabs (tenant_id, form_template_id, min_amount, max_amount, approver_user_id, order_index)
       select p_tenant, v_form, s.min_amount, null, s.emp, s.ord
         from (values (0::numeric, 'EMP-0312', 0), (100000.01, 'EMP-0600', 1), (1000000.01, 'EMP-0700', 2)) s(min_amount, emp, ord)
        where exists (select 1 from public.employees where tenant_id = p_tenant and employee_id = s.emp);
     end if;
   end loop;
+
+  -- Donations have a form of their own now; the gift declaration keeps
+  -- gifts, hospitality and entertainment (SOW ABC portal, forms (i) and (ii)).
+  update public.form_fields x
+     set field_config = jsonb_set(x.field_config, '{options}', '["Gift received","Gift given","Hospitality","Entertainment"]'::jsonb)
+    from public.form_templates t
+   where t.id = x.form_template_id and t.tenant_id = p_tenant and t.name = 'Gift & Hospitality Declaration'
+     and x.field_name = 'Declaration type' and x.field_config -> 'options' ? 'Political donation';
 
   -- Exit clearance: the SOW's checklists, the leaver's own, and Payroll.
   perform app.seed_exit_clearance(p_tenant);

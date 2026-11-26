@@ -224,7 +224,7 @@ export function ResultTable({ columns, rows, sort, onSort, truncated }: {
       <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 12, color: "#71717A" }}>
         <span data-testid="row-count">
           {rows.length.toLocaleString()} row{rows.length === 1 ? "" : "s"}
-          {truncated && " — only the first 5,000; narrow the filters for the rest"}
+          {truncated && " — the first 5,000 on screen; Excel downloads up to 100,000 and CSV up to 50,000"}
         </span>
         {pages > 1 && (
           <span className="inline-flex items-center gap-2">

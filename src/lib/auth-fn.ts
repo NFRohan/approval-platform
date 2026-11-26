@@ -79,8 +79,8 @@ function toPublic(session: Session): PublicSession {
     canSwitch: session.canSwitch,
     permissions,
     mfa: session.mfa,
-    mfaSetupRequired: session.requireAdminMfa && !session.mfa
-      && session.permissions.some((p) => (ADMIN_PERMISSIONS as readonly string[]).includes(p)),
+    mfaSetupRequired: !session.mfa && (session.requireMfaAll === true || (session.requireAdminMfa
+      && session.permissions.some((p) => (ADMIN_PERMISSIONS as readonly string[]).includes(p)))),
     idleSeconds: IDLE_SECONDS,
   };
 }
@@ -217,6 +217,13 @@ export const verifySignInCode = createServerFn({ method: 'POST' })
       client.release();
     }
   });
+
+/** Is single sign-on set up, and what does its button say? (src/server/oidc.ts) */
+export const ssoAvailable = createServerFn({ method: 'GET' }).handler(async (): Promise<{ label: string } | null> => {
+  const { oidcConfig } = await import('@/server/oidc');
+  const cfg = oidcConfig();
+  return cfg ? { label: cfg.label } : null;
+});
 
 export const signOut = createServerFn({ method: 'POST' }).handler(async () => {
   deleteCookie(SESSION_COOKIE, { path: '/' });

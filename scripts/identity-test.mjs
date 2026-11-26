@@ -97,8 +97,10 @@ check('a token from before the idle timeout counts as idle', auth.isIdle({ ...se
 const old = await auth.verifySession(await auth.signSession({ ...session, born: nowS - 13 * 3600 }));
 check('reissuing a session does not extend it past 12 hours from sign-in', old, null);
 check('without two-step sign-in, administrative permissions are held back',
-  identity.effectivePermissions({ ...session, mfa: false, permissions: ['users.manage', 'forms.build'] }), ['forms.build']);
-check('...and holds them all with it', identity.effectivePermissions({ ...session, permissions: ['users.manage', 'forms.build'] }), ['users.manage', 'forms.build']);
+  identity.effectivePermissions({ ...session, mfa: false, permissions: ['users.manage', 'forms.build', 'reports.view'] }), ['reports.view']);
+check('...and holds them all with it', identity.effectivePermissions({ ...session, permissions: ['users.manage', 'forms.build', 'reports.view'] }), ['users.manage', 'forms.build', 'reports.view']);
+check('required of everybody, nothing is held without it',
+  identity.effectivePermissions({ ...session, mfa: false, requireMfaAll: true, permissions: ['reports.view'] }), []);
 const pending = await auth.signMfaPending(session.userId);
 check('half-way through sign-in names the account', await auth.verifyMfaPending(pending), session.userId);
 check('...and a full session token is not one', await auth.verifyMfaPending(await auth.signSession(session)), null);

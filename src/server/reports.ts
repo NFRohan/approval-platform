@@ -17,6 +17,22 @@ import { HttpError } from './tables';
 
 export const REPORT_ROW_LIMIT = 5000;
 
+/**
+ * How many rows a download carries (SOW §3.6 1.6, §4.3a.ii: large
+ * exports). The screen shows 5,000; a spreadsheet, compressed, carries
+ * 100,000; a CSV 50,000 — a serverless host caps a response near 4.5 MB,
+ * so on a server of our own EXPORT_CSV_ROWS raises it. A PDF of more
+ * than 5,000 rows is not something anybody reads.
+ */
+export function exportRowLimit(format: 'xlsx' | 'csv' | 'pdf'): number {
+  if (format === 'pdf') return REPORT_ROW_LIMIT;
+  if (format === 'csv') return Math.max(REPORT_ROW_LIMIT, Number(process.env.EXPORT_CSV_ROWS || 50_000));
+  return Math.max(REPORT_ROW_LIMIT, Number(process.env.EXPORT_XLSX_ROWS || 100_000));
+}
+
+/** The raw rows of the last report run on a connection, for withAnswers. */
+export const lastRaw = new WeakMap<pg.PoolClient, { __sid?: string }[]>();
+
 export type { ReportResult, ReportValue } from '@/lib/report-catalogue';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -46,7 +62,7 @@ function periodClause(f: ReportFilters, column: string, bind: (v: unknown) => st
 
 export function buildReportQuery(
   dataset: Dataset, columnKeys: string[], filters: ReportFilters,
-  sort?: { key: string; dir: 'asc' | 'desc' }, tenantId?: string,
+  sort?: { key: string; dir: 'asc' | 'desc' }, tenantId?: string, limit: number = REPORT_ROW_LIMIT,
 ) {
   if (!isDataset(dataset)) throw new HttpError(400, 'no such dataset');
   const catalogue = columnsOf(dataset);
@@ -84,7 +100,8 @@ export function buildReportQuery(
     where.push('(' + hay.map((h) => `lower(coalesce(${h}, '')) like ${bind(like)}`).join(' or ') + ')');
   }
 
-  const select = cols.map((c) => `${c.sql} as "${c.key}"`).join(', ');
+  // The request's own id rides along, unshown, so its answers can be added.
+  const select = cols.map((c) => `${c.sql} as "${c.key}"`).join(', ') + (dataset === 'requests' ? ', id as "__sid"' : '');
   const whereSql = where.length ? `where ${where.join(' and ')}` : '';
   let order = def.defaultSort;
   if (sort) {
@@ -95,21 +112,22 @@ export function buildReportQuery(
   const text = dataset === 'approvers'
     ? `select ${select} from public.report_steps ${whereSql}
          ${where.length ? 'and' : 'where'} approver_id is not null and status not in ('waiting', 'skipped')
-        group by approver_id order by ${order} limit ${REPORT_ROW_LIMIT + 1}`
-    : `select ${select} from public.report_${dataset} ${whereSql} order by ${order} limit ${REPORT_ROW_LIMIT + 1}`;
+        group by approver_id order by ${order} limit ${Math.floor(limit) + 1}`
+    : `select ${select} from public.report_${dataset} ${whereSql} order by ${order} limit ${Math.floor(limit) + 1}`;
   return { text, params, cols };
 }
 
 export async function runReport(
   client: pg.PoolClient, dataset: Dataset, columnKeys: string[], filters: ReportFilters,
-  sort?: { key: string; dir: 'asc' | 'desc' }, tenantId?: string,
+  sort?: { key: string; dir: 'asc' | 'desc' }, tenantId?: string, limit: number = REPORT_ROW_LIMIT,
 ): Promise<ReportResult> {
-  const { text, params, cols } = buildReportQuery(dataset, columnKeys, filters, sort, tenantId);
+  const { text, params, cols } = buildReportQuery(dataset, columnKeys, filters, sort, tenantId, limit);
   const { rows } = await client.query(text, params);
-  const truncated = rows.length > REPORT_ROW_LIMIT;
+  const truncated = rows.length > limit;
+  lastRaw.set(client, truncated ? rows.slice(0, limit) : rows);
   return {
     columns: cols.map((c) => ({ key: c.key, label: c.label, type: c.type })),
-    rows: (truncated ? rows.slice(0, REPORT_ROW_LIMIT) : rows).map((r) => {
+    rows: (truncated ? rows.slice(0, limit) : rows).map((r) => {
       const out: Record<string, ReportValue> = {};
       for (const c of cols) {
         const v = r[c.key];
@@ -130,4 +148,35 @@ export async function requireReports(client: pg.PoolClient) {
   const { rows } = await client.query(
     `select app.has_permission('reports.view') or app.has_permission('reports.manage') as ok`);
   if (!rows[0]?.ok) throw new HttpError(403, 'Reports need the reports.view permission.');
+}
+
+/**
+ * A report over one form's requests, with that form's answers as columns
+ * (ABC: "Excel for analysis" — counterparty, declaration type, event
+ * date). Read through the same session, so only answers the person may
+ * see are added.
+ */
+export async function withAnswers(client: pg.PoolClient, result: ReportResult, rawRows: { __sid?: string }[], filters: ReportFilters): Promise<ReportResult> {
+  const forms = strings(filters?.form);
+  if (forms.length !== 1) return result;
+  const ids = rawRows.map((r) => r.__sid).filter(Boolean) as string[];
+  if (!ids.length) return result;
+  const { rows: fields } = await client.query(
+    `select f.field_name from public.form_fields f join public.form_templates t on t.id = f.form_template_id
+      where t.name = $1 and f.field_type not in ('section_header', 'file', 'gen_employee_name', 'signature')
+      order by f.order_index`, [forms[0]]);
+  if (!fields.length) return result;
+  const { rows: vals } = await client.query(
+    'select submission_id, field_name, value from public.submission_values where submission_id = any ($1::uuid[])', [ids]);
+  const by: Record<string, Record<string, string>> = {};
+  for (const v of vals) (by[v.submission_id] ??= {})[v.field_name] = v.value ?? '';
+  const names = fields.map((f) => f.field_name as string);
+  return {
+    ...result,
+    columns: [...result.columns, ...names.map((n) => ({ key: `answer:${n}`, label: n, type: 'text' as const }))],
+    rows: result.rows.map((r, i) => {
+      const a = by[rawRows[i]?.__sid ?? ''] ?? {};
+      return { ...r, ...Object.fromEntries(names.map((n) => [`answer:${n}`, a[n] ?? null])) };
+    }),
+  };
 }

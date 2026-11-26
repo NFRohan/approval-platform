@@ -19,6 +19,8 @@ const EVENTS: { key: string; label: string }[] = [
   { key: "raised", label: "Raised" },
   { key: "approved", label: "Approved" },
   { key: "rejected", label: "Rejected" },
+  { key: "document_added", label: "Document added" },
+  { key: "document_revised", label: "Document revised" },
 ];
 const DEFAULT_WHEN: When = { events: ["raised"], condition: null };
 
@@ -30,7 +32,15 @@ const WATCHER_ROLES: { value: string; label: string }[] = [
   { value: "approver_manager", label: "The approver's line manager" },
   ...ROLE_OPTIONS,
 ];
-const roleLabel = (v: string) => WATCHER_ROLES.find((r) => `role:${r.value}` === v)?.label;
+// A team instead of a person (SOW §3.3 1.3): everybody in a department,
+// everybody holding a role, or an outside or distribution address — kept
+// as "team:dept:<name>", "team:role:<name>", "team:email:<address>".
+const teamLabel = (v: string): string | undefined => {
+  const m = /^(?:role:)?team:(dept|role|email):(.*)$/.exec(v);
+  if (!m) return undefined;
+  return m[1] === "dept" ? `Everyone in ${m[2]}` : m[1] === "role" ? `Everyone holding the ${m[2]} role` : m[2] ? `Email ${m[2]}` : "An email address…";
+};
+const roleLabel = (v: string) => WATCHER_ROLES.find((r) => `role:${r.value}` === v)?.label ?? teamLabel(v);
 
 // Optional: opened with no form (a bookmark, a reload), it says so rather than failing.
 const search = z.object({ templateId: z.string().optional() });
@@ -114,6 +124,16 @@ function NotificationsStep({ templateId }: { templateId: string }) {
   // The automatic watchers this form was saved with, or null when it has
   // none saved — see autoNotify.
   const [savedAuto, setSavedAuto] = useState<{ label: string; user_id: string | null }[] | null>(null);
+  const [teams, setTeams] = useState<{ departments: string[]; roles: string[] }>({ departments: [], roles: [] });
+  useEffect(() => {
+    void Promise.all([
+      db.from("departments").select("name").order("name"),
+      db.from("roles").select("name").eq("status", "active").order("name"),
+    ]).then(([d, r]) => setTeams({
+      departments: ((d.data ?? []) as { name: string }[]).map((x) => x.name),
+      roles: ((r.data ?? []) as { name: string }[]).map((x) => x.name),
+    }));
+  }, []);
   const [loading, setLoading] = useState(true);
   const [when, setWhen] = useState<Record<string, When>>({});
   const [fieldLabels, setFieldLabels] = useState<string[]>([]);
@@ -136,7 +156,7 @@ function NotificationsStep({ templateId }: { templateId: string }) {
         .map((f) => f.field_name as string));
       // A watcher added by hand is a person, or a role kept as "role:<role>".
       const who = (r: { notifyee_user_id: string | null; label: string | null }) =>
-        r.notifyee_user_id ?? (r.label && WATCHER_ROLES.some((x) => x.value === r.label) ? `role:${r.label}` : null);
+        r.notifyee_user_id ?? (r.label && (WATCHER_ROLES.some((x) => x.value === r.label) || r.label.startsWith("team:")) ? `role:${r.label}` : null);
       setWhen(Object.fromEntries((rules ?? [])
         .filter((r) => !r.is_auto_added && who(r))
         .map((r) => {
@@ -307,10 +327,7 @@ function NotificationsStep({ templateId }: { templateId: string }) {
         showDeadline={false}
         manual={manual}
         onManualChange={setManual}
-        manualRoles={WATCHER_ROLES}
-      />
-      )}
-      {!loading && manual.length > 0 && (
+        footer={manual.length > 0 ? (<>
         <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="notify-when">
           <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>When each is told</div>
           <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
@@ -356,6 +373,16 @@ function NotificationsStep({ templateId }: { templateId: string }) {
             })}
           </div>
         </section>
+      </>) : null}
+        manualRoles={[
+          ...WATCHER_ROLES,
+          ...teams.departments.map((d) => ({ value: `team:dept:${d}`, label: `Everyone in ${d}` })),
+          ...teams.roles.map((r) => ({ value: `team:role:${r}`, label: `Everyone holding the ${r} role` })),
+          ...manual.filter((m) => m.user_id.startsWith("role:team:email:") && m.user_id.length > 16)
+            .map((m) => ({ value: m.user_id.slice(5), label: `Email ${m.user_id.slice(16)}` })),
+          { value: "team:email:", label: "An email address…" },
+        ]}
+      />
       )}
     </BuilderChrome>
   );

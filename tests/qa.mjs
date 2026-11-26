@@ -11,6 +11,8 @@
 //   npm run qa -- --only=qa_   only walks whose name contains "qa_"
 //   npm run qa -- --no-build   reuse dist/ as it is
 //   npm run qa -- --jobs=4     walks at a time
+//   npm run qa -- --browser=firefox   walks in Firefox (or msedge for
+//                              Edge; Chromium by default) — SOW §4.4
 //
 // Writes tests/qa-report/index.html (open it in a browser) and
 // report.json; a failing walk check leaves a screenshot of the page in
@@ -33,6 +35,8 @@ const args = new Set(process.argv.slice(2));
 const opt = (name) => [...args].find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
 const JOBS = Number(opt('jobs') ?? 3);
 const ONLY = opt('only');
+// The walks read WALK_BROWSER (tests/walks/harness_head.mjs).
+if (opt('browser')) process.env.WALK_BROWSER = opt('browser');
 
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(SHOTS, { recursive: true });
@@ -92,7 +96,7 @@ console.log(`QA run — ${new Date().toISOString()}`);
 // 1. Static and offline suites -----------------------------------------
 if (!ONLY) {
   record('static', 'typecheck', await run(npx, ['tsc', '--noEmit', '-p', '.']));
-  for (const s of ['test:callsites', 'test:units', 'test:identity', 'test:reports', 'test:commercial', 'test:integration']) {
+  for (const s of ['test:callsites', 'test:units', 'test:oidc', 'test:identity', 'test:reports', 'test:commercial', 'test:integration']) {
     record('offline', s, await run(npm, ['run', '-s', s]));
   }
   // 2. Every database suite, on PGlite ----------------------------------

@@ -30,6 +30,9 @@ export const Route = createFileRoute("/trackers")({
 type Filters = {
   forms?: string[]; statuses?: string[]; departments?: string[]; priority?: string;
   flagged?: boolean; overdue?: boolean; from?: string; to?: string; search?: string;
+  /** ABC: decided between two dates; an answer exactly; a date answer in a range. */
+  decided_from?: string; decided_to?: string; answer?: string;
+  answer_field?: string; answer_from?: string; answer_to?: string;
 };
 type Tracker = {
   id: string; name: string; description: string | null; owner_id: string | null;
@@ -39,7 +42,7 @@ type Row = {
   id: string; reference: string | null; form: string; category: string | null; requester: string | null; requester_name: string | null;
   department: string | null; status: string; priority: string; flag: string | null; submitted_at: string | null;
   with_whom: string | null; stage: string | null; waiting_since: string | null; due_at: string | null; overdue: boolean;
-  remind_on: string | null; reminder_note: string | null;
+  remind_on: string | null; reminder_note: string | null; decided_at: string | null;
 };
 
 const MAIN = "main";
@@ -64,6 +67,7 @@ function TrackersPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [forms, setForms] = useState<string[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [dateFields, setDateFields] = useState<string[]>([]);
   const [saving, setSaving] = useState<null | { name: string; description: string; shared: Tracker["shared_with"] }>(null);
   const [reminding, setReminding] = useState<null | { id: string; on: string; note: string }>(null);
 
@@ -80,6 +84,8 @@ function TrackersPage() {
       setForms(((data ?? []) as { name: string }[]).map((f) => f.name)));
     void db.from("departments").select("name").order("name").then(({ data }) =>
       setDepartments(((data ?? []) as { name: string }[]).map((d) => d.name)));
+    void db.from("form_fields").select("field_name").eq("field_type", "date").then(({ data }) =>
+      setDateFields(Array.from(new Set(((data ?? []) as { field_name: string }[]).map((f) => f.field_name))).sort()));
   }, [loadTrackers, currentUser.employee_id]);
 
   const loadRows = useCallback(async (f: Filters) => {
@@ -128,18 +134,45 @@ function TrackersPage() {
   };
   const exportExcel = async () => {
     try {
+      const list = rows ?? [];
+      // One form's requests carry its answers as columns (ABC: "Excel for
+      // analysis" — counterparty, declaration type, event date).
+      const formsIn = Array.from(new Set(list.map((r) => r.form)));
+      let answerCols: { key: string; label: string }[] = [];
+      const answers: Record<string, Record<string, string>> = {};
+      if (formsIn.length === 1 && list.length) {
+        const { data: tpl } = await db.from("form_templates").select("id").eq("name", formsIn[0]).limit(1).maybeSingle();
+        if (tpl) {
+          const { data: fields } = await db.from("form_fields").select("field_name, field_type, order_index")
+            .eq("form_template_id", (tpl as { id: string }).id).order("order_index");
+          answerCols = ((fields ?? []) as { field_name: string; field_type: string }[])
+            .filter((f) => !["section_header", "file", "gen_employee_name", "signature"].includes(f.field_type))
+            .map((f) => ({ key: `a:${f.field_name}`, label: f.field_name }));
+          const ids = list.map((r) => r.id);
+          for (let i = 0; i < ids.length; i += 200) {
+            const { data: vals } = await db.from("submission_values").select("submission_id, field_name, value").in("submission_id", ids.slice(i, i + 200));
+            for (const v of (vals ?? []) as { submission_id: string; field_name: string; value: string | null }[]) {
+              (answers[v.submission_id] ??= {})[`a:${v.field_name}`] = v.value ?? "";
+            }
+          }
+        }
+      }
       await downloadSheet(`${(tracker?.name ?? "main-tracker").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${todayInOrg()}.xlsx`,
         tracker?.name ?? "Main tracker",
         [
           { key: "reference", label: "Reference" }, { key: "form", label: "Form" }, { key: "requester_name", label: "Raised by" },
-          { key: "department", label: "Department" }, { key: "status", label: "Status" }, { key: "with_whom", label: "With" },
+          { key: "department", label: "Department" }, { key: "status", label: "Status" }, { key: "submitted_at", label: "Raised" },
+          { key: "decided_at", label: "Decided" }, { key: "with_whom", label: "With" },
           { key: "stage", label: "Stage" }, { key: "waiting_since", label: "Waiting since" }, { key: "due_at", label: "Due" },
           { key: "priority", label: "Priority" }, { key: "flag", label: "Flag" },
+          ...answerCols,
         ],
-        (rows ?? []).map((r) => ({
+        list.map((r) => ({
           reference: r.reference, form: r.form, requester_name: r.requester_name, department: r.department,
-          status: STATUS_WORD[r.status] ?? r.status, with_whom: r.with_whom, stage: r.stage,
+          status: STATUS_WORD[r.status] ?? r.status, submitted_at: fmtDate(r.submitted_at), decided_at: fmtDate(r.decided_at),
+          with_whom: r.with_whom, stage: r.stage,
           waiting_since: fmtDate(r.waiting_since), due_at: fmtDate(r.due_at), priority: r.priority, flag: r.flag,
+          ...(answers[r.id] ?? {}),
         })));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "The workbook could not be made");
@@ -213,9 +246,11 @@ function TrackersPage() {
               <select aria-label="Priority" style={{ ...inputStyle, width: 130 }} value={filters.priority ?? ""} onChange={(e) => set({ priority: e.target.value || undefined })}>
                 <option value="">Any priority</option><option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option>
               </select>
-              <DateInput aria-label="From" style={{ ...inputStyle, width: 150 }} value={filters.from ?? ""} onChange={(iso) => set({ from: iso || undefined })} />
-              <DateInput aria-label="To" style={{ ...inputStyle, width: 150 }} value={filters.to ?? ""} onChange={(iso) => set({ to: iso || undefined })} />
-              <input aria-label="Search the tracker" placeholder="Reference, form or person" style={{ ...inputStyle, width: 220 }} value={filters.search ?? ""}
+              <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, color: "#52525B" }}>Raised
+                <DateInput aria-label="From" style={{ ...inputStyle, width: 130 }} value={filters.from ?? ""} onChange={(iso) => set({ from: iso || undefined })} />
+                to <DateInput aria-label="To" style={{ ...inputStyle, width: 130 }} value={filters.to ?? ""} onChange={(iso) => set({ to: iso || undefined })} />
+              </span>
+              <input aria-label="Search the tracker" placeholder="Reference, form, person or any answer" style={{ ...inputStyle, width: 240 }} value={filters.search ?? ""}
                 onChange={(e) => set({ search: e.target.value || undefined })} />
               <label className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, color: "#3F3F46" }}>
                 <input type="checkbox" checked={!!filters.overdue} onChange={(e) => set({ overdue: e.target.checked || undefined })} /> Overdue only
@@ -223,6 +258,25 @@ function TrackersPage() {
               <label className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, color: "#3F3F46" }}>
                 <input type="checkbox" checked={!!filters.flagged} onChange={(e) => set({ flagged: e.target.checked || undefined })} /> Flagged only
               </label>
+            </div>
+            <div className="flex gap-2 flex-wrap items-center mt-2" style={{ fontSize: 12.5, color: "#52525B" }} data-testid="tracker-more-filters">
+              <span className="inline-flex items-center gap-1.5">Decided
+                <DateInput aria-label="Decided from" style={{ ...inputStyle, width: 130 }} value={filters.decided_from ?? ""} onChange={(iso) => set({ decided_from: iso || undefined })} />
+                to <DateInput aria-label="Decided to" style={{ ...inputStyle, width: 130 }} value={filters.decided_to ?? ""} onChange={(iso) => set({ decided_to: iso || undefined })} />
+              </span>
+              <input aria-label="An answer exactly" placeholder="An answer exactly, e.g. a reference number" style={{ ...inputStyle, width: 250 }}
+                value={filters.answer ?? ""} onChange={(e) => set({ answer: e.target.value || undefined })} />
+              <select aria-label="Date answer" style={{ ...inputStyle, width: 170 }} value={filters.answer_field ?? ""}
+                onChange={(e) => set({ answer_field: e.target.value || undefined, ...(e.target.value ? {} : { answer_from: undefined, answer_to: undefined }) })}>
+                <option value="">A date answer…</option>
+                {dateFields.map((f) => <option key={f}>{f}</option>)}
+              </select>
+              {filters.answer_field && (
+                <span className="inline-flex items-center gap-1.5">between
+                  <DateInput aria-label="Date answer from" style={{ ...inputStyle, width: 130 }} value={filters.answer_from ?? ""} onChange={(iso) => set({ answer_from: iso || undefined })} />
+                  and <DateInput aria-label="Date answer to" style={{ ...inputStyle, width: 130 }} value={filters.answer_to ?? ""} onChange={(iso) => set({ answer_to: iso || undefined })} />
+                </span>
+              )}
             </div>
             <div className="flex gap-2 mt-3 flex-wrap" style={{ fontSize: 12.5, color: "#52525B" }}>
               <Pill>{rows ? `${rows.length} request${rows.length === 1 ? "" : "s"}` : "Loading…"}</Pill>

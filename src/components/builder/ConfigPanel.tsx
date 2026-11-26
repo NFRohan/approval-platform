@@ -216,6 +216,20 @@ function FieldTab({ field, allFields, onChange, onDelete }: { field: PlacedField
         />
       </label>
 
+      {(field.kind === "text" || field.kind === "textarea") && (
+        <label className="flex flex-col gap-1.5">
+          <span style={{ fontSize: 11.5, fontWeight: 500, color: "#3F3F46" }}>Starts filled with</span>
+          <textarea
+            aria-label="Starts filled with"
+            value={field.prefill ?? ""}
+            placeholder="Text every new request begins with, e.g. Finance's standing notes; the requester can edit it"
+            onChange={(e) => onChange({ prefill: e.target.value })}
+            rows={3}
+            style={{ ...inputStyle, resize: "vertical" }}
+          />
+        </label>
+      )}
+
       {showPlaceholder && (
         <label className="flex flex-col gap-1.5">
           <span style={{ fontSize: 11.5, fontWeight: 500, color: "#3F3F46" }}>Placeholder</span>

@@ -67,7 +67,7 @@ for (const p of ['/', '/forms', '/submissions', '/trackers', '/notices', '/notic
   `/builder?templateId=${ids.capexForm}`, `/builder/approvers?templateId=${ids.capexForm}`, `/builder/notifications?templateId=${ids.capexForm}`,
   '/admin/users', '/admin/roles', '/admin/people', '/admin/email', '/admin/integrations', '/admin/audit',
   '/admin/calendar', '/admin/checklists', '/analytics', '/reports', '/reports/new', `/reports/${ids.report}`,
-  '/campaigns', `/campaigns/${ids.campaign}`, `/notices/${ids.notice}`, '/developers']) add(ADMIN, p, { tabs: true });
+  '/campaigns', `/campaigns/${ids.campaign}`, `/notices/${ids.notice}`, '/developers', '/documents']) add(ADMIN, p, { tabs: true });
 for (const p of ['/', '/forms', '/submissions', '/trackers', '/notices', `/status/${ids.capexOverdue}`, `/status/${ids.exitOpen}`, `/status/${ids.gift}`])
   add(TOWHID, p);
 for (const f of forms) add(TOWHID, `/forms/${f.id}`, { label: f.name });
@@ -215,7 +215,7 @@ const NAV = { 'Dashboard': '/', 'Home': '/', 'Pending Approvals': '/approvals', 
   'Campaigns': '/campaigns', 'Trackers': '/trackers', 'Users': '/admin/users', 'Roles': '/admin/roles',
   'People & Directory': '/admin/people', 'Working Calendar': '/admin/calendar', 'Clearance Checklists': '/admin/checklists',
   'Email': '/admin/email', 'Integrations': '/admin/integrations', 'Audit Centre': '/admin/audit', 'Account': '/account',
-  'Approvals': '/approvals', 'Developers': '/developers' };
+  'Approvals': '/approvals', 'Developers': '/developers', 'Documents': '/documents' };
 const NAV_KEYS = Object.keys(NAV).sort((a, b) => b.length - a.length);
 const REFS = {};
 for (const p of INDEX) {

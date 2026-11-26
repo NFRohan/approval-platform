@@ -480,7 +480,7 @@ function Traffic({ data, reload }: { data: Data; reload: () => Promise<void> }) 
   const rate = t.calls ? Math.round((t.failed / t.calls) * 1000) / 10 : 0;
   return (
     <div style={{ marginTop: 14 }} className="grid gap-4">
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
         {[
           ["Calls, last 30 days", t.calls.toLocaleString("en-US"), `${data.keys.filter((k) => !k.revoked_at).length} active keys`],
           ["Refused or failed", `${rate}%`, `${t.failed.toLocaleString("en-US")} calls`],
@@ -489,7 +489,7 @@ function Traffic({ data, reload }: { data: Data; reload: () => Promise<void> }) 
         ].map(([label, value, sub]) => (
           <div key={label} className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
             <div style={{ fontSize: 12, color: MUTED }}>{label}</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: INK, letterSpacing: "-0.02em", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: INK, letterSpacing: "-0.02em", marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</div>
             <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{sub}</div>
           </div>
         ))}

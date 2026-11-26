@@ -139,3 +139,38 @@ node --env-file=.env scripts/dev-tenant.mjs --fresh
 Walking a demo changes it — approvals get approved, requests get raised. This
 discards the evaluation and clones a new one, so the next walkthrough starts
 where the last one did. It prints a new password.
+
+---
+
+## On a server of our own: VM, container, Kubernetes
+
+`scripts/vm-server.mjs` runs the built app as one Node process: it serves
+`dist/client`, sends everything else to the app, adds the security headers
+from `vercel.json`, and answers `/api/health` for probes and `/metrics` for
+Prometheus.
+
+    npm ci && npx vite build && node scripts/vm-server.mjs     # PORT, default 3000
+
+- **VM:** run it under systemd behind nginx (TLS, `client_max_body_size 8m`,
+  `proxy_buffering off`, pass `X-Forwarded-Host/Proto/For`). Call the four
+  scheduled addresses from crontab with `Authorization: Bearer $CRON_SECRET`:
+  `/cron/daily` 02:00 UTC, `/cron/reminders` 14:00 UTC, `/cron/directory-sync`
+  22:00 UTC, `/cron/siem` every five minutes.
+- **Container:** `docker build -t ams .` — the `Dockerfile` builds once and
+  runs `vm-server.mjs` as a non-root user, with a health check.
+- **Kubernetes:** `deploy/k8s/ams.yaml` — a migrate Job (`db-apply`), the
+  Deployment (two replicas, readiness and liveness on `/api/health`), the
+  Service, an Ingress, and CronJobs for the scheduled addresses. Every
+  variable below comes from one Secret, `ams-env`.
+
+## More variables, for a server of our own
+
+| Variable | What it does |
+|---|---|
+| `APP_URL` | Where links in emails point (Vercel supplies its own; nothing else does) |
+| `PGPOOL_MAX` | Connections per process (default 3; 10 for a long-running server) |
+| `LOG_FORMAT=json` | One JSON object per log line, for ELK |
+| `METRICS_TOKEN` | If set, `/metrics` needs it as a bearer token |
+| `SIEM_URL`, `SIEM_AUTH`, `SIEM_FORMAT` | Push the audit trail to a SIEM every five minutes, as JSON lines or CEF (`src/server/siem.ts`); unset, nothing is pushed |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_TENANT`, `OIDC_LABEL`, `OIDC_CLAIM`, `OIDC_TRUST_MFA` | Single sign-on with Entra ID, ADFS or any OpenID Connect provider (`src/server/oidc.ts`); register `https://<host>/auth/oidc/callback` as the redirect URI. SSO signs in existing, approved accounts only |
+| `EXPORT_XLSX_ROWS`, `EXPORT_CSV_ROWS` | Rows a report download carries (100,000 and 50,000 by default; the screen and PDF show 5,000) |

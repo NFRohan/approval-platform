@@ -1123,6 +1123,93 @@ grant execute on function
   public.unarchive_submission(uuid),
   public.import_legacy_tickets(text, jsonb)
 to app_api;
+-- ---------------------------------------------------------------------
+-- Alerts to administrators (SOW §3.5 2.3–2.4, §3.7 1.5).
+--
+-- A failed directory sync, a scheduled job that errors, and a burst of
+-- accounts locked by wrong passwords each tell the people who can act on
+-- them, in the bell, by email and by push, at most once in a window so
+-- a failing job does not bury them. These fire from the scheduler too,
+-- with no session, so the organisation is named, not taken from one.
+-- ---------------------------------------------------------------------
+create or replace function app.alert_admins(p_tenant uuid, p_permission text, p_key text, p_title text, p_body text,
+                                            p_window interval default interval '6 hours')
+returns int
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare n int := 0; r record;
+begin
+  if p_tenant is null then return 0; end if;
+  -- Once per window per alert.
+  if exists (select 1 from public.notifications where tenant_id = p_tenant and kind = 'admin.alert'
+               and body like '%[' || p_key || ']%' and created_at > now() - p_window) then
+    return 0;
+  end if;
+  for r in
+    select e.employee_id from public.employees e
+     where e.tenant_id = p_tenant and e.active
+       and exists (select 1 from public.roles ro
+                    where ro.tenant_id = e.tenant_id and ro.id in (select app.held_roles(e.employee_id, p_tenant))
+                      and p_permission = any (ro.permissions))
+  loop
+    insert into public.notifications (tenant_id, recipient_id, kind, title, body)
+    values (p_tenant, r.employee_id, 'admin.alert', p_title, p_body || ' [' || p_key || ']');
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+create or replace function app.alert_on_sync()
+returns trigger language plpgsql security definer set search_path = public, app, pg_temp as $$
+begin
+  if new.error is not null then
+    perform app.alert_admins(new.tenant_id, 'org.manage', 'directory-sync', 'The directory sync failed',
+      'The ' || case new.source when 'ldap' then 'directory' when 'csv' then 'HR file' else 'nightly' end
+        || ' sync did not finish: ' || left(new.error, 200) || '. People and line managers are as they were before it.');
+  end if;
+  return new;
+end $$;
+drop trigger if exists directory_syncs_alert on public.directory_syncs;
+create trigger directory_syncs_alert after insert on public.directory_syncs
+  for each row execute function app.alert_on_sync();
+
+create or replace function app.alert_on_run()
+returns trigger language plpgsql security definer set search_path = public, app, pg_temp as $$
+begin
+  if new.error is not null and (tg_op = 'INSERT' or old.error is null) then
+    perform app.alert_admins(new.tenant_id, 'audit.view', 'job-' || new.job, 'A scheduled job failed',
+      'The ' || replace(new.job, '_', ' ') || ' run that started ' || to_char(new.started_at at time zone 'Asia/Dhaka', 'DD/MM/YYYY HH24:MI')
+        || ' stopped with an error: ' || left(new.error, 200) || '. Reminders, escalations or emails it was to send may be late.');
+  end if;
+  return new;
+end $$;
+drop trigger if exists system_runs_alert on public.system_runs;
+create trigger system_runs_alert after insert or update of error on public.system_runs
+  for each row execute function app.alert_on_run();
+
+-- Three or more accounts locked within an hour is a pattern, not a
+-- forgotten password.
+create or replace function app.alert_on_lockouts()
+returns trigger language plpgsql security definer set search_path = public, app, pg_temp as $$
+declare n int;
+begin
+  if new.action = 'account_locked' then
+    select count(*) into n from public.activity_log
+     where tenant_id = new.tenant_id and action = 'account_locked' and created_at > now() - interval '1 hour';
+    if n >= 3 then
+      perform app.alert_admins(new.tenant_id, 'users.manage', 'lockouts', 'Several accounts were locked',
+        n || ' accounts were locked after wrong passwords in the last hour. That can be somebody guessing passwords; see Admin → Audit, Security.',
+        interval '1 hour');
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists activity_log_lockout_alert on public.activity_log;
+create trigger activity_log_lockout_alert after insert on public.activity_log
+  for each row execute function app.alert_on_lockouts();
+
 grant execute on all functions in schema app to app_api;
 
 commit;

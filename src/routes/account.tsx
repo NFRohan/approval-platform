@@ -14,7 +14,7 @@ import { passwordProblem, PASSWORD_MAX_AGE_DAYS } from "@/lib/password-policy";
 import { Button, Card, Field, Notice, Page, Pill, PERMISSION_LABELS, inputStyle } from "@/components/admin/kit";
 
 export const Route = createFileRoute("/account")({
-  head: () => ({ meta: [{ title: "Your account · Admin Services Portal" }] }),
+  head: () => ({ meta: [{ title: "Account · Admin Services Portal" }] }),
   component: AccountPage,
 });
 
@@ -30,7 +30,7 @@ function AccountPage() {
 
   return (
     <Page
-      title="Your account"
+      title="Account"
       intro={session?.canSwitch
         ? "This evaluation's login can act as any of its people. The password and two-step sign-in below belong to the login itself."
         : "Your password, two-step sign-in, and what your roles let you do."}

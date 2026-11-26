@@ -91,6 +91,9 @@ const EVENT_TEXT: Record<string, string> = {
   checklist_ticked: "ticked",
   checklist_unticked: "unticked",
   clearance_ticket: "— IT clearance ticket raised in ServiceDesk Plus",
+  document_added: "added a document:",
+  document_revised: "uploaded a new version of a document:",
+  document_described: "described a document:",
 };
 
 type ApprovalRow = ChainRow & {
@@ -645,7 +648,24 @@ function StatusPage() {
             </div>
           </div>
           <div className="flex flex-col items-end gap-2" style={{ flexShrink: 0 }}>
-            <StatusBadge status={overall} size="lg" showIcon />
+            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+              {submission.flag && (
+                <span className="rounded-full text-[11.5px] font-semibold" style={{ padding: "2px 10px", background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>
+                  {submission.flag}
+                </span>
+              )}
+              {submission.priority && submission.priority !== "normal" && (
+                <span className="rounded-full text-[11.5px] font-semibold" style={{
+                  padding: "2px 10px",
+                  background: submission.priority === "urgent" ? "#FEF2F2" : "#FFFBEB",
+                  color: submission.priority === "urgent" ? "#B91C1C" : "#B45309",
+                  border: `1px solid ${submission.priority === "urgent" ? "#FECACA" : "#FDE68A"}`,
+                }}>
+                  {submission.priority === "urgent" ? "Urgent" : "High priority"}
+                </span>
+              )}
+              <StatusBadge status={overall} size="lg" showIcon />
+            </div>
             {/* The whole request — answers, every decision, signatures — as
                 one document to file or forward. */}
             <a
@@ -688,23 +708,6 @@ function StatusPage() {
                 Open the campaign →
               </Link>
             )}
-            <div className="flex gap-1.5">
-              {submission.flag && (
-                <span className="rounded-full text-[11.5px] font-semibold" style={{ padding: "2px 10px", background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>
-                  {submission.flag}
-                </span>
-              )}
-              {submission.priority && submission.priority !== "normal" && (
-                <span className="rounded-full text-[11.5px] font-semibold" style={{
-                  padding: "2px 10px",
-                  background: submission.priority === "urgent" ? "#FEF2F2" : "#FFFBEB",
-                  color: submission.priority === "urgent" ? "#B91C1C" : "#B45309",
-                  border: `1px solid ${submission.priority === "urgent" ? "#FECACA" : "#FDE68A"}`,
-                }}>
-                  {submission.priority === "urgent" ? "Urgent" : "High priority"}
-                </span>
-              )}
-            </div>
             <button
               onClick={copy}
               disabled={busy}

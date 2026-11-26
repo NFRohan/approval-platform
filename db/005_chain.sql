@@ -991,6 +991,8 @@ begin
           app.subject_label(p_subject_type, p_subject_id) || ' was submitted.',
           p_subject_type, p_subject_id);
       end loop;
+      perform app.email_watchers(p_subject_id, 'raised', 'submission.raised', 'New submission',
+        app.subject_label(p_subject_type, p_subject_id) || ' was submitted.');
 
       -- A reviewer question can copy the reviewer's whole team: "Business
       -- Finance group to be CC'ed automatically."
@@ -1811,6 +1813,16 @@ begin
    where f.form_template_id = v_parent.followup_template_id
      and coalesce(pv.value, '') <> ''
    order by f.field_name, pv.id;
+
+  -- What the form starts filled with (Finance's standing NFA notes: "NFA
+  -- information shared by finance which is preloaded in the ticket",
+  -- SOW Commercial), where the parent had nothing to carry over.
+  insert into public.submission_values (submission_id, field_name, value)
+  select v_new, f.field_name, f.field_config->>'prefill'
+    from public.form_fields f
+   where f.form_template_id = v_parent.followup_template_id
+     and coalesce(f.field_config->>'prefill', '') <> ''
+     and not exists (select 1 from public.submission_values x where x.submission_id = v_new and x.field_name = f.field_name);
 
   perform app.log_event(null, 'form_submission', p_submission, null, 'followup_created', null, v_new::text);
   perform app.notify(

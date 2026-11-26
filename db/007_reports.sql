@@ -340,6 +340,36 @@ begin
   perform app.audit('report_deleted', 'report', p_id, v.name);
 end $$;
 
+-- ---------------------------------------------------------------------
+-- Schedules: daily (working days), weekly, monthly or quarterly, on a
+-- chosen day; to people here and to outside addresses (a distribution
+-- list, an auditor). "Daily control reports" (SOW §2.2 BO-4); report
+-- schedules (§2.1 r8).
+-- ---------------------------------------------------------------------
+alter table public.report_templates drop constraint if exists report_templates_schedule_check;
+alter table public.report_templates add constraint report_templates_schedule_check
+  check (schedule in ('none', 'daily', 'weekly', 'monthly', 'quarterly'));
+alter table public.report_templates add column if not exists schedule_day int;
+alter table public.report_templates add column if not exists external_recipients text[] not null default '{}';
+alter table public.report_templates drop constraint if exists report_templates_schedule_day_check;
+alter table public.report_templates add constraint report_templates_schedule_day_check
+  check (schedule_day is null or schedule_day between 1 and 28);
+
+-- When a scheduled report is next due, on or after which it is sent once.
+create or replace function app.report_due_on(p_schedule text, p_day int, p_today date)
+returns date
+language sql
+immutable
+as $$
+  select case p_schedule
+    when 'daily'     then p_today
+    -- The latest of that weekday (ISO: 1 Monday … 7 Sunday, the first working day here) on or before today.
+    when 'weekly'    then p_today - ((extract(isodow from p_today)::int - least(greatest(coalesce(p_day, 7), 1), 7) + 7) % 7)
+    when 'monthly'   then date_trunc('month', p_today)::date + (coalesce(p_day, 1) - 1)
+    when 'quarterly' then date_trunc('quarter', p_today)::date + (coalesce(p_day, 1) - 1)
+  end
+$$;
+
 -- Anybody who reads reports may ask for different columns.
 create or replace function public.request_report_change(p_id uuid, p_columns text[], p_note text)
 returns void
@@ -467,13 +497,15 @@ as $$
   order by requested_at
 $$;
 
-create or replace function public.set_report_schedule(p_id uuid, p_schedule text, p_recipients text[], p_format text)
+drop function if exists public.set_report_schedule(uuid, text, text[], text);
+create or replace function public.set_report_schedule(p_id uuid, p_schedule text, p_recipients text[], p_format text,
+                                                      p_day int default null, p_external text[] default null)
 returns void
 language plpgsql
 security definer
 set search_path = public, app, pg_temp
 as $$
-declare v_name text;
+declare v_name text; v_ext text[];
 begin
   perform app.require_permission('reports.manage');
   if exists (select 1 from unnest(coalesce(p_recipients, '{}')) x
@@ -481,12 +513,25 @@ begin
                                  where e.tenant_id = app.current_tenant() and e.employee_id = x)) then
     raise exception 'every recipient has to be somebody here';
   end if;
+  select coalesce(array_agg(distinct lower(trim(a))), '{}') into v_ext
+    from unnest(coalesce(p_external, '{}')) a where nullif(trim(a), '') is not null;
+  if exists (select 1 from unnest(v_ext) a where a !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') then
+    raise exception 'that is not an email address: %', (select a from unnest(v_ext) a where a !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' limit 1);
+  end if;
+  if cardinality(v_ext) > 20 then raise exception 'at most 20 outside addresses'; end if;
+  if p_day is not null and (p_day < 1 or p_day > case when p_schedule = 'weekly' then 7 else 28 end) then
+    raise exception 'that day does not fit a % schedule', p_schedule;
+  end if;
   update public.report_templates
-     set schedule = p_schedule, recipients = coalesce(p_recipients, '{}'), format = p_format, updated_at = now()
+     set schedule = p_schedule, recipients = coalesce(p_recipients, '{}'), format = p_format,
+         schedule_day = case when p_schedule in ('weekly', 'monthly', 'quarterly') then p_day end,
+         external_recipients = v_ext, updated_at = now()
    where id = p_id and tenant_id = app.current_tenant()
   returning name into v_name;
   if v_name is null then raise exception 'no such report'; end if;
-  perform app.audit('report_scheduled', 'report', p_id, v_name || ': ' || p_schedule);
+  perform app.audit('report_scheduled', 'report', p_id, v_name || ': ' || p_schedule
+                    || coalesce(' (day ' || p_day || ')', '')
+                    || case when cardinality(v_ext) > 0 then ', and ' || cardinality(v_ext) || ' outside address(es)' else '' end);
 end $$;
 
 -- Queue a report as an email to these people. The file is made when the
@@ -526,17 +571,20 @@ language plpgsql
 security definer
 set search_path = public, app, pg_temp
 as $$
-declare r record; v_n int := 0;
+declare r record; v_n int := 0; v_today date := (now() at time zone 'Asia/Dhaka')::date; v_due date;
 begin
   for r in
     select rt.* from public.report_templates rt
-     where rt.schedule <> 'none' and cardinality(rt.recipients) > 0
+     where rt.schedule <> 'none' and (cardinality(rt.recipients) > 0 or cardinality(rt.external_recipients) > 0)
        and (p_tenant is null or rt.tenant_id = p_tenant)
        and app.tenant_status(rt.tenant_id) = 'active'
-       and (rt.last_sent_at is null
-            or rt.last_sent_at < now() - case rt.schedule when 'weekly' then interval '7 days' else interval '1 month' end
-                                     + interval '1 hour')
   loop
+    v_due := app.report_due_on(r.schedule, r.schedule_day, v_today);
+    -- Not yet due this period, or already sent since it fell due.
+    continue when v_due is null or v_today < v_due
+               or (r.last_sent_at is not null and (r.last_sent_at at time zone 'Asia/Dhaka')::date >= v_due);
+    -- A daily control report is for working days.
+    continue when r.schedule = 'daily' and not app.is_working_day(r.tenant_id, v_today);
     insert into public.email_outbox (tenant_id, report_id, kind, recipient_id, to_address, context, status, error)
     select r.tenant_id, r.id, 'report.scheduled', e.employee_id, nullif(trim(e.email), ''),
            jsonb_build_object('title', r.name, 'format', r.format, 'schedule', r.schedule),
@@ -544,6 +592,10 @@ begin
            case when nullif(trim(e.email), '') is null then 'no work email on record' end
       from public.employees e
      where e.tenant_id = r.tenant_id and e.employee_id = any (r.recipients);
+    insert into public.email_outbox (tenant_id, report_id, kind, recipient_id, to_address, context, status)
+    select r.tenant_id, r.id, 'report.scheduled', null, a,
+           jsonb_build_object('title', r.name, 'format', r.format, 'schedule', r.schedule), 'queued'
+      from unnest(r.external_recipients) a;
     update public.report_templates set last_sent_at = now() where id = r.id;
     v_n := v_n + 1;
   end loop;
@@ -835,7 +887,7 @@ grant execute on function
   public.request_report_change(uuid, text[], text),
   public.decide_report_change(uuid, boolean, text),
   public.admin_queue(),
-  public.set_report_schedule(uuid, text, text[], text),
+  public.set_report_schedule(uuid, text, text[], text, int, text[]),
   public.queue_report_email(uuid, text[]),
   public.save_email_template(text, text, text, boolean),
   public.reset_email_template(text)

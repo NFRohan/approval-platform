@@ -10,7 +10,7 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 import { withContext, resolveContext } from "@/server/db";
-import { runReport, requireReports } from "@/server/reports";
+import { runReport, requireReports, withAnswers, lastRaw, exportRowLimit } from "@/server/reports";
 import { exportReport, fileName, CONTENT_TYPES, type ExportFormat } from "@/server/export";
 import { columnsOf, describeFilters, isDataset, type ReportFilters } from "@/lib/report-catalogue";
 
@@ -53,7 +53,9 @@ export const Route = createFileRoute("/exports/report/$reportId")({
             const asked = url.searchParams.get("c")?.split(",").filter((k) => known.has(k));
             if (asked?.length) columns = asked;
             const f = filters ?? saved;
-            const result = await runReport(c, dataset, columns, f, sort);
+            let result = await runReport(c, dataset, columns, f, sort, undefined, exportRowLimit(format));
+            // A spreadsheet of one form's requests carries its answers.
+            if (dataset === "requests" && format !== "pdf") result = await withAnswers(c, result, lastRaw.get(c) ?? [], f);
             const { rows: [me] } = await c.query(
               "select coalesce((select name from public.employees where employee_id = app.current_employee() and tenant_id = app.current_tenant()), 'a portal user') as name");
             const at = new Date();

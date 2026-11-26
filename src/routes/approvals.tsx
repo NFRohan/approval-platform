@@ -157,6 +157,12 @@ function formatValue(raw: string | null): ReactNode {
   }
 }
 
+// What an approver mostly does is approve or reject; the other five are
+// there when needed, quieter, so seven equal buttons do not crowd a card.
+const SECONDARY: React.CSSProperties = {
+  padding: "6px 8px", fontSize: 12.5, color: "#52525B", border: "1px solid transparent", background: "transparent",
+};
+
 function ApprovalsPage() {
   const matchRoute = useMatchRoute();
   const isChild =
@@ -1029,18 +1035,14 @@ function ApprovalsInbox() {
                       >
                         Reject
                       </button>
+                      <span aria-hidden style={{ width: 1, height: 20, background: "#E4E4E7", margin: "0 4px" }} />
                       <button
                         onClick={() => {
                           setComment("");
                           setModal({ kind: "clarify", row: r });
                         }}
-                        className="rounded-md font-medium bg-white"
-                        style={{
-                          padding: "7px 12px",
-                          fontSize: 13,
-                          color: "#52525B",
-                          border: "1px solid #E4E4E7",
-                        }}
+                        className="rounded-md font-medium approval-secondary"
+                        style={SECONDARY}
                       >
                         Clarify
                       </button>
@@ -1055,13 +1057,8 @@ function ApprovalsInbox() {
                             setForwardOnly(c?.restricted ? c.ids ?? [] : null);
                           });
                         }}
-                        className="rounded-md font-medium bg-white"
-                        style={{
-                          padding: "7px 12px",
-                          fontSize: 13,
-                          color: "#52525B",
-                          border: "1px solid #E4E4E7",
-                        }}
+                        className="rounded-md font-medium approval-secondary"
+                        style={SECONDARY}
                       >
                         Forward
                       </button>
@@ -1071,37 +1068,22 @@ function ApprovalsInbox() {
                           setPersonId("");
                           setModal({ kind: "reviewer", row: r });
                         }}
-                        className="rounded-md font-medium bg-white"
-                        style={{
-                          padding: "7px 12px",
-                          fontSize: 13,
-                          color: "#52525B",
-                          border: "1px solid #E4E4E7",
-                        }}
+                        className="rounded-md font-medium approval-secondary"
+                        style={SECONDARY}
                       >
                         Add reviewer
                       </button>
                       <button
                         onClick={() => openChainDialog("return", r)}
-                        className="rounded-md font-medium bg-white"
-                        style={{
-                          padding: "7px 12px",
-                          fontSize: 13,
-                          color: "#52525B",
-                          border: "1px solid #E4E4E7",
-                        }}
+                        className="rounded-md font-medium approval-secondary"
+                        style={SECONDARY}
                       >
                         Return
                       </button>
                       <button
                         onClick={() => openChainDialog("ask", r)}
-                        className="rounded-md font-medium bg-white"
-                        style={{
-                          padding: "7px 12px",
-                          fontSize: 13,
-                          color: "#52525B",
-                          border: "1px solid #E4E4E7",
-                        }}
+                        className="rounded-md font-medium approval-secondary"
+                        style={SECONDARY}
                       >
                         Ask
                       </button>

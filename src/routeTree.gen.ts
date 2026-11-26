@@ -15,6 +15,7 @@ import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as DevelopersRouteImport } from './routes/developers'
+import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MovementOrdersRouteImport } from './routes/movement-orders'
 import { Route as StaffRouteImport } from './routes/staff'
@@ -39,6 +40,7 @@ import { Route as CertificateSubmissionIdRouteImport } from './routes/certificat
 import { Route as CronDailyRouteImport } from './routes/cron.daily'
 import { Route as CronDirectorySyncRouteImport } from './routes/cron.directory-sync'
 import { Route as CronRemindersRouteImport } from './routes/cron.reminders'
+import { Route as CronSiemRouteImport } from './routes/cron.siem'
 import { Route as ExportsAuditRouteImport } from './routes/exports.audit'
 import { Route as FilesAttachmentIdRouteImport } from './routes/files.$attachmentId'
 import { Route as FormsIndexRouteImport } from './routes/forms.index'
@@ -55,6 +57,8 @@ import { Route as StatusSubmissionIdRouteImport } from './routes/status.$submiss
 import { Route as TopsheetSubmissionIdRouteImport } from './routes/topsheet.$submissionId'
 import { Route as WebhooksEchoRouteImport } from './routes/webhooks.echo'
 import { Route as ApiV1SplatRouteImport } from './routes/api.v1.$'
+import { Route as AuthOidcCallbackRouteImport } from './routes/auth.oidc.callback'
+import { Route as AuthOidcStartRouteImport } from './routes/auth.oidc.start'
 import { Route as ExportsReportReportIdRouteImport } from './routes/exports.report.$reportId'
 import { Route as InboundEmailTenantRouteImport } from './routes/inbound.email.$tenant'
 import { Route as IntegrationsServicedeskTenantRouteImport } from './routes/integrations.servicedesk.$tenant'
@@ -87,6 +91,11 @@ const ApprovalsRoute = ApprovalsRouteImport.update({
 const DevelopersRoute = DevelopersRouteImport.update({
   id: '/developers',
   path: '/developers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocumentsRoute = DocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -209,6 +218,11 @@ const CronRemindersRoute = CronRemindersRouteImport.update({
   path: '/cron/reminders',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CronSiemRoute = CronSiemRouteImport.update({
+  id: '/cron/siem',
+  path: '/cron/siem',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExportsAuditRoute = ExportsAuditRouteImport.update({
   id: '/exports/audit',
   path: '/exports/audit',
@@ -289,6 +303,16 @@ const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
   path: '/api/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthOidcCallbackRoute = AuthOidcCallbackRouteImport.update({
+  id: '/auth/oidc/callback',
+  path: '/auth/oidc/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthOidcStartRoute = AuthOidcStartRouteImport.update({
+  id: '/auth/oidc/start',
+  path: '/auth/oidc/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ExportsReportReportIdRoute = ExportsReportReportIdRouteImport.update({
   id: '/exports/report/$reportId',
   path: '/exports/report/$reportId',
@@ -313,6 +337,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/approvals': typeof ApprovalsRouteWithChildren
   '/developers': typeof DevelopersRoute
+  '/documents': typeof DocumentsRoute
   '/login': typeof LoginRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/staff': typeof StaffRoute
@@ -335,6 +360,7 @@ export interface FileRoutesByFullPath {
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
   '/cron/reminders': typeof CronRemindersRoute
+  '/cron/siem': typeof CronSiemRoute
   '/exports/audit': typeof ExportsAuditRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
@@ -353,6 +379,8 @@ export interface FileRoutesByFullPath {
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/auth/oidc/callback': typeof AuthOidcCallbackRoute
+  '/auth/oidc/start': typeof AuthOidcStartRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
   '/inbound/email/$tenant': typeof InboundEmailTenantRoute
   '/integrations/servicedesk/$tenant': typeof IntegrationsServicedeskTenantRoute
@@ -364,6 +392,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/approvals': typeof ApprovalsRouteWithChildren
   '/developers': typeof DevelopersRoute
+  '/documents': typeof DocumentsRoute
   '/login': typeof LoginRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/staff': typeof StaffRoute
@@ -386,6 +415,7 @@ export interface FileRoutesByTo {
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
   '/cron/reminders': typeof CronRemindersRoute
+  '/cron/siem': typeof CronSiemRoute
   '/exports/audit': typeof ExportsAuditRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
@@ -404,6 +434,8 @@ export interface FileRoutesByTo {
   '/notices': typeof NoticesIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/auth/oidc/callback': typeof AuthOidcCallbackRoute
+  '/auth/oidc/start': typeof AuthOidcStartRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
   '/inbound/email/$tenant': typeof InboundEmailTenantRoute
   '/integrations/servicedesk/$tenant': typeof IntegrationsServicedeskTenantRoute
@@ -416,6 +448,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/approvals': typeof ApprovalsRouteWithChildren
   '/developers': typeof DevelopersRoute
+  '/documents': typeof DocumentsRoute
   '/login': typeof LoginRoute
   '/movement-orders': typeof MovementOrdersRoute
   '/staff': typeof StaffRoute
@@ -438,6 +471,7 @@ export interface FileRoutesById {
   '/cron/daily': typeof CronDailyRoute
   '/cron/directory-sync': typeof CronDirectorySyncRoute
   '/cron/reminders': typeof CronRemindersRoute
+  '/cron/siem': typeof CronSiemRoute
   '/exports/audit': typeof ExportsAuditRoute
   '/files/$attachmentId': typeof FilesAttachmentIdRoute
   '/forms/$formId': typeof FormsFormIdRoute
@@ -456,6 +490,8 @@ export interface FileRoutesById {
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/api/v1/$': typeof ApiV1SplatRoute
+  '/auth/oidc/callback': typeof AuthOidcCallbackRoute
+  '/auth/oidc/start': typeof AuthOidcStartRoute
   '/exports/report/$reportId': typeof ExportsReportReportIdRoute
   '/inbound/email/$tenant': typeof InboundEmailTenantRoute
   '/integrations/servicedesk/$tenant': typeof IntegrationsServicedeskTenantRoute
@@ -469,6 +505,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/approvals'
     | '/developers'
+    | '/documents'
     | '/login'
     | '/movement-orders'
     | '/staff'
@@ -491,6 +528,7 @@ export interface FileRouteTypes {
     | '/cron/daily'
     | '/cron/directory-sync'
     | '/cron/reminders'
+    | '/cron/siem'
     | '/exports/audit'
     | '/files/$attachmentId'
     | '/forms/$formId'
@@ -509,6 +547,8 @@ export interface FileRouteTypes {
     | '/notices/'
     | '/reports/'
     | '/api/v1/$'
+    | '/auth/oidc/callback'
+    | '/auth/oidc/start'
     | '/exports/report/$reportId'
     | '/inbound/email/$tenant'
     | '/integrations/servicedesk/$tenant'
@@ -520,6 +560,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/approvals'
     | '/developers'
+    | '/documents'
     | '/login'
     | '/movement-orders'
     | '/staff'
@@ -542,6 +583,7 @@ export interface FileRouteTypes {
     | '/cron/daily'
     | '/cron/directory-sync'
     | '/cron/reminders'
+    | '/cron/siem'
     | '/exports/audit'
     | '/files/$attachmentId'
     | '/forms/$formId'
@@ -560,6 +602,8 @@ export interface FileRouteTypes {
     | '/notices'
     | '/reports'
     | '/api/v1/$'
+    | '/auth/oidc/callback'
+    | '/auth/oidc/start'
     | '/exports/report/$reportId'
     | '/inbound/email/$tenant'
     | '/integrations/servicedesk/$tenant'
@@ -571,6 +615,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/approvals'
     | '/developers'
+    | '/documents'
     | '/login'
     | '/movement-orders'
     | '/staff'
@@ -593,6 +638,7 @@ export interface FileRouteTypes {
     | '/cron/daily'
     | '/cron/directory-sync'
     | '/cron/reminders'
+    | '/cron/siem'
     | '/exports/audit'
     | '/files/$attachmentId'
     | '/forms/$formId'
@@ -611,6 +657,8 @@ export interface FileRouteTypes {
     | '/notices/'
     | '/reports/'
     | '/api/v1/$'
+    | '/auth/oidc/callback'
+    | '/auth/oidc/start'
     | '/exports/report/$reportId'
     | '/inbound/email/$tenant'
     | '/integrations/servicedesk/$tenant'
@@ -623,6 +671,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   ApprovalsRoute: typeof ApprovalsRouteWithChildren
   DevelopersRoute: typeof DevelopersRoute
+  DocumentsRoute: typeof DocumentsRoute
   LoginRoute: typeof LoginRoute
   MovementOrdersRoute: typeof MovementOrdersRoute
   StaffRoute: typeof StaffRoute
@@ -643,6 +692,7 @@ export interface RootRouteChildren {
   CronDailyRoute: typeof CronDailyRoute
   CronDirectorySyncRoute: typeof CronDirectorySyncRoute
   CronRemindersRoute: typeof CronRemindersRoute
+  CronSiemRoute: typeof CronSiemRoute
   ExportsAuditRoute: typeof ExportsAuditRoute
   FilesAttachmentIdRoute: typeof FilesAttachmentIdRoute
   FormsFormIdRoute: typeof FormsFormIdRoute
@@ -661,6 +711,8 @@ export interface RootRouteChildren {
   NoticesIndexRoute: typeof NoticesIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
+  AuthOidcCallbackRoute: typeof AuthOidcCallbackRoute
+  AuthOidcStartRoute: typeof AuthOidcStartRoute
   ExportsReportReportIdRoute: typeof ExportsReportReportIdRoute
   InboundEmailTenantRoute: typeof InboundEmailTenantRoute
   IntegrationsServicedeskTenantRoute: typeof IntegrationsServicedeskTenantRoute
@@ -708,6 +760,13 @@ declare module '@tanstack/react-router' {
       path: '/developers'
       fullPath: '/developers'
       preLoaderRoute: typeof DevelopersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/documents': {
+      id: '/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof DocumentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -878,6 +937,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CronRemindersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cron/siem': {
+      id: '/cron/siem'
+      path: '/cron/siem'
+      fullPath: '/cron/siem'
+      preLoaderRoute: typeof CronSiemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/exports/audit': {
       id: '/exports/audit'
       path: '/exports/audit'
@@ -990,6 +1056,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/oidc/callback': {
+      id: '/auth/oidc/callback'
+      path: '/auth/oidc/callback'
+      fullPath: '/auth/oidc/callback'
+      preLoaderRoute: typeof AuthOidcCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/oidc/start': {
+      id: '/auth/oidc/start'
+      path: '/auth/oidc/start'
+      fullPath: '/auth/oidc/start'
+      preLoaderRoute: typeof AuthOidcStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/exports/report/$reportId': {
       id: '/exports/report/$reportId'
       path: '/exports/report/$reportId'
@@ -1035,6 +1115,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   ApprovalsRoute: ApprovalsRouteWithChildren,
   DevelopersRoute: DevelopersRoute,
+  DocumentsRoute: DocumentsRoute,
   LoginRoute: LoginRoute,
   MovementOrdersRoute: MovementOrdersRoute,
   StaffRoute: StaffRoute,
@@ -1055,6 +1136,7 @@ const rootRouteChildren: RootRouteChildren = {
   CronDailyRoute: CronDailyRoute,
   CronDirectorySyncRoute: CronDirectorySyncRoute,
   CronRemindersRoute: CronRemindersRoute,
+  CronSiemRoute: CronSiemRoute,
   ExportsAuditRoute: ExportsAuditRoute,
   FilesAttachmentIdRoute: FilesAttachmentIdRoute,
   FormsFormIdRoute: FormsFormIdRoute,
@@ -1073,6 +1155,8 @@ const rootRouteChildren: RootRouteChildren = {
   NoticesIndexRoute: NoticesIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
+  AuthOidcCallbackRoute: AuthOidcCallbackRoute,
+  AuthOidcStartRoute: AuthOidcStartRoute,
   ExportsReportReportIdRoute: ExportsReportReportIdRoute,
   InboundEmailTenantRoute: InboundEmailTenantRoute,
   IntegrationsServicedeskTenantRoute: IntegrationsServicedeskTenantRoute,
