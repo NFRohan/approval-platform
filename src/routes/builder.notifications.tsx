@@ -104,7 +104,7 @@ function formatSlabRange(min: number): string {
 function NotificationsStep({ templateId }: { templateId: string }) {
   const navigate = useNavigate();
   const access = useBuilderAccess(templateId);
-  const [formName, setFormName] = useState("Employee Departure Due Diligence Form");
+  const [formName, setFormName] = useState("");
   const [manual, setManual] = useState<ManualEntry[]>([]);
   const [savedAgo, setSavedAgo] = useState("just now");
   const [publishing, setPublishing] = useState(false);

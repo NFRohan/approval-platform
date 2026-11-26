@@ -23,7 +23,7 @@ import { DEFAULT_LABELS, DEFAULT_OPTIONS, isLayout, isPermission } from "@/compo
 import type { FieldKind, PlacedField } from "@/components/builder/types";
 import { toast } from "sonner";
 
-const DEFAULT_FORM_NAME = "Employee Departure Due Diligence Form";
+const DEFAULT_FORM_NAME = "Untitled form";
 
 const builderSearch = z.object({
   templateId: z.string().optional(),
@@ -537,6 +537,7 @@ function BuilderEditor() {
               onDelete={() => selectedField && deleteField(selectedField.id)}
               allFields={fields}
               formTemplateId={templateId}
+              readOnly={readOnly}
             />
           </>
         )}

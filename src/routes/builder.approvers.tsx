@@ -89,7 +89,7 @@ type EmployeeOption = { employee_id: string; name: string; designation: string |
 function ApproversStep({ templateId }: { templateId: string }) {
   const navigate = useNavigate();
   const { currentUser } = useCurrentUser();
-  const [formName, setFormName] = useState("Employee Departure Due Diligence Form");
+  const [formName, setFormName] = useState("");
   // The approvals added by hand, as stages: see StageEditor.
   const [stages, setStages] = useState<Stage[]>([]);
   const [fieldLabels, setFieldLabels] = useState<string[]>([]);
@@ -454,7 +454,61 @@ function ApproversStep({ templateId }: { templateId: string }) {
         onManualChange={() => {}}
         manualSlot={
           <>
-            <StageEditor stages={stages} onChange={setStages} employees={employees} fieldLabels={fieldLabels} />
+            <StageEditor stages={stages} onChange={setStages} employees={employees} fieldLabels={fieldLabels}
+              lock={access === "full" ? "none" : access === "settings" ? "structure" : "all"} />
+            {/* The amount bands, in the column with the stages: beside it they took the width and squeezed the approvers to a sliver. */}
+            {fieldTypes.has("money") && (
+              <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: 18, margin: "24px 0 0" }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#18181B" }}>Finance Approval Slabs</div>
+                    <div style={{ fontSize: 12, color: "#71717A", marginTop: 2 }}>
+                      Thresholds are cumulative: a claim is asked of every approver whose threshold it
+                      reaches, lowest first. A claim of 620,000 climbs all three — it does not go
+                      straight to the top one.
+                    </div>
+                  </div>
+                  <button
+                    onClick={addSlab}
+                    className="inline-flex items-center gap-1.5 rounded-md"
+                    style={{ padding: "6px 12px", fontSize: 12.5, background: "#fff", border: "1px solid #E4E4E7", color: "#3F3F46", cursor: "pointer" }}
+                  >
+                    <Plus size={13} /> Add Slab
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {slabs.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2" style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid #F4F4F5" : "none" }}>
+                      <span style={{ color: "#A1A1AA", fontSize: 12 }}>from</span>
+                      <input
+                        type="number"
+                        placeholder="Amount"
+                        value={s.min_amount}
+                        onChange={(e) => updateSlab(i, { min_amount: e.target.value })}
+                        style={{ width: 110, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
+                      />
+                      <span style={{ color: "#A1A1AA", fontSize: 12 }}>and above</span>
+                      <select
+                        value={s.approver_user_id}
+                        onChange={(e) => updateSlab(i, { approver_user_id: e.target.value })}
+                        style={{ flex: 1, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
+                      >
+                        {employees.map((e) => (
+                          <option key={e.employee_id} value={e.employee_id}>{e.name} ({e.employee_id})</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => removeSlab(i)}
+                        title="Remove slab"
+                        style={{ padding: 6, background: "none", border: "none", color: "#B91C1C", cursor: "pointer" }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <section className="rounded-xl bg-white mt-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>When it is approved</div>
               <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
@@ -539,58 +593,6 @@ function ApproversStep({ templateId }: { templateId: string }) {
           </>
         }
       />
-      )}
-      {fieldTypes.has("money") && (
-        <div className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", padding: 18, margin: "16px 24px" }}>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#18181B" }}>Finance Approval Slabs</div>
-              <div style={{ fontSize: 12, color: "#71717A", marginTop: 2 }}>
-                Thresholds are cumulative: a claim is asked of every approver whose threshold it
-                reaches, lowest first. A claim of 620,000 climbs all three — it does not go
-                straight to the top one.
-              </div>
-            </div>
-            <button
-              onClick={addSlab}
-              className="inline-flex items-center gap-1.5 rounded-md"
-              style={{ padding: "6px 12px", fontSize: 12.5, background: "#fff", border: "1px solid #E4E4E7", color: "#3F3F46", cursor: "pointer" }}
-            >
-              <Plus size={13} /> Add Slab
-            </button>
-          </div>
-          <div className="flex flex-col gap-2">
-            {slabs.map((s, i) => (
-              <div key={i} className="flex items-center gap-2" style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid #F4F4F5" : "none" }}>
-                <span style={{ color: "#A1A1AA", fontSize: 12 }}>from</span>
-                <input
-                  type="number"
-                  placeholder="Amount"
-                  value={s.min_amount}
-                  onChange={(e) => updateSlab(i, { min_amount: e.target.value })}
-                  style={{ width: 110, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
-                />
-                <span style={{ color: "#A1A1AA", fontSize: 12 }}>and above</span>
-                <select
-                  value={s.approver_user_id}
-                  onChange={(e) => updateSlab(i, { approver_user_id: e.target.value })}
-                  style={{ flex: 1, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
-                >
-                  {employees.map((e) => (
-                    <option key={e.employee_id} value={e.employee_id}>{e.name} ({e.employee_id})</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => removeSlab(i)}
-                  title="Remove slab"
-                  style={{ padding: 6, background: "none", border: "none", color: "#B91C1C", cursor: "pointer" }}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
     </BuilderChrome>
   );

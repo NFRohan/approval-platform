@@ -418,7 +418,7 @@ function LeaverHandOver({ actor }: { actor: string }) {
           <option value="">Who is leaving…</option>
           {active.map((p) => <option key={p.employee_id} value={p.employee_id}>{p.name}{p.designation ? ` — ${p.designation}` : ""}</option>)}
         </select>
-        <span style={{ fontSize: 13, color: "#71717A" }}>→</span>
+        <span style={{ fontSize: 13, color: "#71717A" }}>hands over to</span>
         <select value={successor} onChange={(e) => setSuccessor(e.target.value)} aria-label="Who takes over" style={sel}>
           <option value="">Who takes over…</option>
           {active.filter((p) => p.employee_id !== leaver).map((p) => <option key={p.employee_id} value={p.employee_id}>{p.name}{p.designation ? ` — ${p.designation}` : ""}</option>)}
@@ -426,7 +426,7 @@ function LeaverHandOver({ actor }: { actor: string }) {
         <button
           onClick={go}
           disabled={!leaver || !successor || busy}
-          style={{ padding: "8px 14px", fontSize: 13, fontWeight: 500, borderRadius: 6, background: "#B91C1C", color: "#fff", opacity: !leaver || !successor || busy ? 0.5 : 1 }}
+          style={{ padding: "8px 14px", fontSize: 13, fontWeight: 500, borderRadius: 6, border: "none", background: !leaver || !successor || busy ? "#F4F4F5" : "#B91C1C", color: !leaver || !successor || busy ? "#A1A1AA" : "#fff", cursor: !leaver || !successor || busy ? "default" : "pointer" }}
         >
           Hand over
         </button>

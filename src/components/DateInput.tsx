@@ -39,7 +39,7 @@ export function parseDate(text: string): string | null {
 }
 
 /** Typing 02112026 reads as 02/11/2026. */
-function withSlashes(raw: string): string {
+export function withSlashes(raw: string): string {
   // An ISO date being pasted or typed, or anything not digits and slashes:
   // leave it as it is.
   if (!/^[\d/]*$/.test(raw)) return raw;

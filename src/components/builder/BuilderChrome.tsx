@@ -54,16 +54,11 @@ export function BuilderChrome({
         <div className="ml-4 flex items-center gap-1.5" style={{ fontSize: 12, color: "#71717A" }}>
           <span>Forms</span>
           <ChevronRight size={11} style={{ color: "#A1A1AA" }} />
-          <span>HR</span>
-          <ChevronRight size={11} style={{ color: "#A1A1AA" }} />
-          <span className="font-medium" style={{ color: "#18181B" }}>
-            Departure Due Diligence
+          {/* The form being built; this once read "HR › Departure Due Diligence" on every form. */}
+          <span className="font-medium truncate" style={{ color: "#18181B", maxWidth: 360 }}>
+            {formName || "…"}
           </span>
         </div>
-
-        <span className="ml-auto font-mono" style={{ fontSize: 11, color: "#A1A1AA" }}>
-          v0.1
-        </span>
       </div>
 
       {/* Step progress */}

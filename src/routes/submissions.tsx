@@ -97,10 +97,19 @@ function SubmissionsPage() {
       (forms || []).forEach((f: { id: string; name: string }) => { formsMap[f.id] = f.name; });
       const names: Record<string, string> = {};
       (emps || []).forEach((e: { employee_id: string; name: string }) => { names[e.employee_id] = e.name; });
+      // A ticket brought over from ManageEngine is titled by its own subject;
+      // the form it was filed under is only "ManageEngine archive".
+      const legacyIds = list.filter((r) => r.legacy_ref).map((r) => r.id);
+      const subjects: Record<string, string> = {};
+      if (legacyIds.length) {
+        const { data: vals } = await db.from("submission_values").select("submission_id, value")
+          .eq("field_name", "Subject").in("submission_id", legacyIds);
+        ((vals ?? []) as { submission_id: string; value: string | null }[]).forEach((v) => { if (v.value) subjects[v.submission_id] = v.value; });
+      }
       if (active) {
         setRows(list.map((r) => ({
           ...r,
-          formName: r.form_template_id ? formsMap[r.form_template_id] : undefined,
+          formName: subjects[r.id] ?? (r.form_template_id ? formsMap[r.form_template_id] : undefined),
           requesterName: r.submitted_by ? names[r.submitted_by] : undefined,
         })));
         setLoading(false);
@@ -253,7 +262,7 @@ function SubmissionsPage() {
               >
                 <div style={{ fontSize: 15, fontWeight: 600, color: "#18181B", marginBottom: 6 }}>
                   {r.formName || "Submission"}
-                  <span className="font-mono" style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: "#71717A" }}>{r.ref_number}</span>
+                  <span className="font-mono" style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: "#71717A", whiteSpace: "nowrap", display: "inline-block" }}>{r.ref_number}</span>
                   {r.flag && (
                     <span className="rounded-full" style={{ marginLeft: 8, padding: "1px 8px", fontSize: 11, fontWeight: 600, background: "#FDF2F8", color: "#BE185D", border: "1px solid #FBCFE8" }}>{r.flag}</span>
                   )}

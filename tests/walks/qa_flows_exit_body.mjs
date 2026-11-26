@@ -252,6 +252,11 @@ ok('payroll: ...beside Tom\'s nominated account', (await pay.row.innerText()).in
 await tickOpen(pay.row);
 await approve(pay.row);
 ok('payroll: settled', (await status(pay.id)) === 'approved');
+// SOW 2.2 step 7: "Payroll team also will inform Divisional HRBP".
+const hrbp = (await one(`select d.hrbp_employee_id h from public.departments d join public.employees e
+  on e.tenant_id = d.tenant_id and e.department = d.name where e.tenant_id = $1 and e.employee_id = 'EMP-2847'`, [tenant]))?.h;
+ok('payroll: the leaver\'s division HRBP is told the settlement is complete',
+  !!hrbp && (await told(hrbp, 'settlement.completed', sub)) === 1, hrbp);
 
 // ---------------------------------------------------------------- done
 const done = await one(`select status from public.form_submissions where id = $1`, [sub]);

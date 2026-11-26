@@ -238,7 +238,6 @@ function FormCard({
       )}
       <p className="text-[13px] mb-4" style={{ color: "#71717A" }}>
         {form.category ? `${form.category} form` : "Uncategorised"}
-        {form.created_at ? ` · added ${fmtDate(form.created_at)}` : ""}
       </p>
       <div className="text-[12px] mb-4" style={{ color: "#52525B" }}>
         {creator ? (

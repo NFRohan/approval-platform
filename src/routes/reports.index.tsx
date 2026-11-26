@@ -82,7 +82,7 @@ function Section({ title, reports, empty }: { title: string; reports: ReportTemp
               <Pill>{DATASETS[r.dataset].label}</Pill>
               <Pill>{r.columns.length} columns</Pill>
               {r.schedule !== "none" && (
-                <Pill tone="brand"><CalendarClock size={11} style={{ marginRight: 4 }} />{r.schedule === "weekly" ? "Weekly" : "Monthly"} to {r.recipients.length}</Pill>
+                <Pill tone="brand"><CalendarClock size={11} style={{ marginRight: 4 }} />{r.schedule === "weekly" ? "Emailed weekly" : "Emailed monthly"} to {r.recipients.length} {r.recipients.length === 1 ? "person" : "people"}</Pill>
               )}
               {r.pending_columns && <Pill tone="amber"><GitPullRequestArrow size={11} style={{ marginRight: 4 }} />Change requested</Pill>}
             </div>

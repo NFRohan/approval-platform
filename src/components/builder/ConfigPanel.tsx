@@ -466,12 +466,15 @@ export function ConfigPanel({
   onDelete,
   allFields = [],
   formTemplateId,
+  readOnly = false,
 }: {
   field: PlacedField | null;
   onChange: (patch: Partial<PlacedField>) => void;
   onDelete: () => void;
   allFields?: PlacedField[];
   formTemplateId?: string | null;
+  /** Somebody who may not design this form sees its settings but cannot type into them. */
+  readOnly?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("field");
 
@@ -527,11 +530,11 @@ export function ConfigPanel({
             ))}
           </div>
 
-          <div className="scroll-thin flex-1 overflow-auto">
+          <fieldset disabled={readOnly} className="scroll-thin flex-1 overflow-auto" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
             {tab === "field" && <FieldTab field={field} allFields={allFields} onChange={onChange} onDelete={onDelete} />}
             {tab === "validation" && <ValidationTab field={field} onChange={onChange} />}
             {tab === "routing" && <RoutingTab field={field} formTemplateId={formTemplateId} />}
-          </div>
+          </fieldset>
         </>
       )}
     </aside>

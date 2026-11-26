@@ -87,7 +87,7 @@ function Log() {
       {mode === "capture" ? (
         <Notice tone="zinc">
           <strong>No mail server is connected.</strong> Every email is written in full and kept here, marked captured, exactly as it would be sent —
-          attachments and all. Set <code>SMTP_URL</code> to deliver them.
+          attachments and all. Once the organisation's mail server is connected, they are delivered.
         </Notice>
       ) : (
         <Notice tone="green">Delivering through the configured mail server.</Notice>

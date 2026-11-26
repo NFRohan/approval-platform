@@ -40,8 +40,14 @@ function IntegrationsPage() {
   const [data, setData] = useState<Data | null>(null);
   const [tab, setTab] = useState("keys");
 
+  // Only the latest load counts. A slower earlier one (the page opening)
+  // could answer after the reload a revoke or delete asks for, and put
+  // back the key as active or the webhook as still there.
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++seq.current;
     const r = await loadIntegrations();
+    if (mine !== seq.current) return;
     if (!r.ok) return void toast.error(r.error);
     setData(r);
   }, []);
@@ -586,7 +592,7 @@ function Migration() {
               <Button tone="brand" onClick={() => input.current?.click()}><FileUp size={13} /> Choose an export</Button>
               <Button onClick={() => void sample()}><Download size={13} /> A sample export</Button>
             </div>
-          ) : <Notice tone="zinc">Migrating records needs the records.manage permission.</Notice>}
+          ) : <Notice tone="zinc">Only someone with the Retention and archive permission can migrate records.</Notice>}
         </Card>
         <Card title="Migrated so far">
           {summary?.sources.length ? summary.sources.map((s) => (

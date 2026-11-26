@@ -188,7 +188,7 @@ function LoginPage() {
                 />
               </label>
               <label className="flex flex-col gap-1.5">
-                <span style={{ fontSize: 12, color: "#52525B" }}>Again</span>
+                <span style={{ fontSize: 12, color: "#52525B" }}>Confirm new password</span>
                 <input
                   type="password" style={inputStyle} autoComplete="new-password"
                   value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}

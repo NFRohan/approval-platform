@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { kindLabel, plainDetail } from "@/lib/activity-words";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -52,7 +53,8 @@ const ACTION_TEXT: Record<string, string> = {
   retention_changed: "Retention changed", audit_exported: "Audit trail exported", raised_through_api: "Raised through the API",
   report_exported: "Report exported",
 };
-const actionText = (a: string) => ACTION_TEXT[a] ?? a.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+// A notification kind ("approval.overdue") reads as its name.
+const actionText = (a: string) => ACTION_TEXT[a] ?? (a.includes(".") ? kindLabel(a) : a.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()));
 
 const SEV: Record<string, { tone: "zinc" | "amber" | "red"; Icon: typeof Info; word: string }> = {
   info: { tone: "zinc", Icon: Info, word: "Info" },
@@ -192,14 +194,14 @@ function Trail() {
                       <span className="inline-flex items-center gap-1.5" style={{ color: "#3F3F46" }}><span style={{ width: 8, height: 8, borderRadius: 2, background: c?.color }} />{c?.label ?? r.category}</span>
                     </td>
                     <td style={{ padding: "7px 4px" }}>{r.severity !== "info" && <span title={s.word} aria-label={s.word} style={{ color: r.severity === "critical" ? "#B91C1C" : "#B45309", display: "inline-flex" }}><s.Icon size={13} /></span>}</td>
-                    <td style={{ padding: "7px 10px", whiteSpace: "nowrap", color: INK, fontWeight: 500 }}>{actionText(r.action)}<div style={{ fontSize: 11, color: "#A1A1AA", fontWeight: 400 }}>{r.source}</div></td>
+                    <td style={{ padding: "7px 10px", whiteSpace: "nowrap", color: INK, fontWeight: 500 }}>{actionText(r.action)}</td>
                     <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{r.actor ?? r.actor_id ?? <span style={{ color: "#A1A1AA" }}>—</span>}{r.actor && r.actor_id && <div style={{ fontSize: 11, color: "#A1A1AA" }}>{r.actor_id}</div>}</td>
                     <td style={{ padding: "7px 10px", maxWidth: 220 }}>
                       {r.subject && /^(AMS|ME)-/.test(r.subject) && r.subject_id
                         ? <Link to="/status/$submissionId" params={{ submissionId: r.subject_id }} className="font-mono" style={{ fontSize: 11.5, color: "#4338CA" }}>{r.subject}</Link>
                         : <span style={{ color: "#3F3F46" }}>{r.subject}</span>}
                     </td>
-                    <td style={{ padding: "7px 10px", color: MUTED, maxWidth: 420 }}>{r.detail}</td>
+                    <td style={{ padding: "7px 10px", color: MUTED, maxWidth: 420 }}>{plainDetail(r.action, r.detail)}</td>
                   </tr>
                 );
               })}
@@ -394,9 +396,9 @@ function RetentionTab() {
               <Button tone="brand" busy={busy === "save"} disabled={!dirty} onClick={() => void save()}>Save policy</Button>
               <Button busy={busy === "run"} onClick={() => void runNow()} name="run-retention"><Archive size={13} /> Run it now</Button>
             </div>
-          ) : <div className="mt-3"><Notice tone="zinc">Changing the policy needs the records.manage permission.</Notice></div>}
+          ) : <div className="mt-3"><Notice tone="zinc">Only someone with the Retention and archive permission can change this policy.</Notice></div>}
           <div style={{ fontSize: 12, color: MUTED, marginTop: 12 }}>
-            Last run {r.last_run ? fmtWhen(r.last_run) : "never"}{r.last_result ? ` — ${r.last_result.archived} archived, ${r.last_result.purged} purged` : ""}.
+            {r.last_run ? <>Last run {fmtWhen(r.last_run)}{r.last_result ? ` — ${r.last_result.archived} archived, ${r.last_result.purged} purged` : ""}.</> : "Runs each night with the daily round; it has not run yet."}
           </div>
         </Card>
 

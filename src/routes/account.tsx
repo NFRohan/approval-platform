@@ -126,7 +126,7 @@ function PasswordCard({ username, onChanged }: { username: string; onChanged: ()
         <Field label="New password">
           <input name="next" type="password" autoComplete="new-password" style={inputStyle} value={next} onChange={(e) => setNext(e.target.value)} />
         </Field>
-        <Field label="Again">
+        <Field label="Confirm new password">
           <input name="again" type="password" autoComplete="new-password" style={inputStyle} value={again} onChange={(e) => setAgain(e.target.value)} />
         </Field>
         <PasswordRules password={next} username={username} />
@@ -249,7 +249,7 @@ function DeviceCard() {
   useEffect(() => { void refresh(); return onInstallChange(() => setInstallable(canInstall())); }, []);
 
   const WORD: Record<PushState, { tone: "green" | "zinc" | "red" | "amber"; text: string }> = {
-    on: { tone: "green", text: "On" }, off: { tone: "zinc", text: "Off" }, blocked: { tone: "red", text: "Blocked" }, unsupported: { tone: "amber", text: "Not here" },
+    on: { tone: "green", text: "On" }, off: { tone: "zinc", text: "Off" }, blocked: { tone: "amber", text: "Blocked" }, unsupported: { tone: "amber", text: "Not here" },
   };
   return (
     <Card
@@ -261,7 +261,7 @@ function DeviceCard() {
           Approvals, decisions, notes and reminders arrive here as notifications, even with the app closed — for whoever you
           are acting as. {isStandalone() ? "This is the installed app." : "Installing the app puts it on the home screen, full screen."}
         </p>
-        {state === "blocked" && <Notice tone="red">Notifications are blocked for this site. Allow them in the browser's settings, then turn them on here.</Notice>}
+        {state === "blocked" && <Notice tone="zinc">Notifications are blocked for this site. Allow them in the browser's settings, then turn them on here.</Notice>}
         {state === "unsupported" && (
           <Notice tone="amber">{isIos() && !isStandalone()
             ? "On an iPhone: tap Share, then Add to Home Screen, open the app from there, and turn notifications on in this card."

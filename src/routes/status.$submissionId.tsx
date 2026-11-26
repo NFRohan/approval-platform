@@ -539,12 +539,14 @@ function StatusPage() {
 
   return (
     <div className="max-w-4xl mx-auto" style={{ padding: "32px 28px 56px" }}>
+      {/* Back to where this person came from: their own requests, or the
+          approvals queue for an approver (it said "Back to forms" to everyone). */}
       <Link
-        to="/forms"
+        to={isRequester ? "/submissions" : "/approvals"}
         className="inline-flex items-center text-sm mb-6"
         style={{ color: "#71717A" }}
       >
-        ← Back to forms
+        ← Back to {isRequester ? "My Submissions" : "Approvals"}
       </Link>
 
       {submission.archived_at && (

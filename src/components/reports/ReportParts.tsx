@@ -206,8 +206,11 @@ export function ResultTable({ columns, rows, sort, onSort, truncated }: {
             {shown.map((r, i) => (
               <tr key={i} style={{ borderTop: i ? "1px solid #F4F4F5" : undefined }}>
                 {columns.map((c) => (
-                  <td key={c.key} style={{ padding: "8px 12px", textAlign: right(c.type) ? "right" : "left", color: "#27272A", whiteSpace: c.key === "comment" || c.key === "waiting_on" ? "normal" : "nowrap", fontVariantNumeric: right(c.type) ? "tabular-nums" : undefined }}>
-                    <Cell value={r[c.key]} type={c.type} />
+                  <td key={c.key} style={{ padding: "8px 12px", textAlign: right(c.type) ? "right" : "left", color: "#27272A", verticalAlign: "top",
+                    // Free text wraps, but in a column wide enough that a row stays a line or two, not a tower.
+                    ...(c.key === "comment" || c.key === "waiting_on" ? { whiteSpace: "normal", minWidth: 240, maxWidth: 360 } : { whiteSpace: "nowrap" }),
+                    fontVariantNumeric: right(c.type) ? "tabular-nums" : undefined }}>
+                    <Cell value={c.key === "priority" && typeof r[c.key] === "string" ? titleCase(r[c.key] as string) : r[c.key]} type={c.type} />
                   </td>
                 ))}
               </tr>

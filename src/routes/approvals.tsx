@@ -901,7 +901,7 @@ function ApprovalsInbox() {
                         {r.subjectRef && (
                           <span
                             className="font-mono"
-                            style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: "#71717A" }}
+                            style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: "#71717A", whiteSpace: "nowrap", display: "inline-block" }}
                           >
                             {r.subjectRef}
                           </span>

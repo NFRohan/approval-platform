@@ -8,7 +8,7 @@
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ClipboardList, Clock, Home, LayoutGrid, Layers, X } from "lucide-react";
+import { ClipboardList, Clock, FileText, Home, LayoutGrid, Layers, X } from "lucide-react";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { Sidebar } from "./Sidebar";
@@ -20,6 +20,9 @@ export function MobileNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [more, setMore] = useState(false);
   const [pending, setPending] = useState(0);
+  // Whether this person approves anything at all; a requester who never
+  // does gets Forms in that slot instead of an empty queue.
+  const [approves, setApproves] = useState(false);
 
   // Whatever is tapped in the drawer, it closes once the page changes.
   useEffect(() => { setMore(false); }, [pathname]);
@@ -27,9 +30,13 @@ export function MobileNav() {
   useEffect(() => {
     let alive = true;
     const count = async () => {
-      const { count: n } = await db.from("approval_requests").select("id", { count: "exact", head: true })
-        .eq("approver_user_id", currentUser.employee_id).eq("status", "pending");
-      if (alive) setPending(n ?? 0);
+      const [{ count: n }, { count: any }] = await Promise.all([
+        db.from("approval_requests").select("id", { count: "exact", head: true })
+          .eq("approver_user_id", currentUser.employee_id).eq("status", "pending"),
+        db.from("approval_requests").select("id", { count: "exact", head: true })
+          .eq("approver_user_id", currentUser.employee_id),
+      ]);
+      if (alive) { setPending(n ?? 0); setApproves((any ?? 0) > 0); }
     };
     void count();
     const t = window.setInterval(() => { if (document.visibilityState === "visible") void count(); }, 30_000);
@@ -38,8 +45,10 @@ export function MobileNav() {
 
   const tabs = [
     { to: "/", label: "Home", Icon: Home, active: pathname === "/" },
-    { to: "/approvals", label: "Approvals", Icon: Clock, active: pathname.startsWith("/approvals"), badge: pending },
-    { to: "/submissions", label: "Requests", Icon: Layers, active: pathname.startsWith("/submissions") || pathname.startsWith("/status") || pathname.startsWith("/forms") },
+    approves
+      ? { to: "/approvals", label: "Approvals", Icon: Clock, active: pathname.startsWith("/approvals"), badge: pending }
+      : { to: "/forms", label: "Forms", Icon: FileText, active: pathname.startsWith("/forms"), badge: 0 },
+    { to: "/submissions", label: "Requests", Icon: Layers, active: pathname.startsWith("/submissions") || pathname.startsWith("/status") || (approves && pathname.startsWith("/forms")) },
     { to: "/trackers", label: "Trackers", Icon: ClipboardList, active: pathname.startsWith("/trackers") },
   ];
 

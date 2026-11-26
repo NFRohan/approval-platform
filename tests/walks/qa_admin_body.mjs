@@ -46,7 +46,7 @@ for (const [path, need] of [['/admin/users', 'users.manage'], ['/admin/roles', '
 }
 ok('...the checklists stay read-only for him: nothing to save, nothing to type into',
   (await page.getByRole('button', { name: /^Save$/ }).count()) === 0 && (await page.getByRole('button', { name: /Add an item/ }).count()) === 0
-  && (await page.locator('[data-testid="checklist-tracks"] input:not([disabled])').count()) === 0);
+  && (await page.locator('[data-testid="checklist-tracks"] textarea:not([disabled])').count()) === 0);
 await page.goto(`${BASE}/admin/users?as=EMP-0830`);
 await settle(2500);
 ok('the auditor (audit.view only) cannot open Users either', (await text()).includes('users.manage or users.approve'));

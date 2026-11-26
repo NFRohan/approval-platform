@@ -233,22 +233,6 @@ function CertificatePage() {
 
           {/* Certificate title */}
           <div style={{ padding: "32px 40px 0", textAlign: "center" }}>
-            <div
-              style={{
-                display: "inline-block",
-                border: "2px solid #4F46E5",
-                borderRadius: 6,
-                padding: "6px 18px",
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: "#4F46E5",
-                marginBottom: 16,
-              }}
-            >
-              Clearance Certificate
-            </div>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: "#18181B", margin: "0 0 8px", letterSpacing: "-0.01em" }}>
               Company Clearance Certificate
             </h1>
@@ -313,7 +297,7 @@ function CertificatePage() {
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B", lineHeight: 1.3 }}>{emp?.name ?? appr.approver_user_id}</div>
                       <div style={{ fontSize: 11, color: "#71717A", marginTop: 2 }}>{emp?.designation ?? "Approver"}</div>
-                      <div style={{ fontSize: 11, color: "#A1A1AA", marginTop: 6 }}>{fmtDate(appr.acted_at)}</div>
+                      <div style={{ fontSize: 11.5, color: "#52525B", marginTop: 6 }}>{fmtDate(appr.acted_at)}</div>
                     </div>
                   );
                 })}

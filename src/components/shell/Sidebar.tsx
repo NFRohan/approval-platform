@@ -137,7 +137,7 @@ function buildNav(user: CurrentUser, ctx: NavCtx): Section[] {
     .filter((s) => s.items.length > 0);
   if (designs && !has(sections, "/builder")) {
     const [first, ...rest] = sections;
-    sections = [{ ...first, items: [...first.items, { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder", accent: true }] }, ...rest];
+    sections = [{ ...first, items: [...first.items, { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder" }] }, ...rest];
   }
 
   // Reports and analytics, for whoever reads them; campaigns, for them
@@ -180,7 +180,7 @@ function buildNavFor(user: CurrentUser, ctx: NavCtx): Section[] {
         section: "Forms",
         items: [
           { id: "dash", label: "Dashboard", Icon: LayoutDashboard, to: "/" },
-          { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder", accent: true },
+          { id: "builder", label: "Form Builder", Icon: FileEdit, to: "/builder" },
           { id: "published", label: "Published Forms", Icon: Layers, to: "/forms" },
         ],
       },

@@ -294,7 +294,7 @@ await page.getByRole('button', { name: /^notices$/i }).click();
 await settle(600);
 let shown = await actRows();
 const noticeTop = lenaTop.filter((r) => r.entity_type === 'notice').length;
-ok('activity: filtered to notices, it shows only notice entries (as many as the database has)', shown === noticeTop && /notice/.test(await activityText()) && !/form submission/.test(await activityText()), `${shown} vs ${noticeTop}`);
+ok('activity: filtered to notices, it shows only notice entries (as many as the database has)', shown === noticeTop && /notice/i.test(await activityText()) && !/form submission/.test(await activityText()), `${shown} vs ${noticeTop}`);
 await page.getByRole('button', { name: /^movement orders$/i }).last().click();  // the filter chip, not the sidebar
 await settle(600);
 shown = await actRows();

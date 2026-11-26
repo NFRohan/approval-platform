@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { actionWords, entityWord, plainDetail } from "@/lib/activity-words";
 import { useEffect, useState } from "react";
 import { Activity as ActivityIcon } from "lucide-react";
 import { db } from "@/lib/db";
@@ -107,10 +108,10 @@ function ActivityPage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, color: "#18181B" }}>
                   <span style={{ fontWeight: 600 }}>{r.actorName ?? r.actor_id}</span>{" "}
-                  <span style={{ color: ACTION_COLORS[r.action] ?? "#52525B", fontWeight: 500 }}>{r.action.replace(/_/g, " ")}</span>
-                  {r.detail && <span style={{ color: "#52525B" }}> — {r.detail}</span>}
+                  <span style={{ color: ACTION_COLORS[r.action] ?? "#52525B", fontWeight: 500 }}>{actionWords(r.action)}</span>
+                  {plainDetail(r.action, r.detail) && <span style={{ color: "#52525B" }}> — {plainDetail(r.action, r.detail)}</span>}
                 </div>
-                <div style={{ fontSize: 11.5, color: "#A1A1AA", marginTop: 2 }}>{fmt(r.created_at)} · {r.entity_type.replace("_", " ")}</div>
+                <div style={{ fontSize: 11.5, color: "#A1A1AA", marginTop: 2 }}>{fmt(r.created_at)} · {entityWord(r.entity_type)}</div>
               </div>
             </div>
           ))}

@@ -146,7 +146,8 @@ export function StatusBadge({
         border: `1px solid ${cfg.border}`,
       }}
     >
-      {showDot && (
+      {/* An icon stands in for the dot; both at once read as a stutter. */}
+      {showDot && !showIcon && (
         <span
           className={cn("rounded-full shrink-0", cfg.pulseDot && "status-badge-pulse")}
           style={{ width: s.dot, height: s.dot, background: cfg.dot }}

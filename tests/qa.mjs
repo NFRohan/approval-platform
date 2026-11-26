@@ -92,7 +92,7 @@ console.log(`QA run — ${new Date().toISOString()}`);
 // 1. Static and offline suites -----------------------------------------
 if (!ONLY) {
   record('static', 'typecheck', await run(npx, ['tsc', '--noEmit', '-p', '.']));
-  for (const s of ['test:callsites', 'test:identity', 'test:reports', 'test:commercial', 'test:integration']) {
+  for (const s of ['test:callsites', 'test:units', 'test:identity', 'test:reports', 'test:commercial', 'test:integration']) {
     record('offline', s, await run(npm, ['run', '-s', s]));
   }
   // 2. Every database suite, on PGlite ----------------------------------

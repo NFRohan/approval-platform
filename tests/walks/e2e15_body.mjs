@@ -92,7 +92,7 @@ body = await text();
 ok('the checklists page shows the exit clearance tracks', ['Own division', 'Finance & Accounts', 'Supply Chain', 'Administration', 'Product & Technology', 'Final settlement', 'Payroll settlement'].every((t) => body.includes(t)));
 const scm = page.locator('[data-testid="checklist-tracks"] > section').filter({ hasText: 'Supply Chain' }).first();
 await scm.getByRole('button', { name: /Add an item/ }).click();
-await scm.locator('input').last().fill('Toolkit returned');
+await scm.locator('textarea').last().fill('Toolkit returned');
 await scm.getByRole('button', { name: /^Save$/ }).click();
 await settle(2500);
 await shot('s9-checklists');

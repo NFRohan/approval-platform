@@ -34,12 +34,21 @@ export function StageEditor({
   onChange,
   employees,
   fieldLabels,
+  lock = "none",
 }: {
   stages: Stage[];
   onChange: (next: Stage[]) => void;
   employees: EmployeeOption[];
   fieldLabels: string[];
+  /**
+   * What this person may not change. "structure": who approves and the
+   * shape of the route are fixed, only task settings (deadline, reminder,
+   * SLA, signature) can change. "all": nothing can. The database refuses
+   * the rest anyway; this keeps the screen from pretending otherwise.
+   */
+  lock?: "none" | "structure" | "all";
 }) {
+  const fixed = lock !== "none";
   const setStage = (id: string, patch: Partial<Stage>) =>
     onChange(stages.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const setApprover = (stageId: string, apId: string, patch: Partial<StageApprover>) =>
@@ -58,6 +67,7 @@ export function StageEditor({
 
   return (
     <section className="rounded-xl bg-white" style={{ border: "1px solid #E4E4E7", overflow: "hidden" }}>
+      <fieldset disabled={lock === "all"} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
       <div style={{ padding: "12px 16px", background: "#FAFAFA", borderBottom: "1px solid #E4E4E7" }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Further approval stages</div>
         <div style={{ fontSize: 12, color: "#71717A", marginTop: 2 }}>
@@ -86,11 +96,13 @@ export function StageEditor({
                 onChange={(e) => setStage(stage.id, { label: e.target.value })}
                 placeholder="Stage name (optional) — e.g. Departmental clearance"
                 aria-label={`Stage ${si + 1} name`}
+                disabled={fixed}
                 style={{ ...input, flex: 1 }}
               />
               <button
                 onClick={() => onChange(stages.filter((s) => s.id !== stage.id))}
                 aria-label={`Remove stage ${si + 1}`}
+                disabled={fixed}
                 style={{ padding: 6, background: "none", border: "none", color: "#B91C1C", cursor: "pointer" }}
               >
                 <Trash2 size={14} />
@@ -105,6 +117,7 @@ export function StageEditor({
                       value={a.who}
                       onChange={(e) => setApprover(stage.id, a.id, { who: e.target.value })}
                       aria-label="Approver"
+                      disabled={fixed}
                       style={{ ...input, flex: "1 1 220px" }}
                     >
                       <option value="">Choose a person or a role…</option>
@@ -129,6 +142,7 @@ export function StageEditor({
                           onChange={(e) => setApprover(stage.id, a.id, { track: e.target.value })}
                           placeholder="own track"
                           aria-label="Track"
+                          disabled={fixed}
                           style={{ ...input, width: 120 }}
                         />
                       </label>
@@ -169,6 +183,7 @@ export function StageEditor({
                         })
                       }
                       title={a.condition ? "Always ask them" : "Only ask them when an answer says so"}
+                      disabled={fixed}
                       className="inline-flex items-center gap-1 rounded-md"
                       style={{
                         padding: "5px 8px", fontSize: 11.5, cursor: "pointer",
@@ -210,11 +225,13 @@ export function StageEditor({
                       placeholder="flag"
                       title="Mark the request with this when this step is on its route, e.g. Exceptional"
                       aria-label="Flag"
+                      disabled={fixed}
                       style={{ ...input, width: 90 }}
                     />
                     <button
                       onClick={() => setStage(stage.id, { approvers: stage.approvers.filter((x) => x.id !== a.id) })}
                       aria-label="Remove approver"
+                      disabled={fixed}
                       style={{ padding: 6, background: "none", border: "none", color: "#B91C1C", cursor: "pointer" }}
                     >
                       <Trash2 size={13} />
@@ -264,6 +281,7 @@ export function StageEditor({
                         value={a.condition.field}
                         onChange={(e) => setApprover(stage.id, a.id, { condition: { ...a.condition!, field: e.target.value } })}
                         aria-label="Condition question"
+                        disabled={fixed}
                         style={input}
                       >
                         {fieldLabels.length === 0 && <option value="">(this form has no questions)</option>}
@@ -273,6 +291,7 @@ export function StageEditor({
                         value={a.condition.op}
                         onChange={(e) => setApprover(stage.id, a.id, { condition: { ...a.condition!, op: e.target.value } })}
                         aria-label="Condition operator"
+                        disabled={fixed}
                         style={input}
                       >
                         {CONDITION_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -283,6 +302,7 @@ export function StageEditor({
                           onChange={(e) => setApprover(stage.id, a.id, { condition: { ...a.condition!, value: e.target.value } })}
                           placeholder="value"
                           aria-label="Condition value"
+                        disabled={fixed}
                           style={{ ...input, width: 160 }}
                         />
                       )}
@@ -295,6 +315,7 @@ export function StageEditor({
             <div className="flex items-center justify-between gap-3 flex-wrap mt-3">
               <button
                 onClick={() => setStage(stage.id, { approvers: [...stage.approvers, newApprover()] })}
+                disabled={fixed}
                 className="inline-flex items-center gap-1 rounded-md"
                 style={{ padding: "5px 10px", fontSize: 12, border: "1px solid #E4E4E7", background: "#fff", color: "#3F3F46", cursor: "pointer" }}
               >
@@ -307,6 +328,7 @@ export function StageEditor({
                     value={stage.quorum ?? ""}
                     onChange={(e) => setStage(stage.id, { quorum: e.target.value ? Number(e.target.value) : null })}
                     aria-label="Clears when"
+                    disabled={fixed}
                     style={input}
                   >
                     <option value="">all {tracks} tracks have</option>
@@ -323,6 +345,7 @@ export function StageEditor({
 
       <div style={{ padding: "12px 16px", borderTop: "1px solid #F4F4F5", background: "#FAFAFA" }}>
         <button
+          disabled={fixed}
           onClick={() => onChange([...stages, { id: newId("st"), label: "", quorum: null, approvers: [newApprover()] }])}
           className="inline-flex items-center gap-1 rounded-md"
           style={{ padding: "6px 12px", fontSize: 12.5, fontWeight: 500, border: "1px solid #C7D2FE", background: "#EEF2FF", color: "#4338CA", cursor: "pointer" }}
@@ -330,6 +353,7 @@ export function StageEditor({
           <Plus size={13} /> Add a stage
         </button>
       </div>
+      </fieldset>
     </section>
   );
 }

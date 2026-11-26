@@ -182,7 +182,7 @@ ok('monitoring counts failed sign-ins and out-of-hours work, and charts activity
 
 // ------------------------------------------------- retention, by permission
 await tab('Retention');
-ok('the auditor sees the retention policy but cannot change or run it', (await text()).includes('Changing the policy needs the records.manage permission.')
+ok('the auditor sees the retention policy but cannot change or run it', (await text()).includes('Only someone with the Retention and archive permission can change this policy.')
   && await page.locator('input[aria-label="Archive after months"]').isDisabled() && (await page.locator('button[name="run-retention"]').count()) === 0);
 const lenaRet = await asPerson('EMP-0830', `select public.set_retention(10, 6, 60)`);
 ok('...and the database refuses her too', /records\.manage/.test(lenaRet ?? ''), lenaRet ?? 'it was changed');
@@ -241,7 +241,9 @@ const prefix = KEY.split('_')[1];
 ok('once closed, the key is not shown again: only its prefix', !(await text()).includes(KEY) && (await page.locator('[data-testid="keys"]').innerText()).includes(`ams_${prefix}_••••`));
 page.once('dialog', (d) => d.accept());
 await page.locator('[data-testid="keys"] tr', { hasText: 'QA Tableau extract' }).getByRole('button', { name: 'Revoke' }).click();
-await settle(2500);
+// The list reloads after the revoke; on the test database that queues
+// behind the page's own first loads, so wait for it rather than a fixed time.
+await page.locator('[data-testid="keys"] tr', { hasText: 'QA Tableau extract' }).filter({ hasText: 'Revoked' }).waitFor({ timeout: 15000 }).catch(() => {});
 const revokedRow = await page.locator('[data-testid="keys"] tr', { hasText: 'QA Tableau extract' }).innerText().catch((e) => String(e));
 ok('revoking it is shown in the list', /Revoked/.test(revokedRow), `${revokedRow} | ${await toasts()} | db revoked_at=${(await one(`select revoked_at from public.api_keys where tenant_id = $1 and name = 'QA Tableau extract'`, [tenant]))?.revoked_at}`);
 res = await callApi(KEY, 'me');
@@ -266,7 +268,7 @@ const hookId = (await one(`select id from public.webhooks where tenant_id = $1 a
 ok('...the delivery is logged', (await one(`select count(*)::int n from public.webhook_deliveries where webhook_id = $1`, [hookId])).n >= 1);
 page.once('dialog', (d) => d.accept());
 await qaHook.getByRole('button', { name: /Delete/ }).click();
-await settle(2500);
+await page.locator('[data-testid="webhooks"] section', { hasText: 'QA echo' }).waitFor({ state: 'detached', timeout: 15000 }).catch(() => {});
 const hookGone = { onScreen: await page.locator('[data-testid="webhooks"] section', { hasText: 'QA echo' }).count(), row: !!(await one(`select 1 x from public.webhooks where id = $1`, [hookId])),
   deliveries: (await one(`select count(*)::int n from public.webhook_deliveries where webhook_id = $1`, [hookId])).n, toasts: await toasts() };
 ok('a webhook is deleted, with its delivery log', hookGone.onScreen === 0 && !hookGone.row && hookGone.deliveries === 0, JSON.stringify(hookGone));

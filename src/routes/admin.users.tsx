@@ -145,7 +145,9 @@ function UsersPage() {
               roles={roles}
               held={holdings.filter((h) => h.employee_id === a.employee_id).map((h) => h.role_id)}
               act={act}
-              showSecret={(label, value) => setSecret({ label, value })}
+              // A reset changes the account (it must change the password), so
+              // the list reloads to say so straight away.
+              showSecret={(label, value) => { setSecret({ label, value }); void load(); }}
             />
           ))}
           {shown.length === 0 && <div style={{ fontSize: 13, color: "#A1A1AA", padding: 12 }}>No accounts match.</div>}

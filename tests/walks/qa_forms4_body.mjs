@@ -80,13 +80,13 @@ await settle(3500);
 let t = await text();
 ok('Approvers: the defaults show — the admin officer, and finance by amount since there is a money field',
   /Admin Officer|Farah Haddad/.test(t) && /Finance Approver/.test(t) && /Finance Approval Slabs/.test(t));
-await page.getByRole('button', { name: /Add a stage/ }).dispatchEvent('click');
+await page.getByRole('button', { name: /Add a stage/ }).click();
 await page.locator('input[aria-label="Stage 1 name"]').fill('Line review');
 await page.locator('[data-stage="0"] select[aria-label="Approver"]').selectOption('role:line_manager');
-await page.getByRole('button', { name: /Add a stage/ }).dispatchEvent('click');
+await page.getByRole('button', { name: /Add a stage/ }).click();
 await page.locator('input[aria-label="Stage 2 name"]').fill('Compliance check');
 await page.locator('[data-stage="1"] select[aria-label="Approver"]').selectOption('EMP-0830');
-await page.locator('[data-stage="1"]').getByRole('button', { name: /Always/ }).dispatchEvent('click');
+await page.locator('[data-stage="1"]').getByRole('button', { name: /Always/ }).click();
 await page.locator('[data-stage="1"] select[aria-label="Condition question"]').selectOption('Site');
 await page.locator('[data-stage="1"] select[aria-label="Condition operator"]').selectOption('eq');
 await page.locator('[data-stage="1"] input[aria-label="Condition value"]').fill('Chattogram');

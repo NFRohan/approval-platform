@@ -115,7 +115,7 @@ const sch = await one(`select schedule, format, recipients from public.report_te
 ok('reports: it is scheduled monthly, as CSV, to the auditor', sch.schedule === 'monthly' && sch.format === 'csv' && JSON.stringify(sch.recipients) === JSON.stringify([LENA]), JSON.stringify(sch));
 await go('/reports', LENA, 3000);
 const qaCard = page.locator('[data-testid="report-cards"] a', { hasText: 'QA every rejection' });
-ok('reports: the auditor sees it among the organisation\'s reports, marked monthly to one person', (await qaCard.count()) === 1 && /Monthly to 1/.test(await qaCard.innerText()));
+ok('reports: the auditor sees it among the organisation\'s reports, marked monthly to one person', (await qaCard.count()) === 1 && /monthly to 1 person/i.test(await qaCard.innerText()));
 // The daily round queues a scheduled report that is due.
 await quiet();
 await rows(`update public.report_templates set last_sent_at = now() - interval '40 days' where id = $1`, [qa.id]);

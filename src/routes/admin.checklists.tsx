@@ -99,13 +99,15 @@ function ChecklistsPage() {
                 <div className="flex flex-col gap-2">
                   {t.items.map((item, i) => (
                     <div key={i} className="flex items-center gap-1.5">
-                      <input
+                      {/* Wraps instead of cutting a long item off mid-word. */}
+                      <textarea
                         aria-label={`${t.track} item ${i + 1}`}
-                        style={{ ...inputStyle, flex: 1 }}
+                        style={{ ...inputStyle, flex: 1, resize: "none", lineHeight: 1.4, fontFamily: "inherit" }}
+                        rows={Math.max(1, Math.ceil(item.length / 40))}
                         value={item}
                         disabled={!canManage}
                         maxLength={200}
-                        onChange={(e) => setItems(t.track, t.items.map((x, j) => (j === i ? e.target.value : x)))}
+                        onChange={(e) => setItems(t.track, t.items.map((x, j) => (j === i ? e.target.value.replace(/\n/g, " ") : x)))}
                       />
                       {canManage && (
                         <>

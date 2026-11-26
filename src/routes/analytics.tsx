@@ -183,12 +183,12 @@ function AnalyticsPage() {
             <ChartCard title="Approvals decided on time" note="Share of approval steps decided by their deadline, in each complete week"
               table={<SimpleTable head={["Week of", "Decided", "Late", "On time"]} rows={data.sla.map((w) => [dmy(w.week), w.decided, w.late, w.onTimePct == null ? "—" : `${w.onTimePct}%`])} />}>
               <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={data.sla} margin={{ top: 10, right: 20, bottom: 0, left: -12 }}>
+                <LineChart data={data.sla} margin={{ top: 10, right: 64, bottom: 0, left: -12 }}>
                   <CartesianGrid vertical={false} stroke={GRID} />
                   <XAxis dataKey="week" tickFormatter={dm} tick={{ fontSize: 11, fill: AXIS }} axisLine={{ stroke: "#E4E4E7" }} tickLine={false} minTickGap={24} />
                   <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} />
                   <ReferenceLine y={90} stroke="#A1A1AA" strokeWidth={1}
-                    label={{ value: "Target 90%", position: "insideTopRight", fontSize: 11, fill: MUTED }} />
+                    label={{ value: "Target 90%", position: "right", fontSize: 11, fill: MUTED }} />
                   <Tooltip content={<Tip rows={(p) => [["On time", p.onTimePct == null ? "—" : `${p.onTimePct}%`, SERIES_1], ["Decided", p.decided], ["Late", p.late]]} title={(p) => `Week of ${dmy(p.week)}`} />}
                     cursor={{ stroke: "#D4D4D8", strokeWidth: 1 }} />
                   <Line type="linear" dataKey="onTimePct" stroke={SERIES_1} strokeWidth={2} dot={false} connectNulls

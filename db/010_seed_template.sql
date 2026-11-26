@@ -803,6 +803,78 @@ select app.seed_division_admins(app.current_tenant());
 select app.seed_division_admins(d.id) from public.tenants d where d.kind = 'demo';
 select app.seed_form_overseers(app.current_tenant());
 select app.seed_form_overseers(d.id) from public.tenants d where d.kind = 'demo';
+
+-- =====================================================================
+-- Bangladeshi names for an evaluation shown to a Bangladeshi audience.
+--
+-- The template keeps the names the tests know; an evaluation for bKash
+-- gets local ones, keyed by employee id, with the old name rewritten
+-- wherever its history already wrote it (answers, notifications, the
+-- trail). First letters are kept, so a tester who knows "Tom" finds
+-- "Towhid". Idempotent: once renamed there is nothing left to match.
+-- =====================================================================
+create or replace function app.localise_names(p_tenant uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare
+  m record; c record; n int := 0; k int;
+begin
+  for m in
+    select * from (values
+      ('EMP-0700', 'Alex Mercer',    'Arif Chowdhury',  'arif.chowdhury'),
+      ('EMP-0650', 'Priya Raman',    'Sabrina Haque',   'sabrina.haque'),
+      ('EMP-0600', 'Dana Whitfield', 'Dilruba Yasmin',  'dilruba.yasmin'),
+      ('EMP-0201', 'Nadia Okonjo',   'Nadia Islam',     'nadia.islam'),
+      ('EMP-0312', 'Raj Patel',      'Rajib Saha',      'rajib.saha'),
+      ('EMP-0445', 'Farah Haddad',   'Farhana Sultana', 'farhana.sultana'),
+      ('EMP-1134', 'Sam Lindqvist',  'Saiful Alam',     'saiful.alam'),
+      ('EMP-9001', 'Ivan Petrov',    'Imran Hossain',   'imran.hossain'),
+      ('EMP-2847', 'Tom Bexley',     'Towhid Karim',    'towhid.karim'),
+      ('EMP-3120', 'Mei Sun',        'Mehnaz Siddiqui', 'mehnaz.siddiqui'),
+      ('EMP-0800', 'Hana Kim',       'Hena Mostafa',    'hena.mostafa'),
+      ('EMP-0520', 'Omar Reyes',     'Omar Faruq',      'omar.faruq'),
+      ('EMP-0830', 'Lena Ortiz',     'Lubna Ferdous',   'lubna.ferdous'),
+      ('EMP-0831', 'Kofi Mensah',    'Kamal Uddin',     'kamal.uddin'),
+      ('EMP-0832', 'Ravi Shah',      'Rafiq Sarker',    'rafiq.sarker'),
+      ('EMP-0661', 'Zara Ahmed',     'Zarin Tasnim',    'zarin.tasnim')
+    ) v(id, old_name, new_name, mail)
+  loop
+    update public.employees
+       set name = m.new_name,
+           email = case when email is null then null else m.mail || substr(email, strpos(email, '@')) end
+     where tenant_id = p_tenant and employee_id = m.id and name = m.old_name;
+    get diagnostics k = row_count; n := n + k;
+    -- Wherever the old name was already written down.
+    for c in
+      select col.table_name, col.column_name, col.data_type
+        from information_schema.columns col
+       where col.table_schema = 'public'
+         and col.data_type in ('text', 'character varying', 'jsonb')
+         and col.is_generated = 'NEVER'
+         and col.table_name <> 'employees'
+         and exists (select 1 from information_schema.columns t
+                      where t.table_schema = 'public' and t.table_name = col.table_name and t.column_name = 'tenant_id')
+         and exists (select 1 from information_schema.tables tb
+                      where tb.table_schema = 'public' and tb.table_name = col.table_name and tb.table_type = 'BASE TABLE')
+    loop
+      if c.data_type = 'jsonb' then
+        execute format('update public.%I set %I = replace(%I::text, $1, $2)::jsonb where tenant_id = $3 and %I::text like $4',
+                       c.table_name, c.column_name, c.column_name, c.column_name)
+          using m.old_name, m.new_name, p_tenant, '%' || m.old_name || '%';
+      else
+        execute format('update public.%I set %I = replace(%I, $1, $2) where tenant_id = $3 and %I like $4',
+                       c.table_name, c.column_name, c.column_name, c.column_name)
+          using m.old_name, m.new_name, p_tenant, '%' || m.old_name || '%';
+      end if;
+    end loop;
+  end loop;
+  return n;
+end $$;
+
+select app.localise_names(t.id) from public.tenants t where t.kind = 'demo' and t.name ilike 'bkash%';
 -- Notices, stationery and maintenance had their chains built once for
 -- every organisation in the database: the seed builds them as the owner,
 -- and the rule lookup did not name the organisation (fixed in

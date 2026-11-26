@@ -318,15 +318,15 @@ ok('...nor, calling the database directly, can Tom', /needs the workflow setting
 
 await go('/admin/checklists', 'EMP-0650');
 const fa = page.locator('[data-testid="checklist-tracks"] > section').filter({ hasText: 'Finance & Accounts' }).first();
-const faItems = async () => fa.locator('input[aria-label^="Finance & Accounts item"]').evaluateAll((els) => els.map((e) => e.value));
+const faItems = async () => fa.locator('textarea[aria-label^="Finance & Accounts item"]').evaluateAll((els) => els.map((e) => e.value));
 const before = await faItems();
 ok('the HR administrator sees the exit clearance checklist for Finance & Accounts', JSON.stringify(before) === JSON.stringify(['Pending IOU or advance', 'Unsettled bills', 'Other payment or recovery', 'Other outstanding issue']), JSON.stringify(before));
 ok('...with nothing to save until something changes', await fa.getByRole('button', { name: /^Save$/ }).isDisabled());
-await fa.locator('input[aria-label="Finance & Accounts item 2"]').fill('Unsettled bills and claims');
-await fa.locator('input[aria-label="Finance & Accounts item 4"]').locator('xpath=..').getByRole('button', { name: 'Move up' }).click();
-await fa.locator('input[aria-label="Finance & Accounts item 1"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
+await fa.locator('textarea[aria-label="Finance & Accounts item 2"]').fill('Unsettled bills and claims');
+await fa.locator('textarea[aria-label="Finance & Accounts item 4"]').locator('xpath=..').getByRole('button', { name: 'Move up' }).click();
+await fa.locator('textarea[aria-label="Finance & Accounts item 1"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
 await fa.getByRole('button', { name: /Add an item/ }).click();
-await fa.locator('input[aria-label^="Finance & Accounts item"]').last().fill('Company credit card cancelled');
+await fa.locator('textarea[aria-label^="Finance & Accounts item"]').last().fill('Company credit card cancelled');
 const want = ['Unsettled bills and claims', 'Other outstanding issue', 'Other payment or recovery', 'Company credit card cancelled'];
 ok('items are edited, moved, removed and added on screen', JSON.stringify(await faItems()) === JSON.stringify(want), JSON.stringify(await faItems()));
 await fa.getByRole('button', { name: /^Save$/ }).click();
@@ -340,10 +340,10 @@ ok('...and keeps the removed and reworded items, switched off rather than delete
 ok('...and the save is on the trail', (await audits('checklist_saved', 'Employee Exit Clearance — Finance & Accounts: 4 item(s)')) === 1);
 await go('/admin/checklists', 'EMP-0650');
 ok('opening the page again shows the saved list', JSON.stringify(await faItems()) === JSON.stringify(want));
-await fa.locator('input[aria-label="Finance & Accounts item 4"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
-await fa.locator('input[aria-label="Finance & Accounts item 3"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
-await fa.locator('input[aria-label="Finance & Accounts item 2"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
-await fa.locator('input[aria-label="Finance & Accounts item 1"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
+await fa.locator('textarea[aria-label="Finance & Accounts item 4"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
+await fa.locator('textarea[aria-label="Finance & Accounts item 3"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
+await fa.locator('textarea[aria-label="Finance & Accounts item 2"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
+await fa.locator('textarea[aria-label="Finance & Accounts item 1"]').locator('xpath=..').getByRole('button', { name: 'Remove' }).click();
 await fa.getByRole('button', { name: /^Save$/ }).click();
 await settle(2500);
 ok('a track can be left with no checklist at all', /no checklist now/.test(await toasts()) && (await fa.innerText()).includes('this track clears on approval alone')
