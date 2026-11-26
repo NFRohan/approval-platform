@@ -25,6 +25,20 @@ await new Promise((res, rej) => {
   c.on('close', (code) => { console.log(o.slice(-1500)); code === 0 ? res() : rej(new Error('staging failed')); });
 });
 
+// A column change Lubna asked for, waiting for an administrator.
+await db.exec(`begin;
+  select set_config('app.tenant_id', '${tenant}', true), set_config('app.employee_id', 'EMP-0830', true),
+         set_config('app.role', 'admin', true), set_config('app.mfa', 'true', true);
+  select public.request_report_change(t.id, t.columns || array['priority'], 'For the monthly compliance pack')
+    from public.report_templates t where t.tenant_id = '${tenant}' and t.name = 'Missed deadlines';
+  commit;`);
+// A draft Towhid started and has not finished.
+await db.exec(`begin;
+  select set_config('app.tenant_id', '${tenant}', true), set_config('app.employee_id', 'EMP-2847', true), set_config('app.role', 'admin', true);
+  select public.copy_submission(s.id, 'EMP-2847') from public.form_submissions s
+   join public.form_templates f on f.id = s.form_template_id
+   where s.tenant_id = '${tenant}' and s.submitted_by = 'EMP-2847' and f.name = 'Travel & Expense Reimbursement' and s.status <> 'draft' limit 1;
+  commit;`);
 const ADMIN = 'EMP-0445', TOWHID = 'EMP-2847', SAIFUL = 'EMP-1134', LUBNA = 'EMP-0830', MITU = 'EMP-0416', TANVIR = 'EMP-0411';
 const id = async (sql, p = [tenant]) => (await one(sql, p))?.id;
 const byRef = async (title) => id(`select s.id from public.form_submissions s join public.submission_values v on v.submission_id = s.id
@@ -62,6 +76,7 @@ for (const p of ['/', '/approvals', '/approvals/history', `/status/${ids.capexWa
 add(SAIFUL, '/approvals', { phone: true });
 add('EMP-3120', `/status/${ids.exitDone}`); add('EMP-3120', `/certificate/${ids.exitDone}`);
 add(TANVIR, '/approvals'); add(MITU, `/status/${ids.campaignReq}`);
+add('EMP-0520', '/approvals'); add('EMP-0520', '/admin/roles');
 for (const p of ['/analytics', '/trackers', `/status/${ids.gift}`]) add(LUBNA, p);
 
 // ---- capture
