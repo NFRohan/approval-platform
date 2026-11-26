@@ -61,7 +61,10 @@ await page.getByRole('button', { name: /^Next/ }).first().click();
 await settle(3500);
 let who = await whoPanel();
 ok('campaign review (regular): no CXO first — Business Finance (Tanvir) then the head',
-  !who.includes('Hana Kim') && !/Exceptional approval/.test(who) && who.includes('Tanvir Hasan'), who.slice(0, 400));
+  // Hana Kim is the COO and also the Commercial department's head, so she
+  // is on the regular route — second, as the head, never first.
+  !/Exceptional approval/.test(who) && who.includes('Tanvir Hasan')
+  && (!who.includes('Hana Kim') || who.indexOf('Tanvir Hasan') < who.indexOf('Hana Kim')), who.slice(0, 400));
 await page.getByRole('button', { name: /^Back/ }).first().click();
 await settle(900);
 await (await field('Approval route')).locator('select').selectOption('Exceptional');
