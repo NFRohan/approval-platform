@@ -1189,6 +1189,14 @@ drop trigger if exists system_runs_alert on public.system_runs;
 create trigger system_runs_alert after insert or update of error on public.system_runs
   for each row execute function app.alert_on_run();
 
+-- What the alerts and the SIEM push look up on every run.
+create index if not exists activity_log_locked_idx
+  on public.activity_log(tenant_id, created_at) where action = 'account_locked';
+create index if not exists system_runs_job_idx
+  on public.system_runs(tenant_id, job, started_at desc);
+create index if not exists notifications_alert_idx
+  on public.notifications(tenant_id, created_at) where kind = 'admin.alert';
+
 -- Three or more accounts locked within an hour is a pattern, not a
 -- forgotten password.
 create or replace function app.alert_on_lockouts()

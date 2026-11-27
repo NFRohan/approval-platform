@@ -318,8 +318,11 @@ await ctx.clearCookies();
 await ctx.addCookies(tanvirCookies);
 await page.goto(BASE + '/forms');
 await settle(3000);
-await page.locator('input[aria-label="Find a form"]').fill('Travel');
-await settle(800);
+// The refused session may already be back at sign-in, with no page to search.
+if (await page.locator('input[aria-label="Find a form"]').count()) {
+  await page.locator('input[aria-label="Find a form"]').fill('Travel');
+  await settle(800);
+}
 const cut = await text();
 ok('a session already open gets no more data once the account is disabled', formsWhileActive && !cut.includes('Travel & Expense Reimbursement'), `${formsWhileActive} ${cut.slice(0, 300)}`);
 ok('...and is ended or told so, not left showing him signed in to empty pages',

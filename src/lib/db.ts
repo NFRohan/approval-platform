@@ -16,7 +16,43 @@
 // The chain is lazy: nothing is sent until the query is awaited.
 // =====================================================================
 
-import { runData, type DataRequest, type DataResponse } from '@/lib/data-fn';
+import { runData, runDataBatch, type DataRequest, type DataResponse } from '@/lib/data-fn';
+
+// ---- reads, gathered ------------------------------------------------
+// A screen and its shell ask for their counts and lists in the same
+// moment: the sidebar's badges, the bell, the page's own lists. Each was
+// a request of its own — on a serverless host, an invocation, a session
+// check and a connection apiece. Reads issued in the same tick are sent
+// together (runDataBatch) and each still answers for itself. Writes are
+// never gathered: they keep their own request and their order.
+type Pending = { request: DataRequest; resolve: (r: DataResponse) => void; reject: (e: unknown) => void };
+let queue: Pending[] = [];
+let scheduled = false;
+const BATCH_MAX = 25;
+
+function flush() {
+  scheduled = false;
+  const items = queue;
+  queue = [];
+  for (let i = 0; i < items.length; i += BATCH_MAX) {
+    const chunk = items.slice(i, i + BATCH_MAX);
+    if (chunk.length === 1) {
+      runData({ data: chunk[0].request }).then(chunk[0].resolve, chunk[0].reject);
+      continue;
+    }
+    runDataBatch({ data: chunk.map((c) => c.request) }).then(
+      (results) => chunk.forEach((c, j) => c.resolve(results[j] ?? { data: null, error: { message: 'no answer', status: 500 } })),
+      (err) => chunk.forEach((c) => c.reject(err)),
+    );
+  }
+}
+
+function sendRead(request: DataRequest): Promise<DataResponse> {
+  return new Promise((resolve, reject) => {
+    queue.push({ request, resolve, reject });
+    if (!scheduled) { scheduled = true; setTimeout(flush, 0); }
+  });
+}
 
 type Row = Record<string, unknown>;
 type Filter = { col: string; op: string; val: unknown };
@@ -131,7 +167,10 @@ class Query<R = any, Out = R[] | null> implements PromiseLike<Result<Out>> {
     const request = { kind: 'query', ...this.body } as DataRequest;
     let res: DataResponse;
     try {
-      res = await runData({ data: request });
+      // Reads go together with whatever else is read this tick; writes alone.
+      res = this.body.op === 'select' && typeof window !== 'undefined'
+        ? await sendRead(request)
+        : await runData({ data: request });
     } catch (err) {
       // A transport failure is still an error the call site can show,
       // not an exception it never expected.

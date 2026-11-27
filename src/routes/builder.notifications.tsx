@@ -1,7 +1,6 @@
 import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { z } from "zod";
 import { NoFormChosen } from "@/components/builder/NoFormChosen";
 import { db } from "@/lib/db";
 import { BuilderChrome, PrimaryButton, SecondaryButton } from "@/components/builder/BuilderChrome";
@@ -43,7 +42,10 @@ const teamLabel = (v: string): string | undefined => {
 const roleLabel = (v: string) => WATCHER_ROLES.find((r) => `role:${r.value}` === v)?.label ?? teamLabel(v);
 
 // Optional: opened with no form (a bookmark, a reload), it says so rather than failing.
-const search = z.object({ templateId: z.string().optional() });
+// The builder takes one search parameter, the form; a plain check rather
+// than a schema library, which was 50 KB of every page's first download.
+const search = (s: Record<string, unknown>): { templateId?: string } =>
+  typeof s.templateId === "string" && s.templateId ? { templateId: s.templateId } : {};
 
 export const Route = createFileRoute("/builder/notifications")({
   validateSearch: search,

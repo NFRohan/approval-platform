@@ -9,9 +9,11 @@
 // (YYYY-MM-DD) or "" — what the database and the rest of the app use.
 // =====================================================================
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from "react";
 import { CalendarDays } from "lucide-react";
-import { Calendar } from "@/components/ui/calendar";
+// The calendar (a date library and a day picker, ~85 KB) loads the first
+// time somebody opens it; typing a date never needs it.
+const Calendar = lazy(() => import("@/components/ui/calendar").then((m) => ({ default: m.Calendar })));
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -127,6 +129,7 @@ export function DateInput({
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="end">
+          <Suspense fallback={<div style={{ width: 252, height: 290 }} aria-busy="true" />}>
           <Calendar
             mode="single"
             selected={selected}
@@ -141,6 +144,7 @@ export function DateInput({
               setText(isoToDmy(iso)); setBad(false); onChange(iso); setOpen(false);
             }}
           />
+        </Suspense>
         </PopoverContent>
       </Popover>
     </span>

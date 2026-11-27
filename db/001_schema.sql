@@ -810,8 +810,9 @@ end $arq$;
 
 create index if not exists approval_requests_subject_idx
   on public.approval_requests(tenant_id, subject_id, step_index);
-create index if not exists approval_requests_pending_idx
-  on public.approval_requests(tenant_id, approver_user_id, status);
+-- approval_requests_queue_idx above is the same index; this one only
+-- doubled the cost of every write to a step.
+drop index if exists public.approval_requests_pending_idx;
 
 -- =====================================================================
 -- updated_at, maintained by the database.
@@ -2078,7 +2079,9 @@ drop index if exists public.form_submissions_ref_upper_idx;
 -- Requests by where they are: what is open, what was rejected.
 create index if not exists form_submissions_status_idx on public.form_submissions(tenant_id, status);
 -- An approval queue, in deadline order, without sorting every open step.
-create index if not exists approval_requests_queue_idx
+-- (It was named like the per-approver index above, so "if not exists"
+-- skipped it and it was never built.)
+create index if not exists approval_requests_deadline_idx
   on public.approval_requests(tenant_id, status, deadline_at, opened_at);
 
 -- Admins per division (SOW 2.1 Admin): a role may be limited to one

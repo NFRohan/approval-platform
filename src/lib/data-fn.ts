@@ -78,57 +78,96 @@ function fail(err: unknown, tenantId?: string | null): DataResponse {
   return { data: null, error: { message: 'internal error', status: 500 } };
 }
 
+/** One request, for a context already resolved. Never throws: errors come back as values. */
+async function execute(ctx: Awaited<ReturnType<typeof resolveContext>>, body: DataRequest): Promise<DataResponse & { wrote?: boolean }> {
+  try {
+    if (body.kind === 'rpc') {
+      const allowed = RPCS[body.fn];
+      if (!allowed) throw new HttpError(400, `unknown function: ${body.fn}`);
+
+      // Arguments are matched by name and passed in the order the
+      // function declares them, so a caller cannot reorder or add any.
+      // An omitted one is refused rather than bound as null: that is
+      // exactly how a call site spelling its arguments differently
+      // from the whitelist went unnoticed, silently transferring
+      // stock from nowhere to nowhere.
+      const params = allowed.map((name) => {
+        if (!body.args || !(name in body.args)) {
+          throw new HttpError(400, `${body.fn} requires ${name}`);
+        }
+        return body.args[name] ?? null;
+      });
+      const holes = allowed.map((_, i) => `$${i + 1}`).join(', ');
+      const rows = await withContext(ctx, async (client) =>
+        (await client.query(`select public.${body.fn}(${holes}) as result`, params)).rows);
+      return { data: rows[0]?.result ?? null, error: null, wrote: true };
+    }
+
+    const { text, params, limit } = build(body);
+    const result = await withContext(ctx, async (client) => client.query(text, params));
+
+    if (body.countOnly) {
+      return { data: null, count: result.rows[0]?.count ?? 0, error: null, wrote: body.op !== 'select' };
+    }
+
+    const rows = result.rows;
+    return {
+      data: rows,
+      error: null,
+      // Hitting the ceiling exactly is indistinguishable from a result
+      // that happens to be that size, so this is "may be incomplete"
+      // rather than a claim.
+      truncated: limit !== undefined && rows.length >= limit,
+      wrote: body.op !== 'select',
+    };
+  } catch (err) {
+    return fail(err, ctx.tenantId);
+  }
+}
+
 export const runData = createServerFn({ method: 'POST' })
   .inputValidator((input: DataRequest) => input)
   .handler(async ({ data: body }): Promise<DataResponse> => {
-    let tenantId: string | null = null;
+    let ctx;
     try {
-      const ctx = await resolveContext();
-      tenantId = ctx.tenantId;
-
-      if (body.kind === 'rpc') {
-        const allowed = RPCS[body.fn];
-        if (!allowed) throw new HttpError(400, `unknown function: ${body.fn}`);
-
-        // Arguments are matched by name and passed in the order the
-        // function declares them, so a caller cannot reorder or add any.
-        // An omitted one is refused rather than bound as null: that is
-        // exactly how a call site spelling its arguments differently
-        // from the whitelist went unnoticed, silently transferring
-        // stock from nowhere to nowhere.
-        const params = allowed.map((name) => {
-          if (!body.args || !(name in body.args)) {
-            throw new HttpError(400, `${body.fn} requires ${name}`);
-          }
-          return body.args[name] ?? null;
-        });
-        const holes = allowed.map((_, i) => `$${i + 1}`).join(', ');
-        const rows = await withContext(ctx, async (client) =>
-          (await client.query(`select public.${body.fn}(${holes}) as result`, params)).rows);
-        // Approving, forwarding, noting — most of these tell somebody,
-        // and telling them is now also an email.
-        await kickMailer(ctx.tenantId);
-        return { data: rows[0]?.result ?? null, error: null };
-      }
-
-      const { text, params, limit } = build(body);
-      const result = await withContext(ctx, async (client) => client.query(text, params));
-      if (body.op !== 'select') await kickMailer(ctx.tenantId);
-
-      if (body.countOnly) {
-        return { data: null, count: result.rows[0]?.count ?? 0, error: null };
-      }
-
-      const rows = result.rows;
-      return {
-        data: rows,
-        error: null,
-        // Hitting the ceiling exactly is indistinguishable from a result
-        // that happens to be that size, so this is "may be incomplete"
-        // rather than a claim.
-        truncated: limit !== undefined && rows.length >= limit,
-      };
+      ctx = await resolveContext();
     } catch (err) {
-      return fail(err, tenantId);
+      return fail(err, null);
     }
+    const { wrote, ...res } = await execute(ctx, body);
+    // Approving, forwarding, noting — most of these tell somebody,
+    // and telling them is now also an email.
+    if (wrote && !res.error) await kickMailer(ctx.tenantId);
+    return res;
+  });
+
+/**
+ * Several reads in one round trip. A screen asks for its counts and
+ * lists at the same moment; each used to be a request of its own, and on
+ * a serverless host every request is an invocation, a session check and
+ * a connection. The client gathers the reads issued in the same tick
+ * (src/lib/db.ts) and sends them here; each runs on its own, as it would
+ * have alone, and answers for itself — one refusal does not fail the
+ * others. Reads only: writes keep their own requests and their order.
+ */
+export const runDataBatch = createServerFn({ method: 'POST' })
+  .inputValidator((input: DataRequest[]) => {
+    if (!Array.isArray(input) || input.length === 0 || input.length > 25) throw new HttpError(400, 'a batch is 1 to 25 reads');
+    if (input.some((b) => b.kind !== 'query' || b.op !== 'select')) throw new HttpError(400, 'a batch holds reads only');
+    return input;
+  })
+  .handler(async ({ data: bodies }): Promise<DataResponse[]> => {
+    let ctx;
+    try {
+      ctx = await resolveContext();
+    } catch (err) {
+      const f = fail(err, null);
+      return bodies.map(() => f);
+    }
+    const out: DataResponse[] = [];
+    for (const b of bodies) {
+      const { wrote: _wrote, ...res } = await execute(ctx, b);
+      out.push(res);
+    }
+    return out;
   });

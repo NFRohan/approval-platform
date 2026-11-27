@@ -10,7 +10,6 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import { Code2, Download, Eye, Upload } from "lucide-react";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { AccessBanner, useBuilderAccess, type BuilderAccess } from "@/components/builder/access";
@@ -25,9 +24,10 @@ import { toast } from "sonner";
 
 const DEFAULT_FORM_NAME = "Untitled form";
 
-const builderSearch = z.object({
-  templateId: z.string().optional(),
-});
+// The builder takes one search parameter, the form; a plain check rather
+// than a schema library, which was 50 KB of every page's first download.
+const builderSearch = (s: Record<string, unknown>): { templateId?: string } =>
+  typeof s.templateId === "string" && s.templateId ? { templateId: s.templateId } : {};
 
 export const Route = createFileRoute("/builder/")({
   validateSearch: builderSearch,

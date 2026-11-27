@@ -28,6 +28,10 @@ export function MobileNav() {
   useEffect(() => { setMore(false); }, [pathname]);
 
   useEffect(() => {
+    // The tab bar is the phone's; on a wider screen it is hidden, and its
+    // counts are the sidebar's to keep, so it does not ask for them.
+    const phone = window.matchMedia("(max-width: 767.98px)");
+    if (!phone.matches) return;
     let alive = true;
     const count = async () => {
       const [{ count: n }, { count: any }] = await Promise.all([
