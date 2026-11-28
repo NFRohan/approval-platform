@@ -212,6 +212,10 @@ await settle(2500);
 const fstep = await one(`select approver_user_id, reassigned_from, status, step_index from public.approval_requests where submission_id = $1 order by step_index limit 1`, [fw]);
 ok('forwarded: the step is Ivan\'s now, keeping its place', fstep.approver_user_id === IVAN && fstep.reassigned_from === SAM && fstep.status === 'pending' && fstep.step_index === 0, JSON.stringify(fstep));
 ok('...Ivan is told', (await notes(IVAN, fw, 'approval.turn')).some((n) => /forwarded/.test(n.title)));
+await page.goto(`${BASE}/approvals?as=${IVAN}`);
+await settle(3000);
+ok("...and Ivan's card says it was forwarded from Sam, with Sam's note",
+  /Forwarded from Sam Lindqvist/.test(await text()) && (await text()).includes('Ivan is covering my approvals this week.'), (await text()).slice(0, 500));
 await page.goto(`${BASE}/approvals?as=${SAM}`);
 await settle(3000);
 ok('...it has left Sam\'s queue', !(await text()).includes(await refOf(fw)));

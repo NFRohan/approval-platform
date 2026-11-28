@@ -72,14 +72,28 @@ ok('Builder: every field type is saved with its settings (options, formula, rang
   ff.length === 10 && ff.find((f) => f.field_name === 'Site')?.field_config?.options?.length === 2
   && ff.find((f) => f.field_name === 'Line total')?.field_config?.formula === '{Units} * {Unit cost}'
   && ff.find((f) => f.field_name === 'Units')?.field_config?.validation?.max === 10, ff.length);
+// The form's own settings, step 1 with no field selected.
+if (await page.getByRole('button', { name: 'Form settings' }).count()) await page.getByRole('button', { name: 'Form settings' }).click();
+await settle(800);
+await page.locator('[data-testid="form-settings"] select[aria-label="Classification"]').selectOption('operational');
+await page.locator('[data-testid="form-settings"] input[aria-label="Keywords"]').fill('asset, qa-roundtrip');
+await settle(1500);
 await page.getByRole('button', { name: /Next/ }).click();
 await page.waitForURL(/builder\/approvers/, { timeout: 15000 });
 await settle(3500);
 
 // ---------------------------------------------------------------- approvers, by stage
 let t = await text();
-ok('Approvers: the defaults show — the admin officer, and finance by amount since there is a money field',
-  /Admin Officer|Farah Haddad/.test(t) && /Finance Approver/.test(t) && /Finance Approval Slabs/.test(t));
+ok('Approvers: the admin officer by default; an amount field brings the bands panel, empty, and no finance approver yet',
+  /Admin Officer|Farah Haddad/.test(t) && !/Finance Approver/.test(t) && /Finance Approval Slabs/.test(t)
+  && (await page.locator('[data-testid="no-bands"]').count()) === 1, t.slice(0, 400));
+for (const [i, [from, who]] of [['0', 'EMP-0312'], ['100000.01', 'EMP-0600'], ['500000.01', 'EMP-0700']].entries()) {
+  await page.getByRole('button', { name: /Add Slab/ }).click();
+  await page.locator(`input[aria-label="Band ${i + 1} from amount"]`).fill(from);
+  await page.locator(`select[aria-label="Band ${i + 1} approver"]`).selectOption(who);
+}
+await settle(400);
+ok('...three bands added, and finance by amount joins the route', /Finance Approver/.test(await text()));
 await page.getByRole('button', { name: /Add a stage/ }).click();
 await page.locator('input[aria-label="Stage 1 name"]').fill('Line review');
 await page.locator('[data-stage="0"] select[aria-label="Approver"]').selectOption('role:line_manager');
@@ -90,8 +104,6 @@ await page.locator('[data-stage="1"]').getByRole('button', { name: /Always/ }).c
 await page.locator('[data-stage="1"] select[aria-label="Condition question"]').selectOption('Site');
 await page.locator('[data-stage="1"] select[aria-label="Condition operator"]').selectOption('eq');
 await page.locator('[data-stage="1"] input[aria-label="Condition value"]').fill('Chattogram');
-await page.locator('select[aria-label="Classification"]').selectOption('operational');
-await page.locator('input[aria-label="Keywords"]').fill('asset, qa-roundtrip');
 await page.getByRole('button', { name: /Next/ }).click();
 await page.waitForURL(/builder\/notifications/, { timeout: 15000 });
 await settle(3500);

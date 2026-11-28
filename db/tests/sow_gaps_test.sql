@@ -841,6 +841,38 @@ begin
   raise notice 'pass: a department, a role''s holders and an outside address can each watch a form';
 end $$;
 
+reset role;
+-- A form nobody used can be deleted, as a draft, by whoever builds it;
+-- one with requests cannot, and neither can a published one.
+do $$
+declare v_new uuid; v_used uuid;
+begin
+  perform pg_temp.as_emp('EMP-0445');
+  insert into public.form_templates (tenant_id, name, status, created_by)
+  values (current_setting('t.tpl')::uuid, 'QA throwaway form', 'draft', 'EMP-0445') returning id into v_new;
+  insert into public.form_fields (tenant_id, form_template_id, field_type, field_name, order_index)
+  values (current_setting('t.tpl')::uuid, v_new, 'text', 'Anything', 0);
+  select id into v_used from public.form_templates where tenant_id = current_setting('t.tpl')::uuid and name = 'Leave Application';
+  if not pg_temp.refused(format($q$select public.delete_form(%L)$q$, v_used)) then
+    raise exception 'FAIL: a published form was deleted';
+  end if;
+  update public.form_templates set status = 'draft' where id = v_used;
+  if not pg_temp.refused(format($q$select public.delete_form(%L)$q$, v_used)) then
+    raise exception 'FAIL: a form with requests was deleted, and its requests with it';
+  end if;
+  update public.form_templates set status = 'published' where id = v_used;
+  perform pg_temp.as_emp('EMP-2847');
+  if not pg_temp.refused(format($q$select public.delete_form(%L)$q$, v_new)) then
+    raise exception 'FAIL: somebody who does not build forms deleted one';
+  end if;
+  perform pg_temp.as_emp('EMP-0445');
+  perform public.delete_form(v_new);
+  if exists (select 1 from public.form_templates where id = v_new) or exists (select 1 from public.form_fields where form_template_id = v_new) then
+    raise exception 'FAIL: the unused draft, or its fields, is still there';
+  end if;
+  raise notice 'pass: an unused draft form can be deleted by whoever builds it; a published one or one with requests cannot';
+end $$;
+
 delete from public.tenants where id = current_setting('t.tpl')::uuid;
 select set_config('app.is_staff', 'false', false);
 

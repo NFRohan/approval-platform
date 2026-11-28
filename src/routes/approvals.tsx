@@ -952,6 +952,20 @@ function ApprovalsInbox() {
                           Acting for {r.actingFor}
                         </div>
                       )}
+                      {/* Came by forwarding: from whom, and why if they said. */}
+                      {r.reassigned_from && r.reassigned_from !== r.approver_user_id && (
+                        <div className="mt-1" data-testid="forwarded-from">
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full font-medium"
+                            style={{ padding: "2px 8px", fontSize: 11, background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }}
+                          >
+                            Forwarded from {nameFor(r.reassigned_from)}
+                          </span>
+                          {r.comment && (
+                            <span style={{ fontSize: 12, color: "#52525B", marginLeft: 6 }}>“{r.comment}”</span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center gap-3 flex-wrap" style={{ marginTop: 8 }}>
                         <span
                           className="inline-flex items-center gap-1"

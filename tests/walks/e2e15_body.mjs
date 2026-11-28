@@ -116,10 +116,12 @@ await shot('s9-forward-line');
 await page.keyboard.press('Escape');
 
 // ---------------------------------------------------------------- the builder
-await page.goto(`${BASE}/builder/approvers?templateId=${await formId('Fraud Incident Fund Transfer')}&as=EMP-0201`);
+await page.goto(`${BASE}/builder?templateId=${await formId('Fraud Incident Fund Transfer')}&as=EMP-0201`);
 await settle(3500);
 const within = page.getByRole('checkbox', { name: 'Forward only within the reporting line' });
 ok('the builder shows the form forwards within the line', (await within.count()) === 1 && await within.isChecked());
+await page.goto(`${BASE}/builder/approvers?templateId=${await formId('Fraud Incident Fund Transfer')}&as=EMP-0201`);
+await settle(3500);
 ok('...and each stage approver can remind at an interval', (await page.getByLabel('Remind every so many hours').count()) >= 1);
 await shot('s9-builder');
 // SOW 2.1: "notification will be given after breach SLA or before SLA. It can be configured."

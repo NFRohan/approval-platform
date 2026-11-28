@@ -96,8 +96,6 @@ function ApproversStep({ templateId }: { templateId: string }) {
   const [stages, setStages] = useState<Stage[]>([]);
   const [fieldLabels, setFieldLabels] = useState<string[]>([]);
   // The template whose draft is started when this form is approved.
-  const [followup, setFollowup] = useState<string>("");
-  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
   const [savedAgo, setSavedAgo] = useState("just now");
   const [fieldTypes, setFieldTypes] = useState<Set<string>>(new Set());
   const [slabs, setSlabs] = useState<SlabRow[]>([]);
@@ -109,22 +107,11 @@ function ApproversStep({ templateId }: { templateId: string }) {
   const [savedAuto, setSavedAuto] = useState<SavedRule[] | null>(null);
   const [loading, setLoading] = useState(true);
   const access = useBuilderAccess(templateId);
-  // Who may raise this form: departments, or everybody when empty.
-  const [audience, setAudience] = useState<string[]>([]);
-  const [departments, setDepartments] = useState<string[]>([]);
-  // ...or to whoever holds one of these roles.
-  const [audienceRoles, setAudienceRoles] = useState<string[]>([]);
-  const [roleList, setRoleList] = useState<{ id: string; name: string }[]>([]);
-  // What kind of NFA it is, and the words that find it.
-  const [classification, setClassification] = useState("");
-  const [keywords, setKeywords] = useState("");
-  // "Manually assigning different approvers only within a hierarchy."
-  const [withinLine, setWithinLine] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }, { data: tpls }] = await Promise.all([
-        db.from("form_templates").select("name, followup_template_id, audience_departments, audience_roles, classification, keywords, forward_within_line").eq("id", templateId).maybeSingle(),
+      const [{ data: tpl }, { data: fields }, { data: existingSlabs }, { data: emps }, { data: rules }] = await Promise.all([
+        db.from("form_templates").select("name").eq("id", templateId).maybeSingle(),
         db.from("form_fields").select("field_type, field_name, order_index").eq("form_template_id", templateId).order("order_index"),
         db.from("approval_slabs").select("*").eq("form_template_id", templateId).order("order_index"),
         db.from("employees").select("employee_id, name, designation").order("name"),
@@ -133,20 +120,8 @@ function ApproversStep({ templateId }: { templateId: string }) {
           .eq("form_template_id", templateId)
           .order("step_index")
           .order("position"),
-        db.from("form_templates").select("id, name").order("name"),
       ]);
       if (tpl?.name) setFormName(tpl.name);
-      setAudience(((tpl as { audience_departments?: string[] | null } | null)?.audience_departments) ?? []);
-      setAudienceRoles(((tpl as { audience_roles?: string[] | null } | null)?.audience_roles) ?? []);
-      void db.from("roles").select("id, name").eq("status", "active").order("name").then(({ data }) =>
-        setRoleList((data ?? []) as { id: string; name: string }[]));
-      setClassification((tpl as { classification?: string | null } | null)?.classification ?? "");
-      setKeywords(((tpl as { keywords?: string[] | null } | null)?.keywords ?? []).join(", "));
-      setWithinLine(!!(tpl as { forward_within_line?: boolean | null } | null)?.forward_within_line);
-      void db.from("departments").select("name").order("name").then(({ data }) =>
-        setDepartments(((data ?? []) as { name: string }[]).map((d) => d.name)));
-      setFollowup((tpl as { followup_template_id?: string | null } | null)?.followup_template_id ?? "");
-      setTemplates(((tpls ?? []) as { id: string; name: string }[]).filter((t) => t.id !== templateId));
       setFieldLabels(
         (fields ?? [])
           .filter((f) => f.field_name && !["section_header", "file", "signature"].includes(f.field_type ?? ""))
@@ -233,11 +208,10 @@ function ApproversStep({ templateId }: { templateId: string }) {
           })),
         );
       } else {
-        setSlabs([
-          { min_amount: "0", max_amount: "100000", approver_user_id: "EMP-0312" },
-          { min_amount: "100000.01", max_amount: "500000", approver_user_id: "EMP-0600" },
-          { min_amount: "500000.01", max_amount: "", approver_user_id: "EMP-0700" },
-        ]);
+        // No bands saved: none invented. Three defaults used to be filled
+        // in here, so opening any form with an amount and pressing Next
+        // added three finance approvers it had never had.
+        setSlabs([]);
       }
     })();
   }, [templateId]);
@@ -258,6 +232,10 @@ function ApproversStep({ templateId }: { templateId: string }) {
     a.user_id && names[a.user_id] && ruleRole(a.label) !== "line_manager"
       ? { ...a, name: names[a.user_id].name, designation: names[a.user_id].designation ?? a.designation }
       : a;
+
+  // Finance by amount is part of the route only when there are bands:
+  // a form with an amount and no bands routes by people alone.
+  const hasBands = slabs.some((x) => x.min_amount !== "" && x.approver_user_id);
 
   // What the form gets automatically.
   //
@@ -295,7 +273,7 @@ function ApproversStep({ templateId }: { templateId: string }) {
     const roles = new Set(kept.map((k) => ruleRole(k.label)));
     const added = defaults.filter((d) => d._requires && !roles.has(d.label));
     return [...kept, ...added];
-  })();
+  })().filter((a) => ruleRole(a.label) !== "slab_finance" || hasBands);
 
   // Task settings only: each saved step's deadline and signature, through
   // the one function that may change them, and nothing else.
@@ -381,20 +359,6 @@ function ApproversStep({ templateId }: { templateId: string }) {
       return;
     }
 
-    const { error: fuErr } = await db
-      .from("form_templates")
-      .update({
-        followup_template_id: followup || null, audience_departments: audience.length ? audience : null,
-        audience_roles: audienceRoles.length ? audienceRoles : null,
-        classification: classification || null,
-        keywords: [...new Set(keywords.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean))],
-        forward_within_line: withinLine,
-      })
-      .eq("id", templateId);
-    if (fuErr) {
-      toast.error("Failed to save the follow-up: " + fuErr.message);
-      return;
-    }
 
     if (fieldTypes.has("money")) {
       await db.from("approval_slabs").delete().eq("form_template_id", templateId);
@@ -478,6 +442,12 @@ function ApproversStep({ templateId }: { templateId: string }) {
                     <Plus size={13} /> Add Slab
                   </button>
                 </div>
+                {slabs.length === 0 && (
+                  <div data-testid="no-bands" style={{ fontSize: 12.5, color: "#71717A", padding: "6px 0 2px" }}>
+                    No bands: the amount does not change who approves this form. Add a band to send
+                    larger amounts to finance approvers.
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   {slabs.map((s, i) => (
                     <div key={i} className="flex items-center gap-2" style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid #F4F4F5" : "none" }}>
@@ -485,12 +455,14 @@ function ApproversStep({ templateId }: { templateId: string }) {
                       <input
                         type="number"
                         placeholder="Amount"
+                        aria-label={`Band ${i + 1} from amount`}
                         value={s.min_amount}
                         onChange={(e) => updateSlab(i, { min_amount: e.target.value })}
                         style={{ width: 110, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
                       />
                       <span style={{ color: "#A1A1AA", fontSize: 12 }}>and above</span>
                       <select
+                        aria-label={`Band ${i + 1} approver`}
                         value={s.approver_user_id}
                         onChange={(e) => updateSlab(i, { approver_user_id: e.target.value })}
                         style={{ flex: 1, padding: "6px 8px", fontSize: 12.5, border: "1px solid #E4E4E7", borderRadius: 6 }}
@@ -511,87 +483,10 @@ function ApproversStep({ templateId }: { templateId: string }) {
                 </div>
               </div>
             )}
-            <section className="rounded-xl bg-white mt-6" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>When it is approved</div>
-              <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
-                Start a follow-up for the same requester, with every answer both forms ask already
-                filled in. It waits as a draft for them to check and submit.
-              </div>
-              <select
-                value={followup}
-                onChange={(e) => setFollowup(e.target.value)}
-                aria-label="Follow-up form"
-                className="rounded-md bg-white"
-                style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", minWidth: 280 }}
-              >
-                <option value="">Nothing follows</option>
-                {templates.map((t) => <option key={t.id} value={t.id}>Start: {t.name}</option>)}
-              </select>
-            </section>
-            <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="classification">
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>What it is, and how it is found</div>
-              <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
-                NFAs are classified so they can be told apart in lists and reports; keywords find the form from the search box.
-              </div>
-              <div className="flex gap-3 flex-wrap">
-                <select value={classification} onChange={(e) => setClassification(e.target.value)} aria-label="Classification"
-                  className="rounded-md bg-white" style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", minWidth: 200 }}>
-                  <option value="">Not classified</option>
-                  <option value="budgetary">Budgetary</option>
-                  <option value="non_budgetary">Non-budgetary</option>
-                  <option value="regulatory">Regulatory</option>
-                  <option value="operational">Operational</option>
-                </select>
-                <input value={keywords} onChange={(e) => setKeywords(e.target.value)} aria-label="Keywords" placeholder="Keywords, separated by commas"
-                  className="rounded-md bg-white" style={{ padding: "7px 10px", fontSize: 13, border: "1px solid #E4E4E7", flex: 1, minWidth: 240 }} />
-              </div>
-              <label className="flex items-start gap-2 mt-3" style={{ fontSize: 13, color: "#3F3F46" }}>
-                <input type="checkbox" checked={withinLine} onChange={(e) => setWithinLine(e.target.checked)}
-                  aria-label="Forward only within the reporting line" style={{ marginTop: 3 }} />
-                <span>
-                  Forward only within the reporting line
-                  <span style={{ display: "block", fontSize: 12, color: "#71717A" }}>
-                    An approver may pass their step to the people above or below them, and nobody else.
-                  </span>
-                </span>
-              </label>
-            </section>
-            <section className="rounded-xl bg-white mt-4" style={{ border: "1px solid #E4E4E7", padding: "14px 16px" }} data-testid="audience">
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#18181B" }}>Who can raise it</div>
-              <div style={{ fontSize: 12, color: "#71717A", margin: "2px 0 10px" }}>
-                Offered only to people in these departments, or holding these roles. Leave all unticked for everybody.
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {departments.map((d) => {
-                  const on = audience.includes(d);
-                  return (
-                    <label key={d} className="inline-flex items-center gap-1.5 rounded-md" style={{ padding: "4px 9px", fontSize: 12.5, border: `1px solid ${on ? "#C7D2FE" : "#E4E4E7"}`, background: on ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
-                      <input type="checkbox" checked={on} name={`audience-${d}`}
-                        onChange={() => setAudience((a) => on ? a.filter((x) => x !== d) : [...a, d])} />
-                      {d}
-                    </label>
-                  );
-                })}
-                {departments.length === 0 && <span style={{ fontSize: 12, color: "#A1A1AA" }}>No departments yet.</span>}
-              </div>
-              {roleList.length > 0 && (
-                <>
-                  <div style={{ fontSize: 12, color: "#71717A", margin: "12px 0 6px" }}>Roles</div>
-                  <div className="flex flex-wrap gap-2" data-testid="audience-roles">
-                    {roleList.map((r) => {
-                      const on = audienceRoles.includes(r.id);
-                      return (
-                        <label key={r.id} className="inline-flex items-center gap-1.5 rounded-md" style={{ padding: "4px 9px", fontSize: 12.5, border: `1px solid ${on ? "#C7D2FE" : "#E4E4E7"}`, background: on ? "#EEF2FF" : "#fff", cursor: "pointer" }}>
-                          <input type="checkbox" checked={on} name={`audience-role-${r.name}`}
-                            onChange={() => setAudienceRoles((a) => on ? a.filter((x) => x !== r.id) : [...a, r.id])} />
-                          {r.name}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </section>
+            <div style={{ fontSize: 12, color: "#A1A1AA", margin: "18px 2px 0" }}>
+              Who can raise this form, what follows its approval, its classification and keywords, and
+              forwarding are form settings now: step 1, with no field selected.
+            </div>
           </>
         }
       />

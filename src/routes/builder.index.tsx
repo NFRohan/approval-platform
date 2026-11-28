@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { FormSettingsPanel } from "@/components/builder/FormSettingsPanel";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   DndContext,
@@ -540,6 +541,8 @@ function BuilderEditor() {
               allFields={fields}
               formTemplateId={templateId}
               readOnly={readOnly}
+              emptyState={<FormSettingsPanel templateId={templateId} readOnly={readOnly} />}
+              onDeselect={() => setSelectedId(null)}
             />
           </>
         )}

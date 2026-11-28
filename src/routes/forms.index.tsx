@@ -1,7 +1,8 @@
 import { LoadingRows } from "@/components/Loading";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Archive, ChevronDown, FilePen, Pencil, Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { useCurrentUser } from "@/contexts/CurrentUserContext";
 import { fmtDate } from "@/lib/dates";
@@ -47,6 +48,24 @@ function FormsPage() {
   // from their roles, not one person's id.
   const isAdmin = can("forms.build");
   const [myDepartment, setMyDepartment] = useState<string | null>(null);
+  // Forms not yet published, or unpublished: only whoever builds forms
+  // sees them, here, so a draft can be finished or thrown away instead of
+  // vanishing (the builder opens on a new form).
+  const [drafts, setDrafts] = useState<(FormRow & { requests: number })[]>([]);
+  const loadDrafts = useCallback(async () => {
+    if (!isAdmin) { setDrafts([]); return; }
+    const { data } = await db.from("form_templates")
+      .select("id, name, status, category, created_by, created_at, audience_departments, classification, keywords")
+      .eq("status", "draft").order("created_at", { ascending: false });
+    const rows = (data ?? []) as FormRow[];
+    const counts: Record<string, number> = {};
+    if (rows.length) {
+      const { data: subs } = await db.from("form_submissions").select("form_template_id").in("form_template_id", rows.map((r) => r.id));
+      for (const r of (subs ?? []) as { form_template_id: string }[]) counts[r.form_template_id] = (counts[r.form_template_id] ?? 0) + 1;
+    }
+    setDrafts(rows.map((r) => ({ ...r, requests: counts[r.id] ?? 0 })));
+  }, [isAdmin]);
+  useEffect(() => { void loadDrafts(); }, [loadDrafts, currentUser.employee_id]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -83,6 +102,7 @@ function FormsPage() {
 
   function handleDeleted(id: string) {
     setForms((prev) => prev.filter((f) => f.id !== id));
+    void loadDrafts();
   }
 
   // A form for some departments is offered to them; a designer sees all
@@ -113,6 +133,12 @@ function FormsPage() {
           </Link>
         )}
       </div>
+
+      {isAdmin && drafts.length > 0 && (
+        <DraftForms drafts={drafts} creators={creators}
+          onEdit={(id) => navigate({ to: "/builder", search: { templateId: id } })}
+          onChanged={loadDrafts} />
+      )}
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <input
@@ -275,18 +301,19 @@ function FormCard({
             </button>
             <button
               onClick={() => setConfirming(true)}
-              title="Delete form"
+              title="Unpublish: it moves to Drafts; requests already raised are kept"
+              aria-label="Unpublish form"
               className="inline-flex items-center justify-center rounded-md border text-sm"
-              style={{ width: 36, height: 36, borderColor: "#FCA5A5", color: "#DC2626" }}
+              style={{ width: 36, height: 36, borderColor: "#E4E4E7", color: "#52525B" }}
             >
-              <Trash2 size={14} />
+              <Archive size={14} />
             </button>
           </>
         )}
 
         {isAdmin && confirming && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[12px]" style={{ color: "#71717A" }}>Delete?</span>
+            <span className="text-[12px]" style={{ color: "#71717A" }}>Unpublish?</span>
             <button
               onClick={handleDelete}
               disabled={deleting}
@@ -306,5 +333,67 @@ function FormCard({
         )}
       </div>
     </div>
+  );
+}
+
+/** Unpublished forms, for whoever builds forms: finish one, or delete one nobody used. */
+function DraftForms({ drafts, creators, onEdit, onChanged }: {
+  drafts: (FormRow & { requests: number })[];
+  creators: Record<string, Creator>;
+  onEdit: (id: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(true);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const remove = async (f: FormRow) => {
+    const { error } = await db.rpc("delete_form", { p_form: f.id });
+    if (error) return void toast.error(error.message);
+    toast.success(`${f.name} deleted`);
+    setConfirm(null);
+    await onChanged();
+  };
+  return (
+    <section className="rounded-xl bg-white mb-5" style={{ border: "1px solid #E4E4E7" }} data-testid="draft-forms">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center gap-2 text-left"
+        style={{ padding: "12px 16px", background: "none", border: "none", cursor: "pointer" }} aria-expanded={open}>
+        <FilePen size={15} style={{ color: "#71717A" }} />
+        <span style={{ fontSize: 14, fontWeight: 600, color: "#18181B" }}>Drafts</span>
+        <span className="rounded-full" style={{ fontSize: 11.5, fontWeight: 600, padding: "1px 8px", background: "#F4F4F5", color: "#52525B" }}>{drafts.length}</span>
+        <span style={{ fontSize: 12.5, color: "#71717A" }}>Not published: only form builders see these.</span>
+        <ChevronDown size={14} style={{ marginLeft: "auto", color: "#A1A1AA", transform: open ? "none" : "rotate(-90deg)" }} />
+      </button>
+      {open && drafts.map((f) => (
+        <div key={f.id} className="flex items-center gap-3 flex-wrap" style={{ padding: "10px 16px", borderTop: "1px solid #F4F4F5" }}>
+          <div className="flex-1" style={{ minWidth: 220 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#18181B" }}>{f.name}</div>
+            <div style={{ fontSize: 12, color: "#71717A" }}>
+              {f.category ? `${f.category} form` : "Uncategorised"}
+              {f.created_by && creators[f.created_by] ? ` · by ${creators[f.created_by].name}` : ""}
+              {f.requests > 0 ? ` · ${f.requests} request${f.requests === 1 ? "" : "s"} raised while it was published` : " · never used"}
+            </div>
+          </div>
+          {confirm === f.id ? (
+            <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5 }}>
+              <span style={{ color: "#52525B" }}>Delete it for good?</span>
+              <button type="button" onClick={() => void remove(f)} className="rounded-md text-white" style={{ padding: "5px 10px", background: "#DC2626", border: "none" }}>Delete</button>
+              <button type="button" onClick={() => setConfirm(null)} className="rounded-md" style={{ padding: "5px 10px", border: "1px solid #E4E4E7", background: "#fff", color: "#52525B" }}>Keep</button>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2">
+              <button type="button" onClick={() => onEdit(f.id)} className="inline-flex items-center gap-1.5 rounded-md"
+                style={{ padding: "6px 12px", fontSize: 12.5, border: "1px solid #E4E4E7", background: "#fff", color: "#3F3F46" }}>
+                <Pencil size={13} /> Edit and publish
+              </button>
+              <button type="button" disabled={f.requests > 0} onClick={() => setConfirm(f.id)}
+                title={f.requests > 0 ? "It has requests; it stays as their record" : "Delete this draft"}
+                className="inline-flex items-center gap-1.5 rounded-md"
+                style={{ padding: "6px 12px", fontSize: 12.5, border: "1px solid #FECACA", background: "#fff", color: f.requests > 0 ? "#D4D4D8" : "#B91C1C", cursor: f.requests > 0 ? "not-allowed" : "pointer" }}>
+                <Trash2 size={13} /> Delete
+              </button>
+            </span>
+          )}
+        </div>
+      ))}
+    </section>
   );
 }

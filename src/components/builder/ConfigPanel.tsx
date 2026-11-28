@@ -481,7 +481,13 @@ export function ConfigPanel({
   allFields = [],
   formTemplateId,
   readOnly = false,
+  emptyState,
+  onDeselect,
 }: {
+  /** Back to the form's own settings, with no field selected. */
+  onDeselect?: () => void;
+  /** What shows with no field selected: the form's own settings. */
+  emptyState?: React.ReactNode;
   field: PlacedField | null;
   onChange: (patch: Partial<PlacedField>) => void;
   onDelete: () => void;
@@ -511,14 +517,22 @@ export function ConfigPanel({
           Configuration
         </span>
         <span className="ml-auto truncate max-w-[140px]" style={{ fontSize: 11, color: "#A1A1AA" }}>
-          {field ? field.label : "No field selected"}
+          {field ? field.label : "Form settings"}
         </span>
+        {field && onDeselect && emptyState && (
+          <button type="button" onClick={onDeselect} title="The form's own settings: who can raise it, after approval, classification"
+            style={{ fontSize: 11, color: "#4F46E5", background: "none", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap" }}>
+            Form settings
+          </button>
+        )}
       </div>
 
       {!field ? (
+        emptyState ? <div className="scroll-thin flex-1 overflow-auto">{emptyState}</div> : (
         <div className="text-center" style={{ padding: "48px 24px", fontSize: 12.5, color: "#A1A1AA" }}>
           Select a field on the canvas to configure it.
         </div>
+        )
       ) : (
         <>
           {/* Tab bar */}

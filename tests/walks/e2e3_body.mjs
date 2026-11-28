@@ -67,11 +67,10 @@ ok('...without touching who approves', JSON.stringify(rulesBefore.map((r) => [r.
 ok('...and the change is on the trail', (await audit('task_settings_changed')) >= 1);
 
 // ------------------------------------------------- who a form is for
-await page.goto(`${BASE}/builder/approvers?templateId=${leave}&as=EMP-0201`);
-await settle(2500);
-await page.locator('input[name="audience-HR"]').check();
-await page.getByRole('button', { name: /Next/ }).click();
-await page.waitForURL(/builder\/notifications/, { timeout: 15000 });
+await page.goto(`${BASE}/builder?templateId=${leave}&as=EMP-0201`);
+await settle(3500);
+await page.locator('[data-testid="form-settings"] input[name="audience-HR"]').check();
+await settle(1500);
 ok('a designer sets who a form is for', JSON.stringify((await one(`select audience_departments a from public.form_templates where id = $1`, [leave])).a) === '["HR"]');
 await page.goto(`${BASE}/forms?as=EMP-2847`);
 await settle(2500);

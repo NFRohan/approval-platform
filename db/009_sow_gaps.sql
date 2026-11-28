@@ -1565,6 +1565,31 @@ as $$
 $$;
 grant execute on function app.may_design(text, text), public.may_design_form(uuid) to app_api;
 
+-- Delete a form that was never used: a draft nobody has raised a request
+-- on. Anything with requests stays, unpublished, as the record of them
+-- (deleting the form would take its requests with it). Whoever may build
+-- the form deletes it; the deletion is in the audit trail.
+create or replace function public.delete_form(p_form uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, app, pg_temp
+as $$
+declare v record; n int;
+begin
+  select id, name, status into v from public.form_templates where id = p_form and tenant_id = app.current_tenant() for update;
+  if not found then raise exception 'no such form'; end if;
+  if public.may_design_form(p_form) <> 'full' then raise exception 'you may not build this form, so you may not delete it'; end if;
+  if v.status <> 'draft' then raise exception 'unpublish the form first; only a draft can be deleted'; end if;
+  select count(*) into n from public.form_submissions where form_template_id = p_form;
+  if n > 0 then
+    raise exception '% has % request%; it stays, unpublished, as their record', v.name, n, case when n = 1 then '' else 's' end;
+  end if;
+  delete from public.form_templates where id = p_form;
+  perform app.audit('form_deleted', 'form_template', p_form, v.name);
+end $$;
+grant execute on function public.delete_form(uuid) to app_api;
+
 do $div$
 declare t text;
 begin

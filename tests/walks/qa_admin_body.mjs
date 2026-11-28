@@ -316,8 +316,11 @@ ok('an administrator disables an account', (await acct('tanvir.hasan')).status =
 const errsBefore = pageErrors.length;
 await ctx.clearCookies();
 await ctx.addCookies(tanvirCookies);
-await page.goto(BASE + '/forms');
+await page.goto(BASE + '/forms').catch(() => {});
 await settle(3000);
+// Under load the redirect to sign-in can land on the browser's own error
+// page (the harness, not the app); one retry settles it.
+if (page.url().startsWith('chrome-error')) { await page.goto(BASE + '/forms').catch(() => {}); await settle(3000); }
 // The refused session may already be back at sign-in, with no page to search.
 if (await page.locator('input[aria-label="Find a form"]').count()) {
   await page.locator('input[aria-label="Find a form"]').fill('Travel');

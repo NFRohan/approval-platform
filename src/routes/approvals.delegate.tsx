@@ -57,7 +57,6 @@ function DelegationPage() {
 
   const [delegateId, setDelegateId] = useState("");
   const [delegateEmp, setDelegateEmp] = useState<EmployeeRow | null>(null);
-  const [lookingUp, setLookingUp] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
@@ -108,18 +107,14 @@ function DelegationPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function lookupDelegate() {
-    if (!delegateId.trim()) return;
-    setLookingUp(true);
-    const { data } = await db
-      .from("employees")
-      .select("employee_id, name, designation, department")
-      .eq("employee_id", delegateId.trim())
-      .maybeSingle();
-    setLookingUp(false);
-    if (data) setDelegateEmp(data as EmployeeRow);
-    else { setDelegateEmp(null); toast.error("Employee not found"); }
-  }
+  // Colleagues to choose from, by name: the delegate used to be typed in
+  // as an employee id, which nobody knows by heart.
+  const [colleagues, setColleagues] = useState<EmployeeRow[]>([]);
+  useEffect(() => {
+    void db.from("employees").select("employee_id, name, designation, department").eq("active", true).order("name")
+      .then(({ data }) => setColleagues(((data ?? []) as EmployeeRow[]).filter((e) => e.employee_id !== currentUser.employee_id)));
+  }, [currentUser.employee_id]);
+
 
   async function handleSave() {
     if (!delegateEmp) { toast.error("Select a valid delegate"); return; }
@@ -204,22 +199,23 @@ function DelegationPage() {
           <h2 style={{ fontSize: 15, fontWeight: 600, color: "#18181B", marginBottom: 16 }}>New Delegation</h2>
           <div className="flex flex-col gap-4">
             <label className="flex flex-col gap-1.5">
-              <span style={{ fontSize: 12, fontWeight: 500, color: "#3F3F46" }}>Delegate (Employee ID)</span>
-              <div className="flex gap-2">
-                <input
-                  style={{ ...inputStyle, flex: 1 }}
-                  placeholder="e.g. EMP-1200"
-                  value={delegateId}
-                  onChange={(e) => setDelegateId(e.target.value)}
-                  onBlur={lookupDelegate}
-                />
-                <button
-                  onClick={lookupDelegate}
-                  style={{ padding: "8px 14px", borderRadius: 6, fontSize: 13, background: "#F4F4F5", border: "1px solid #E4E4E7", color: "#3F3F46", cursor: "pointer" }}
-                >
-                  {lookingUp ? "…" : "Look up"}
-                </button>
-              </div>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "#3F3F46" }}>Delegate</span>
+              <select
+                aria-label="Delegate"
+                style={inputStyle}
+                value={delegateEmp?.employee_id ?? ""}
+                onChange={(e) => {
+                  setDelegateId(e.target.value);
+                  setDelegateEmp(colleagues.find((c) => c.employee_id === e.target.value) ?? null);
+                }}
+              >
+                <option value="">Choose who stands in for you…</option>
+                {colleagues.map((c) => (
+                  <option key={c.employee_id} value={c.employee_id}>
+                    {c.name}{c.designation ? ` — ${c.designation}` : ""}{c.department ? ` · ${c.department}` : ""}
+                  </option>
+                ))}
+              </select>
               {delegateEmp && (
                 <div className="flex items-center gap-2.5 rounded-md" style={{ padding: "10px 12px", background: "#F0FDF4", border: "1px solid #BBF7D0" }}>
                   <User size={13} style={{ color: "#16A34A" }} />
